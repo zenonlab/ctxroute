@@ -221,7 +221,7 @@ function commitsOublies(execFileSync, racine, tete) {
   }
 }
 
-test('㉜ — the header, when modified, cites every commit since its last update', async () => {
+test.skipIf(!planPresent)('㉜ — the header, when modified, cites every commit since its last update', async () => {
   const { execFileSync } = await import('node:child_process');
   const texte = fs.readFileSync(PLAN, 'utf8');
   const tete = texte.split('## 📋 CE QUI RESTE')[0];
@@ -327,7 +327,7 @@ function ouvertesHorsTable(texte) {
     .map((s) => s.slice(0, 80));
 }
 
-test('④ every numbered OPEN piece of work appears in the "CE QUI RESTE OUVERT" table', () => {
+test.skipIf(!planPresent)('④ every numbered OPEN piece of work appears in the "CE QUI RESTE OUVERT" table', () => {
   const texte = fs.readFileSync(PLAN, 'utf8');
   assert.deepStrictEqual(
     ouvertesHorsTable(texte),
