@@ -56,13 +56,13 @@ const GLOBAL_STATE = /process\.env\.[A-Z_]+\s*=|delete process\.env|process\.chd
  * Classifies the folder's suites into `unit` / `integration`. PURE (read-only).
  * @returns {{ unit: string[], integration: string[] }}
  */
-export function classifySuites(racine, exclus) {
+export function classifySuites(root, exclus) {
   const excludedSet = new Set(exclus || []);
   const unit = [];
   const integration = [];
-  for (const f of fs.readdirSync(path.join(racine, 'test'))) {
+  for (const f of fs.readdirSync(path.join(root, 'test'))) {
     if (!f.endsWith('.test.js') || excludedSet.has(f)) continue;
-    const src = fs.readFileSync(path.join(racine, 'test', f), 'utf8');
+    const src = fs.readFileSync(path.join(root, 'test', f), 'utf8');
     (SPAWN.test(src) || GLOBAL_STATE.test(src) ? integration : unit).push('test/' + f);
   }
   return { unit, integration };

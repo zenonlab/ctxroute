@@ -64,7 +64,7 @@
 //    at the mercy of a feature-gate.
 const DEFAULT_BUDGET = 8000;
 
-const SEPARATEUR = '\n\n---\n\n';
+const SEPARATOR = '\n\n---\n\n';
 
 // Fraction of the budget beyond which we SEAL (header + end marker).
 // ⚠️ Below it, the rendering is the one from BEFORE this work, to the byte —
@@ -72,7 +72,7 @@ const SEPARATEUR = '\n\n---\n\n';
 //    approach the harness wall and the seal becomes the only guarantee against a
 //    silent truncation. Do NOT raise it to 1: the seal would arrive just at the
 //    moment when it is already too late to fit in the frame.
-const SEUIL_SCEAU_RATIO = 0.5;
+const SEAL_THRESHOLD_RATIO = 0.5;
 
 // Length of the marker (hex). Fixed: the overhead must be computable BEFORE
 // choosing the segments, otherwise the budget would not be a safe bound.
@@ -82,9 +82,9 @@ const MARKER_SIZE = 8;
 //    importable by any harness without a dependency, and PURE. It is NOT used
 //    for security — only to give a stable and deterministic marker, hence
 //    testable and reproducible in property-based testing.
-function fingerprint(texte) {
+function fingerprint(text) {
   let h = 5381;
-  for (let i = 0; i < texte.length; i++) h = ((h * 33) ^ texte.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
   // ⚠️ `>>> 0` bounds h to 32 bits ⇒ AT MOST 8 hexadecimal digits. `padStart` is
   //    therefore enough to guarantee the length, and a safety `slice` would be
   //    DEAD code (equivalent mutant: unkillable by construction). We delete
@@ -142,12 +142,12 @@ function announcement(deferred) {
   // ⚠️ BOUNDED LIST: even deduplicated, 300 docs would make 300 lines and the
   //    same suffocation. The announcement is INFORMATIVE (the queue is the
   //    guarantee) — it must never be able to eat the frame it describes.
-  const lignes = labels.slice(0, MAX_CITES).map((l) => '   - ' + l);
-  if (labels.length > MAX_CITES) lignes.push('   - … and ' + (labels.length - MAX_CITES) + ' other(s)');
+  const lines = labels.slice(0, MAX_CITES).map((l) => '   - ' + l);
+  if (labels.length > MAX_CITES) lines.push('   - … and ' + (labels.length - MAX_CITES) + ' other(s)');
   return (
     '\n\n⚠️ ' + labels.length + ' doc(s) DEFERRED — the frame is full, they follow on the next tool call(s).\n' +
     '   Nothing is lost: they are queued, in order. If your action touches them NOW, read them:\n' +
-    lignes.join('\n')
+    lines.join('\n')
   );
 }
 
@@ -155,16 +155,16 @@ function announcement(deferred) {
 // hence the best ranked — the input order CARRIES the `rank` priority, never
 // recomputed here).
 function compose(segments, k) {
-  const retenus = segments.slice(0, k);
+  const kept = segments.slice(0, k);
   const deferred = segments.slice(k);
-  const corps = retenus.map((s) => s.text).join(SEPARATEUR);
+  const body = kept.map((s) => s.text).join(SEPARATOR);
   // Marker = INTRA-block integrity token (header ⟷ foot). Two distinct blocks
   // may share a marker without consequence: nothing ever compares two blocks
   // with each other. No decorative separator ⇒ no code that no test can
   // distinguish.
-  const marker = fingerprint(corps + deferred.length);
-  const texte = header(marker) + corps + announcement(deferred) + footer(marker);
-  return { texte, marker, retenus, deferred };
+  const marker = fingerprint(body + deferred.length);
+  const text = header(marker) + body + announcement(deferred) + footer(marker);
+  return { text, marker, kept, deferred };
 }
 
 // Budget normalization — SINGLE SOURCE (authority ① of the cascade).
@@ -197,10 +197,10 @@ function effectiveBudget(budget) {
  *
  * @param {{id:string,text:string,label:string}[]} segments — ordered by decreasing priority.
  * @param {number} budget — characters. Provided by the SHELL (never guessed here).
- * @returns {{texte:string, emis:string[], deferred:{id:string,label:string}[], marker:string}}
+ * @returns {{text:string, emitted:string[], deferred:{id:string,label:string}[], marker:string}}
  *
  * ⚠️ CONSERVATION INVARIANT (proven with property-based testing): every segment
- *    that comes in goes out EITHER in `emis` OR in `deferred`. Never lost, never
+ *    that comes in goes out EITHER in `emitted` OR in `deferred`. Never lost, never
  *    duplicated. That is THE promise of the framework — a segment that would
  *    disappear here would be the silent regression everything else fights.
  */
@@ -209,7 +209,7 @@ function plan(segments, budget) {
   const max = effectiveBudget(budget);
 
   // ⚠️ No "empty list" short-circuit: the nominal path below already returns
-  //    exactly `{texte:'', emis:[], deferred:[], marker:''}` for an empty list
+  //    exactly `{text:'', emitted:[], deferred:[], marker:''}` for an empty list
   //    (empty body ⇒ always under the sealing threshold). An early-return would
   //    be DEAD code — unkillable, hence an eternal survivor.
 
@@ -222,9 +222,9 @@ function plan(segments, budget) {
   // ⚠️ The margin (half of the budget, itself already under the harness
   //    threshold) absorbs a collapse of the remote threshold without leaving us
   //    exposed.
-  const corpsSeul = list.map((s) => s.text).join(SEPARATEUR);
-  if (corpsSeul.length <= max * SEUIL_SCEAU_RATIO) {
-    return { texte: corpsSeul, emis: list.map((s) => s.id), deferred: [], marker: '' };
+  const bareBody = list.map((s) => s.text).join(SEPARATOR);
+  if (bareBody.length <= max * SEAL_THRESHOLD_RATIO) {
+    return { text: bareBody, emitted: list.map((s) => s.id), deferred: [], marker: '' };
   }
 
   // We start from EVERYTHING and remove the least prioritary until it fits.
@@ -233,8 +233,8 @@ function plan(segments, budget) {
   //    adding the announcement line. This direction always converges.
   for (let k = list.length; k >= 1; k--) {
     const r = compose(list, k);
-    if (r.texte.length <= max) {
-      return { texte: r.texte, emis: r.retenus.map((s) => s.id), deferred: r.deferred, marker: r.marker };
+    if (r.text.length <= max) {
+      return { text: r.text, emitted: r.kept.map((s) => s.id), deferred: r.deferred, marker: r.marker };
     }
   }
 
@@ -256,7 +256,7 @@ function plan(segments, budget) {
   //    depending on its net means building on what it can remove tomorrow
   //    without deprecation (cf CONTRACT, budget.md).
   const r = compose(list, 0);
-  return { texte: r.texte, emis: [], deferred: r.deferred, marker: r.marker };
+  return { text: r.text, emitted: [], deferred: r.deferred, marker: r.marker };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -318,7 +318,7 @@ function frameHeader(marker, k, n) {
 //    Both paths (single frame / last frame) therefore share `announcement()`.
 // Rendering of ONE frame. `remainder` is never non-empty except on the LAST one.
 //
-// ⚠️ `scelle=false` ⇒ ENVELOPE OMITTED. IT IS THE ENVELOPE THAT GIVES WAY, NEVER
+// ⚠️ `sealed=false` ⇒ ENVELOPE OMITTED. IT IS THE ENVELOPE THAT GIVES WAY, NEVER
 //    THE CONTENT (REAL bug of 03/08/2026: with a budget smaller than the envelope
 //    itself, NO doc went out and the message blamed `--frames N` — an invented
 //    "too small", and a message that LIES about its cause). Sealing is a
@@ -330,11 +330,11 @@ function frameHeader(marker, k, n) {
 //    arrive OUT OF ORDER, reassemble them by their number": an absurd and FALSE
 //    instruction for a lone frame. A receiver that follows a false instruction is
 //    worse than an uninformed receiver.
-function composeFrame(retenus, remainder, k, n, marker, scelle) {
-  const corps = retenus.map((s) => s.text).join(SEPARATEUR);
-  if (!scelle) return corps + announcement(remainder);
+function composeFrame(kept, remainder, k, n, marker, sealed) {
+  const body = kept.map((s) => s.text).join(SEPARATOR);
+  if (!sealed) return body + announcement(remainder);
   const tete = n >= 2 ? frameHeader(marker, k, n) : header(marker);
-  return tete + corps + announcement(remainder) + footer(marker);
+  return tete + body + announcement(remainder) + footer(marker);
 }
 
 // Header of a CHUNK of a doc (only when a doc is spread over several frames).
@@ -369,11 +369,11 @@ function chunkHeader(label, j, m) {
  * ⚠️ Cuts by CHARACTERS (the unit the harness counts), not by lines: a single
  *    line can by itself exceed a frame.
  */
-function fragment(segments, capacite) {
+function fragment(segments, capability) {
   const chunks = [];
   for (const s of segments) {
     // ── PATH 1: it fits ⇒ we do not touch it. No header, no loop.
-    if (s.text.length <= capacite) { chunks.push(s); continue; }
+    if (s.text.length <= capability) { chunks.push(s); continue; }
 
     // ── PATH 2: it does not fit ⇒ we cut. There is no path 3.
     // ⚠️ The room for the header is subtracted from the capacity (width in the
@@ -384,7 +384,7 @@ function fragment(segments, capacite) {
     //    03/08/2026).
     // ⚠️ THE CHUNK HEADER GIVES WAY WHEN IT DOES NOT FIT — same doctrine as the
     //    seal: **delivering comes before describing.** PRE-EXISTING defect
-    //    revealed on 05/08/2026: `Math.max(1, capacite - header)` guaranteed 1
+    //    revealed on 05/08/2026: `Math.max(1, capability - header)` guaranteed 1
     //    useful character, but the RENDERED chunk was then worth `header + 1` —
     //    hence BIGGER than the capacity it is supposed to respect. Nobody saw it
     //    because nothing forced that chunk to be emitted; the progress guarantee
@@ -397,32 +397,32 @@ function fragment(segments, capacite) {
     // 🛑 Do NOT "restore the header everywhere on principle": that would
     //    reintroduce a chunk exceeding its own bound, hence a frame emitted above
     //    the budget — exactly what this whole module prevents.
-    const largeurEntete = chunkHeader(s.label, 999, 999).length;
-    const avecEntete = capacite > largeurEntete;
-    const utile = avecEntete ? capacite - largeurEntete : Math.max(1, capacite);
+    const headerWidth = chunkHeader(s.label, 999, 999).length;
+    const withHeader = capability > headerWidth;
+    const usable = withHeader ? capability - headerWidth : Math.max(1, capability);
 
     // Cut on LINE BOUNDARIES (RFC 2046 § message/partial): cutting in the middle
     // of a line breaks readability for nothing. A line longer than a frame is cut
     // clean — that is the only case where we cut inside a word.
     const tranches = [];
     let courante = '';
-    for (const ligne of s.text.split('\n')) {
-      let l = ligne;
+    for (const line of s.text.split('\n')) {
+      let l = line;
       // ⚠️ PROVEN EQUIVALENT, do not try to kill it: `>=` gives EXACTLY the same
-      //    split. Reason: a line exactly `utile` long cannot merge with anything
+      //    split. Reason: a line exactly `usable` long cannot merge with anything
       //    (any addition would make it overflow), so pushing it right away or
       //    keeping it in the buffer produces the same sequence. Verified by
       //    exhaustive differential on 03/08/2026: 200 000 random inputs (line
-      //    lengths 0-8, `utile` 1-6), ZERO divergence.
+      //    lengths 0-8, `usable` 1-6), ZERO divergence.
       //    We keep `>`: it is the form that says "does not fit", the real meaning.
       // Stryker disable next-line EqualityOperator
-      while (l.length > utile) { // monster line: we chop it up
+      while (l.length > usable) { // monster line: we chop it up
         if (courante) { tranches.push(courante); courante = ''; }
-        tranches.push(l.slice(0, utile));
-        l = l.slice(utile);
+        tranches.push(l.slice(0, usable));
+        l = l.slice(usable);
       }
       const candidate = courante ? courante + '\n' + l : l;
-      if (candidate.length > utile) { tranches.push(courante); courante = l; }
+      if (candidate.length > usable) { tranches.push(courante); courante = l; }
       else courante = candidate;
     }
     if (courante) tranches.push(courante);
@@ -443,7 +443,7 @@ function fragment(segments, capacite) {
         //    in `chunkPart`. NEVER read the first one.
         id: s.id + '#' + (j + 1) + '/' + m,
         label: s.label,
-        text: (avecEntete ? chunkHeader(s.label, j + 1, m) : '') + t,
+        text: (withHeader ? chunkHeader(s.label, j + 1, m) : '') + t,
       });
     });
   }
@@ -451,13 +451,13 @@ function fragment(segments, capacite) {
 }
 
 function emptyFrame() {
-  return { texte: '', emis: [], deferred: [], marker: '' };
+  return { text: '', emitted: [], deferred: [], marker: '' };
 }
 
 /**
  * Splits into `nbFrames` frames. Each caller (process) takes ITS index.
  *
- * @returns {{texte:string, emis:string[], deferred:{id,label}[], marker:string}[]}
+ * @returns {{text:string, emitted:string[], deferred:{id,label}[], marker:string}[]}
  *          Array of length `nbFrames` (index 0 = frame 1/N).
  *
  * ⚠️ CONSERVATION INVARIANT, REINFORCED: every segment that comes in is in
@@ -506,7 +506,7 @@ function planFrames(segments, budget, nbFrames) {
 
   // Marker COMMON to the N frames: it identifies the EMISSION, not the block.
   // Derived from the whole content ⇒ identical in the N processes (determinism).
-  const marker = fingerprint(list.map((s) => s.text).join(SEPARATEUR) + n);
+  const marker = fingerprint(list.map((s) => s.text).join(SEPARATOR) + n);
 
   // Everything that exceeds the capacity of a frame is CHUNKED, never discarded.
   // Overhead computed in the WORST case (`n/n`, the widest in digits): a safe
@@ -520,19 +520,19 @@ function planFrames(segments, budget, nbFrames) {
   //    content. Without this path, a badly set budget made ZERO doc go out while
   //    blaming `--frames N` — undeliverability + false message, the two defects
   //    this module exists to make impossible.
-  const capacite = frameCapacity(max, n);
-  const scelle = capacite > 0;
-  const reste = fragment(list, scelle ? capacite : max);
+  const capability = frameCapacity(max, n);
+  const sealed = capability > 0;
+  const rest = fragment(list, sealed ? capability : max);
 
   const groupes = [];
   // Frames 1..N-1: greedy filling, priority order PRESERVED (the input order
   // CARRIES the rank — never re-sort here).
   for (let i = 0; i < n - 1; i++) {
-    const retenus = [];
-    while (reste.length > 0 && composeFrame(retenus.concat([reste[0]]), [], i + 1, n, marker, scelle).length <= max) {
-      retenus.push(reste.shift());
+    const kept = [];
+    while (rest.length > 0 && composeFrame(kept.concat([rest[0]]), [], i + 1, n, marker, sealed).length <= max) {
+      kept.push(rest.shift());
     }
-    groupes.push(retenus);
+    groupes.push(kept);
   }
 
   // LAST frame: it carries the announcement of everything that found no room.
@@ -544,15 +544,15 @@ function planFrames(segments, budget, nbFrames) {
   //    ⚠️ It is ALSO the safety net when the budget is so small that the bare
   //    announcement exceeds it: we emit the announcement anyway (saying "this is
   //    missing" is better than silence — same arbitration as `plan`).
-  let dernier = [];
-  // ⚠️ NO defensive `.slice()`: nothing mutates `reste` downstream any more, so
+  let last = [];
+  // ⚠️ NO defensive `.slice()`: nothing mutates `rest` downstream any more, so
   //    the copy would be UNOBSERVABLE — that is to say an EQUIVALENT mutant, hence
   //    an eternal survivor (measured 03/08/2026). Fleet doctrine: we ELIMINATE
   //    equivalence by construction, we NEVER disable it.
-  let differesFinaux = reste;
+  let differesFinaux = rest;
   // What we CITE in the announcement — normally identical to what we defer.
   // It departs from it only in the case of the progress guarantee below.
-  let cites = reste;
+  let cites = rest;
   // ⚠️ NO "OPTIMIZED" STARTING BOUND HERE — ATTEMPTED THEN REMOVED on
   //    05/08/2026, and it must NOT be reintroduced without a NEW measurement.
   //    The idea was to jump to the first `k` that stood a chance (raw sum of the
@@ -569,11 +569,11 @@ function planFrames(segments, budget, nbFrames) {
   // 🛑 If one day a REAL corpus makes this slow, the answer is not to put back an
   //    unobservable bound: it is to make the cost observable (measurement) then to
   //    change the ALGORITHM, not to add a shortcut that no test can distinguish.
-  for (let k = reste.length; k >= 1; k--) {
-    const essai = reste.slice(0, k);
-    const laisses = reste.slice(k);
-    if (composeFrame(essai, laisses, n, n, marker, scelle).length <= max) {
-      dernier = essai;
+  for (let k = rest.length; k >= 1; k--) {
+    const essai = rest.slice(0, k);
+    const laisses = rest.slice(k);
+    if (composeFrame(essai, laisses, n, n, marker, sealed).length <= max) {
+      last = essai;
       differesFinaux = laisses;
       cites = laisses;
       break;
@@ -594,14 +594,14 @@ function planFrames(segments, budget, nbFrames) {
   //    deliver it); a frame that delivers nothing is not.
   // 🛑 NEVER remove this path taking it for a textbook case: it is the ONLY thing
   //    that makes termination certain. Property ⑧.
-  if (dernier.length === 0 && reste.length > 0) {
-    dernier = [reste[0]];
-    differesFinaux = reste.slice(1);
+  if (last.length === 0 && rest.length > 0) {
+    last = [rest[0]];
+    differesFinaux = rest.slice(1);
     cites = [];
   }
-  groupes.push(dernier);
+  groupes.push(last);
 
-  return groupes.map((retenus, i) => {
+  return groupes.map((kept, i) => {
     const deferred = i === n - 1 ? differesFinaux : [];
     // ⚠️ WHAT WE COMPOSE ≠ WHAT WE REPORT, in the single case of forced progress:
     //    the frame does not display the announcement (no room) but the REAL
@@ -622,15 +622,15 @@ function planFrames(segments, budget, nbFrames) {
     //    do not disable it.
     // 🛑 If the progress guarantee ever disappeared, THIS line would have to come
     //    back — they are not independent.
-    if (retenus.length === 0) return emptyFrame();
+    if (kept.length === 0) return emptyFrame();
     return {
-      texte: composeFrame(retenus, aCiter, i + 1, n, marker, scelle),
-      emis: retenus.map((s) => s.id),
+      text: composeFrame(kept, aCiter, i + 1, n, marker, sealed),
+      emitted: kept.map((s) => s.id),
       deferred,
       // ⚠️ Unsealed ⇒ EMPTY marker: announcing a seal that is absent from the text
       //    would be exactly the "green that lies". What the gate reports must
       //    always describe what ACTUALLY went out.
-      marker: scelle ? marker : '',
+      marker: sealed ? marker : '',
     };
   });
 }
@@ -645,7 +645,7 @@ function planFrames(segments, budget, nbFrames) {
  *    this"), it dated from the DEAD doctrine where a segment was indivisible. The
  *    framework DELIVERS; the size of a doc is none of its business.
  * ⚠️ May be NEGATIVE (budget smaller than the envelope): the caller then UNSEALS
- *    instead of giving up — cf. `composeFrame(…, scelle)`.
+ *    instead of giving up — cf. `composeFrame(…, sealed)`.
  * ⚠️ DERIVED from the REAL header (never a copied constant): rewording the header
  *    changes the capacity, and the splitting follows automatically.
  */
@@ -723,11 +723,11 @@ function chunkPart(id) {
  * ⚠️ Returns `''` when nothing is chunked — the NORMAL case, hence badge UNCHANGED
  *    to the byte. That is what keeps the parity of the differentials.
  */
-function chunkSuffix(emis) {
-  if (!Array.isArray(emis)) return '';
+function chunkSuffix(emitted) {
+  if (!Array.isArray(emitted)) return '';
   const vus = new Set();
   const parts = [];
-  for (const id of emis) {
+  for (const id of emitted) {
     const p = chunkPart(id);
     if (!p) continue;
     const base = baseId(id);

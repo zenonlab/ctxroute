@@ -12,13 +12,13 @@ import {
   verdict, sourceTag, countInjections, EMISSIONS_THRESHOLD, BYTE_WINDOW, INJECTION_MARK,
 } from '../src/canary.js';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ⚠️ NO HARNESS DIALECT LEFT HERE (07/08/2026). This suite used to declare
 //    `MARQUE_APPEL = '"type":"tool_use"'` to simulate counting calls in the
 //    transcript. That counting was REMOVED: the official Codex doc says
-//    « the transcript format isn't a stable interface for hooks and may change
-//    over time ». The denominator now comes from our own emissions counter
+//    "the transcript format isn't a stable interface for hooks and may change
+//    over time". The denominator now comes from our own emissions counter
 //    (`emission-core`), and the noise line below only serves to prove that we
 //    do NOT count just anything.
 const bruitHarnais = () => '{"type":"tool_use","name":"Read"}\n';
@@ -194,7 +194,7 @@ test('㉘ BOUND: a very distant `]` does not fabricate a label', () => {
 test('㉘ TRUNCATION: without the `fin !== -1` guard, a cut FABRICATES a label', () => {
   // ⚠️ DISCRIMINATING FIXTURE (surviving mutant of 07/08/2026). The window cuts
   //    just AFTER a `.md` but BEFORE the `]`. Without the guard,
-  //    `slice(debut, -1)` shaves the last character and yields "docs/a.md" — a
+  //    `slice(start, -1)` shaves the last character and yields "docs/a.md" — a
   //    PERFECT label fabricated by the cut itself. The 1st fixture ("…/x.m")
   //    discriminated nothing: it already failed on the shape.
   assert.equal(countInjections('[source: docs/a.mdZ'), 0);

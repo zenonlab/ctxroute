@@ -34,10 +34,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
-const PORTE = path.join(ICI, '..', 'src', 'hooks', 'doc-inject.js');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PORTE = path.join(HERE, '..', 'src', 'hooks', 'doc-inject.js');
 // REAL file of the repo, chosen because it carries a bulky injectable doc.
-const CIBLE = path.join(ICI, '..', 'src', 'pretool-core.js');
+const TARGET = path.join(HERE, '..', 'src', 'pretool-core.js');
 
 // ⚠️ THIS SUITE DEPENDS ON THE LIVING FLEET — it SKIPS on a fresh clone.
 //    🔴 PAID FOR IMMEDIATELY (07/08/2026): written without this guard, it made
@@ -53,21 +53,21 @@ const CIBLE = path.join(ICI, '..', 'src', 'pretool-core.js');
 //    would prove that the alarm knows how to display itself, not that it triggers when
 //    it must. Better to SKIP frankly than to measure something else.
 //    Same arbitration as parts ①② of `couverture-gate` and as
-//    `porte-differential`, which skip for the same reason.
-const parcPresent = fs.existsSync(path.join(ICI, '..', 'ctxroute-config.json'))
+//    `pretool-differential`, which skip for the same reason.
+const parcPresent = fs.existsSync(path.join(HERE, '..', 'ctxroute-config.json'))
   && fs.existsSync(path.join(os.homedir(), '.claude', 'hooks', 'docs'));
 
 /** Runs the gate with an imposed budget and returns its `systemMessage`. */
-function badge({ budgetInjection, frame, frames, racine }) {
-  const cfg = JSON.parse(fs.readFileSync(path.join(ICI, '..', 'ctxroute-config.json'), 'utf8'));
+function badge({ budgetInjection, frame, frames, root }) {
+  const cfg = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'ctxroute-config.json'), 'utf8'));
   cfg.budgetInjection = budgetInjection;
-  const cfgPath = path.join(racine, `cfg-${budgetInjection}.json`);
+  const cfgPath = path.join(root, `cfg-${budgetInjection}.json`);
   fs.writeFileSync(cfgPath, JSON.stringify(cfg));
 
   const payload = JSON.stringify({
     session_id: 'alarme-' + budgetInjection,
     tool_name: 'Read',
-    tool_input: { file_path: CIBLE },
+    tool_input: { file_path: TARGET },
     // ⚠️ STABLE invocationId between the frames of the same case: without it, each
     //    process would re-decide and the plan would not be shared.
     tool_use_id: 'inv-' + budgetInjection,
@@ -76,7 +76,7 @@ function badge({ budgetInjection, frame, frames, racine }) {
   const r = spawnSync(process.execPath, [PORTE, '--frame', String(frame), '--frames', String(frames)], {
     input: payload,
     encoding: 'utf8',
-    env: { ...process.env, CTXROUTE_CONFIG_PATH: cfgPath, CTXROUTE_STATE_DIR: path.join(racine, 'state') },
+    env: { ...process.env, CTXROUTE_CONFIG_PATH: cfgPath, CTXROUTE_STATE_DIR: path.join(root, 'state') },
   });
   if (!r.stdout || r.stdout.trim() === '') return '';
   try { return JSON.parse(r.stdout).systemMessage || ''; } catch { return ''; }
@@ -89,10 +89,10 @@ function tmp() {
 }
 
 test.skipIf(!parcPresent)('SCREAMS — capacity exceeded: the LAST frame carries the alarm, with the setting to change', () => {
-  const racine = tmp();
+  const root = tmp();
   try {
     // Tiny budget + 2 frames ⇒ GUARANTEED deferral, whatever the corpus.
-    const msg = badge({ budgetInjection: 900, frame: 2, frames: 2, racine });
+    const msg = badge({ budgetInjection: 900, frame: 2, frames: 2, root });
     assert.ok(msg.includes('DEFERRED'), 'no alarm although the capacity is exceeded: ' + JSON.stringify(msg));
     // ⚠️ The message MUST carry the action: an alarm that does not say what to do
     //    sends the human off to read the code. Naming the EXACT key is the contract.
@@ -100,16 +100,16 @@ test.skipIf(!parcPresent)('SCREAMS — capacity exceeded: the LAST frame carries
     assert.ok(msg.includes('ctxroute-config.json'), 'the alarm does not say WHERE to set it: ' + msg);
     // The normal badge survives: the alarm is ADDED, it does not replace.
     assert.ok(msg.includes('📄'), 'the alarm overwrote the badge instead of being added to it: ' + msg);
-  } finally { fs.rmSync(racine, { recursive: true, force: true }); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test.skipIf(!parcPresent)('KEEPS SILENT — a NON-final frame does not repeat the alarm (12 frames = 12 screams = unreadable alarm)', () => {
-  const racine = tmp();
+  const root = tmp();
   try {
-    const msg = badge({ budgetInjection: 900, frame: 1, frames: 2, racine });
+    const msg = badge({ budgetInjection: 900, frame: 1, frames: 2, root });
     assert.ok(!msg.includes('DEFERRED'),
       'an intermediate frame screams too: with 12 declarations the alarm would appear 12 times — ' + msg);
-  } finally { fs.rmSync(racine, { recursive: true, force: true }); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test.skipIf(!parcPresent)('NEGATIVE — SUFFICIENT capacity (REAL wiring): no frame screams', () => {
@@ -129,19 +129,19 @@ test.skipIf(!parcPresent)('NEGATIVE — SUFFICIENT capacity (REAL wiring): no fr
   //    budget (Math.min with the harness bound) — giving it 60 000 does NOT
   //    increase it. First version of this test falsely RED for that
   //    reason; the mistake was in the test, not in the code.
-  const racine = tmp();
+  const root = tmp();
   try {
     // SINGLE SOURCE of the number of frames: the shipped config (the one that
     // `doctor --settings` confronts with the wiring). Never a constant here.
-    const N = JSON.parse(fs.readFileSync(path.join(ICI, '..', 'ctxroute-config.json'), 'utf8')).frames;
+    const N = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'ctxroute-config.json'), 'utf8')).frames;
     assert.ok(Number.isInteger(N) && N >= 1, '`frames` absent/invalid in the config — measurement impossible');
     const badges = [];
-    for (let k = 1; k <= N; k++) badges.push(badge({ budgetInjection: 8000, frame: k, frames: N, racine }));
+    for (let k = 1; k <= N; k++) badges.push(badge({ budgetInjection: 8000, frame: k, frames: N, root }));
     const crient = badges.filter((m) => m.includes('DEFERRED'));
     assert.deepStrictEqual(crient, [],
       'alarm emitted although the capacity is sufficient — a permanent alarm is an alarm people stop reading');
     // Counter-check: with no content emitted, the negative case would be empty hence worthless.
     assert.ok(badges.some((m) => m.includes('📄')),
       'no frame emitted anything: this negative case proves nothing — ' + JSON.stringify(badges));
-  } finally { fs.rmSync(racine, { recursive: true, force: true }); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

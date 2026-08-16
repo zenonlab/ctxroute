@@ -88,9 +88,9 @@ if (idxH !== -1 && process.argv[idxH + 1]) {
   }
   const r = conformance(payload);
   console.log('\nHARNESS CONFORMANCE — verdict: ' + r.verdict.toUpperCase());
-  for (const c of r.requis) console.log(`  ${c.present ? '✓' : '✗ REQUIRED MISSING'} ${c.capacite} — ${c.role}`);
+  for (const c of r.requis) console.log(`  ${c.present ? '✓' : '✗ REQUIRED MISSING'} ${c.capability} — ${c.role}`);
   if (r.degradations.length === 0) console.log('  ✓ every optional capability is present');
-  for (const d of r.degradations) console.log(`  ⚠ ${d.capacite} ABSENT → ${d.degradation}`);
+  for (const d of r.degradations) console.log(`  ⚠ ${d.capability} ABSENT → ${d.degradation}`);
   if (r.candidateKeys.length > 0) {
     console.log('  📎 path-SHAPED keys unknown to the profile (candidates for `pathKeys` in harness-profile.js — YOURS to decide, never guessed): ' + r.candidateKeys.join(', '));
   }
@@ -227,7 +227,7 @@ function probe() {
     // Probe 4 — write guard (invalid doc → feedback block). A mute guard lets
     // agents write dead docs without a word.
     const badDoc = path.join(fileDocsDir, 'doctorprobe-invalide.md');
-    fs.writeFileSync(badDoc, '---\nmach: typo.js\n---\ncontenu\n');
+    fs.writeFileSync(badDoc, '---\nmach: typo.js\n---\ncontent\n');
     const rg = spawnSync(process.execPath, [WRITE_GUARD], {
       input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: badDoc } }),
       encoding: 'utf8',
@@ -333,14 +333,14 @@ function probe() {
     //    we give it one. We NEVER touch the live transcript.
     const trans = (injects) => {
       const f = path.join(tmp, `transcript-${injects ? 'alive' : 'dead'}.jsonl`);
-      const lignes = [];
+      const lines = [];
       // ⚠️ These lines are no longer COUNTED since 07/08/2026 (a transcript's
       //    format is not a contract on ANY harness — Codex doc: "isn't a
       //    stable interface"): they are only there as realistic NOISE.
       //    The denominator comes from the emission counter set below.
-      for (let i = 0; i < 30; i++) lignes.push('{"type":"tool_use","id":"t' + i + '"}');
-      if (injects) lignes.push('{"text":"[source: .claude/hooks/docs/probe.md]"}');
-      fs.writeFileSync(f, lignes.join('\n') + '\n');
+      for (let i = 0; i < 30; i++) lines.push('{"type":"tool_use","id":"t' + i + '"}');
+      if (injects) lines.push('{"text":"[source: .claude/hooks/docs/probe.md]"}');
+      fs.writeFileSync(f, lines.join('\n') + '\n');
       return f;
     };
     const passeCanari = (injects) => {
@@ -503,25 +503,25 @@ function checkWiring(settingsPath) {
   // ⚠️ Key absent from the config = no opinion, no blame: nobody is forced to
   //    declare their bandwidth (a language does not impose a policy — same
   //    doctrine as `skillsWithoutPerimeter`).
-  let paquetsVoulus = null;
+  let wantedFrames = null;
   try {
     const cfg = require('../src/collect-core').loadConfig();
-    if (cfg && Number.isInteger(cfg.frames) && cfg.frames >= 1) paquetsVoulus = cfg.frames;
+    if (cfg && Number.isInteger(cfg.frames) && cfg.frames >= 1) wantedFrames = cfg.frames;
   } catch { /* unreadable config: the config gate says so, not this one */ }
-  if (paquetsVoulus !== null) {
-    check(`the wiring honours the declared bandwidth (frames: ${paquetsVoulus})`,
-      nAttendu === paquetsVoulus && porte.length === paquetsVoulus,
-      `ctxroute-config.json asks for ${paquetsVoulus} frame(s), settings.json wires ${porte.length} (--frames ${nAttendu}). The harness obeys settings.json: the REAL capacity is ${porte.length}, not ${paquetsVoulus}. Realign the two — this is exactly the silent divergence of 05/08/2026.`);
+  if (wantedFrames !== null) {
+    check(`the wiring honours the declared bandwidth (frames: ${wantedFrames})`,
+      nAttendu === wantedFrames && porte.length === wantedFrames,
+      `ctxroute-config.json asks for ${wantedFrames} frame(s), settings.json wires ${porte.length} (--frames ${nAttendu}). The harness obeys settings.json: the REAL capacity is ${porte.length}, not ${wantedFrames}. Realign the two — this is exactly the silent divergence of 05/08/2026.`);
   }
 
   const indices = porte
     .map((c) => /--frame\s+(\d+)/.exec(c))
     .map((m) => (m ? Number(m[1]) : 0))
     .sort((a, b) => a - b);
-  const attendus = Array.from({ length: nAttendu }, (_, i) => i + 1);
+  const expectedOnes = Array.from({ length: nAttendu }, (_, i) => i + 1);
   check('the frame indices cover 1..N, with no gap and no duplicate',
-    JSON.stringify(indices) === JSON.stringify(attendus),
-    `Declared --frame indices: [${indices.join(', ')}] instead of [${attendus.join(', ')}]. A missing index = a frame never emitted; a duplicated index = content delivered twice. Both are SILENT.`);
+    JSON.stringify(indices) === JSON.stringify(expectedOnes),
+    `Declared --frame indices: [${indices.join(', ')}] instead of [${expectedOnes.join(', ')}]. A missing index = a frame never emitted; a duplicated index = content delivered twice. Both are SILENT.`);
   for (const c of porte) {
     const m = /([A-Za-z]:[\\/][^"]*?|\/[^"]*?)doc-inject\.js/.exec(c);
     if (!m) continue;
@@ -674,9 +674,9 @@ function checkCodexWiring(hooksPath) {
   const blocs = raw.split(/(?="?command"?\s*[=:])/);
   for (const emitter of ['codex-doc-inject.js', 'session-inject.js']) {
     if (!wired(emitter)) continue;
-    const bloc = blocs.find((b) => b.includes(emitter));
+    const block = blocs.find((b) => b.includes(emitter));
     check(`${emitter} declares additionalContextLimit = 0 (FULL delivery)`,
-      Boolean(bloc) && /additionalContextLimit"?\s*[=:]\s*0(?!\d)/.test(bloc),
+      Boolean(block) && /additionalContextLimit"?\s*[=:]\s*0(?!\d)/.test(block),
       `${emitter} is wired WITHOUT additionalContextLimit = 0: Codex applies its default of 2500 tokens, `
       + 'writes the surplus to disk and sends only a PREVIEW to the model, in SILENCE. '
       + 'Large docs and skills therefore never arrive whole on the Codex side.');

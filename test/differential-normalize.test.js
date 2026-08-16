@@ -6,7 +6,7 @@
 //    function can swallow a REAL regression, and both
 //    safety nets would stay GREEN on it. That is the only risk of the module, and these
 //    four parts are what holds it.
-// ⚠️ Same discipline as the negative-check of `desceller()` in
+// ⚠️ Same discipline as the negative-check of `unseal()` in
 //    `pretool-differential.test.js` — NEVER ship one without the other.
 import { test } from 'vitest';
 import assert from 'node:assert';
@@ -17,7 +17,7 @@ const NU = 'doc body\n[source: .claude/hooks/docs/a.md]';
 test('withoutOrdinal: removes the ordinal placed after the source tag, and NOTHING else', () => {
   assert.strictEqual(withoutOrdinal(NU + ' [DOC 2/5]'), NU);
   // Several documents in the same context: all cleaned.
-  const deux = NU + ' [DOC 1/2]\n\n---\n\nautre\n[source: docs/mcp/odoo.md] [DOC 2/2]';
+  const deux = NU + ' [DOC 1/2]\n\n---\n\nother\n[source: docs/mcp/odoo.md] [DOC 2/2]';
   assert.strictEqual(withoutOrdinal(deux).includes('[DOC '), false);
   assert.strictEqual(withoutOrdinal(deux).includes('[source: docs/mcp/odoo.md]'), true,
     'the source tag MUST survive — it is the path the agent follows to fix the doc');

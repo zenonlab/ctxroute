@@ -3,8 +3,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 //
 // 🔴 BORN OF AN INVARIANT ASSERTED BUT NEVER GUARDED (audit of 14/08/2026).
-//    The porting contract declares « ABSOLUTELY FORBIDDEN to modify `sources/` for
-//    a port », and the dependency-cruiser rule `sources-must-not-know-the-harness`
+//    The porting contract declares "ABSOLUTELY FORBIDDEN to modify `sources/` for
+//    a port", and the dependency-cruiser rule `sources-must-not-know-the-harness`
 //    was supposed to hold it. **It only looks at the IMPORTS** — it cannot
 //    see a LITERAL. Measured: `sources/file.js` carried `'Bash'`, `apply_patch`,
 //    `file_path`, `remotePath` hard-coded. And `apply_patch` is a **CODEX** name:
@@ -27,13 +27,13 @@ import path from 'node:path';
 import { DEFAULT_PROFILE } from '../src/harness-profile.js';
 
 const RACINE = path.join(import.meta.dirname, '..');
-// The CORE: pure modules that answer « which docs? » without knowing anything about the harness.
+// The CORE: pure modules that answer "which docs?" without knowing anything about the harness.
 const NOYAU = ['src/sources/file.js', 'src/sources/tool.js', 'src/sources/mcp.js', 'src/sources/skill.js', 'src/sources/session.js', 'src/gate.js', 'src/budget.js', 'src/loader.js', 'src/collisions.js', 'src/lint.js'];
 
 // The DIALECT VOCABULARY = every value of the profile, flattened.
 const dialecte = Object.values(DEFAULT_PROFILE).flat();
 
-const lire = (f) => fs.readFileSync(path.join(RACINE, f), 'utf8');
+const read = (f) => fs.readFileSync(path.join(RACINE, f), 'utf8');
 // ⚠️ We strip the COMMENTS: a code doc has the RIGHT (and the duty) to
 //    name the dialect in order to explain why it is no longer there. It is the CODE
 //    that must no longer carry it.
@@ -56,27 +56,27 @@ test('㊽ ANTI-DORMANCY — the profile really declares a vocabulary, and the sc
   //    analysing NOTHING. A defect already paid for 3 times in this repo.
   assert.ok(dialecte.length >= 4, `suspicious dialect vocabulary: ${dialecte.length}`);
   assert.ok(dialecte.every((d) => typeof d === 'string' && d.length > 0));
-  for (const f of NOYAU) assert.ok(lire(f).length > 200, `empty or unreadable core file: ${f}`);
+  for (const f of NOYAU) assert.ok(read(f).length > 200, `empty or unreadable core file: ${f}`);
 });
 
 test('㊽ NO hard-coded harness name in the CORE (derived from the profile)', () => {
-  const fautes = [];
+  const faults = [];
   for (const f of NOYAU) {
-    const code = codeSeul(lire(f));
-    for (const mot of dialecte) {
+    const code = codeSeul(read(f));
+    for (const word of dialecte) {
       // The `require` of the profile is the ONLY legitimate mention: it cites no value.
-      if (code.includes(`'${mot}'`) || code.includes(`"${mot}"`)) fautes.push(`${f} → ${mot}`);
+      if (code.includes(`'${word}'`) || code.includes(`"${word}"`)) faults.push(`${f} → ${word}`);
     }
   }
-  assert.deepStrictEqual(fautes, [],
+  assert.deepStrictEqual(faults, [],
     'Harness dialect REINTRODUCED into the core. Porting a harness = editing `harness-profile.js`, NEVER these files.');
 });
 
 test('㊽ NEGATIVE-CHECK — the gate BITES on a reintroduction (IN-MEMORY sabotage)', () => {
   // ⚠️ IN-MEMORY sabotage, never on a real file: a sabotage on disk
   //    brought down 38 tests of other suites on 03/08/2026.
-  const sabote = codeSeul(`const x = '${dialecte[0]}';`);
-  assert.ok(dialecte.some((m) => sabote.includes(`'${m}'`)), 'the gate would NOT detect a reintroduction');
+  const sabotaged = codeSeul(`const x = '${dialecte[0]}';`);
+  assert.ok(dialecte.some((m) => sabotaged.includes(`'${m}'`)), 'the gate would NOT detect a reintroduction');
   // And it does NOT bite on a mention in a COMMENT (otherwise every code doc would turn red).
   const commentaire = codeSeul(`// we no longer test '${dialecte[0]}' here\nconst y = 1;`);
   assert.ok(!dialecte.some((m) => commentaire.includes(`'${m}'`)), 'a comment must NEVER turn red');

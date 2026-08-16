@@ -95,15 +95,15 @@ test.skipIf(!present)('GATE: the declared limit and the passed budget are the SA
 // ⚠️ IN-MEMORY SABOTAGE, never on the real file: it is a MACHINE POLICY in
 //    production, read by every Codex agent running.
 test('NEGATIVE: a divergence is DETECTED (gate not inert)', () => {
-  const sain = [
+  const healthy = [
     '[[hooks.PreToolUse.hooks]]',
     "command = 'node x/codex-doc-inject.js --budget 0'",
     'additionalContextLimit = 0',
   ].join('\n');
-  const divergent = sain.replace('--budget 0', '--budget 5000');
-  const muet = sain.replace(' --budget 0', '');
+  const divergent = healthy.replace('--budget 0', '--budget 5000');
+  const muet = healthy.replace(' --budget 0', '');
 
-  assert.strictEqual(emitters(blocs(sain)).filter((b) => b.budget !== b.limite).length, 0,
+  assert.strictEqual(emitters(blocs(healthy)).filter((b) => b.budget !== b.limite).length, 0,
     'witness: a coherent wiring does not go red');
   assert.strictEqual(emitters(blocs(divergent)).filter((b) => b.budget !== b.limite).length, 1,
     'SABOTAGE NOT DETECTED: two different numbers would go green.');

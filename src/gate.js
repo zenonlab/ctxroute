@@ -11,7 +11,7 @@
 //    same docs, same instants.
 //    Sealed by pretool-differential.test.js (spawn old vs new engine).
 //
-// ⚠️ The per-DOC dedup (smart/once modes, « foreign tools » counters) is
+// ⚠️ The per-DOC dedup (smart/once modes, "foreign tools" counters) is
 //    the whole reason for the merge — but it only ACTIVATES when a doc moves
 //    out of `dumb`, a human job after the switchover (decision 8 of the plan).
 // ═══════════════════════════════════════════════════════════════════════
@@ -25,7 +25,7 @@ const { DRIFT_UNITS, MODES } = require('./frontmatter');
 //    existed for it). NEVER reintroduce it: ① `ask` escalates to the HUMAN, the
 //    exact opposite of the 0-human that founds this framework; ② Codex does not
 //    support it (silent degradation ⇒ one same word, two meanings depending on the harness);
-//    ③ `enforce` already covers « stop a gesture », automatically and
+//    ③ `enforce` already covers "stop a gesture", automatically and
 //    identically on both harnesses — two words for one need = anti-synonym law.
 //    It had been at `false` in the config since the switchover: dead, and nobody saw it.
 
@@ -33,7 +33,7 @@ const { DRIFT_UNITS, MODES } = require('./frontmatter');
 // CASCADE OF AUTHORITIES — 4 LEVELS, A SINGLE POINT (here). 04/08/2026.
 // ═══════════════════════════════════════════════════════════════════════
 //   ① entry (frontmatter of the doc / entry of the skill registry) = last word
-//   ② defaults.{source}  (JSON) — « every doc of THIS category »
+//   ② defaults.{source}  (JSON) — "every doc of THIS category"
 //   ③ global mode/defaultThreshold/defaultDriftUnit (JSON) — the whole corpus
 //   ④ FRAMEWORK default, hard-coded (exists even without any JSON)
 //
@@ -45,7 +45,7 @@ const { DRIFT_UNITS, MODES } = require('./frontmatter');
 //    shell): a source POSES the entry, it resolves NOTHING. It is the rule
 //    that already existed for driftUnit — extended to mode and threshold.
 //
-// ⚠️ DELIBERATE ASYMMETRY, measured, NOT to be « fixed »: the `skill` source
+// ⚠️ DELIBERATE ASYMMETRY, measured, NOT to be "fixed": the `skill` source
 //    SKIPS level ③ and its framework default is `once` (the docs: `smart`).
 //    A skill is project knowledge — loading it once is enough; a doc is
 //    a reminder of a gesture. Uniformising them would flip ALL the skills at
@@ -65,28 +65,28 @@ function defaultsOf(config, source) {
 
 // Effective mode for ONE doc — full cascade above.
 function modeForDoc(config, decl, source) {
-  const regles = rulesOf(source);
+  const rules = rulesOf(source);
   const cat = defaultsOf(config, source);
   if (decl && MODES.includes(decl.mode)) return decl.mode;
   if (MODES.includes(cat.mode)) return cat.mode;
-  if (regles.global && config && MODES.includes(config.mode)) return config.mode;
-  return regles.mode;
+  if (rules.global && config && MODES.includes(config.mode)) return config.mode;
+  return rules.mode;
 }
 
 // Effective threshold for ONE doc: decl.threshold (POSED by a source from the
 // frontmatter, never resolved by it) > defaults.{source} > global
 // defaultThreshold > 4.
 // 🛑 THIS COMMENT LEGITIMISED A BUG FOR WEEKS (fixed 09/08/2026).
-//    It said « posed by a SOURCE — e.g. MCP, resolved from
-//    servers.{name}.threshold », describing a source that RESOLVES. That is
+//    It said "posed by a SOURCE — e.g. MCP, resolved from
+//    servers.{name}.threshold", describing a source that RESOLVES. That is
 //    exactly what `sources/mcp.js` did: it ALWAYS posed a value,
 //    so the cascade stopped at level ① and `defaults.mcp` was INERT.
 //    A source POSES what the author declared; it NEVER has the right to
 //    fill in a default — that is what lets the following levels exist.
 // ⚠️ COMMENT FIXED ON 29/07/2026 — it asserted the OPPOSITE of reality and
-//    cost a doubt in session (« will my doc be rejected? »).
-//    It said: « FILE docs have no threshold in their frontmatter
-//    (unknown key = frontmatter rejected) ». That was true BEFORE 17/07/2026;
+//    cost a doubt in session ("will my doc be rejected?").
+//    It said: "FILE docs have no threshold in their frontmatter
+//    (unknown key = frontmatter rejected)". That was true BEFORE 17/07/2026;
 //    since then, `threshold` is an ADMITTED key of the file frontmatter (validated by
 //    frontmatter.js: integer ≥ 1) and therefore does reach here in `decl`.
 //    VERIFIED live: `{mode:'smart', threshold:5}` → validate() = [] and
@@ -119,10 +119,10 @@ function driftUnitForDoc(config, decl, source) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL FILTER BY TARGET (52, 15/08/2026) — « NEVER inject on these tools »
+// GLOBAL FILTER BY TARGET (52, 15/08/2026) — "NEVER inject on these tools"
 // ═══════════════════════════════════════════════════════════════════════
 //
-// ⚠️ GENERALISES `filterMode`/`filterList` from « MCP servers » to « TARGET »
+// ⚠️ GENERALISES `filterMode`/`filterList` from "MCP servers" to "TARGET"
 //    (server OR exact tool name OR wildcard `*`) — SAME WORDS, zero vocabulary
 //    created. The asymmetry was class ㊴: a global filter existed for the
 //    servers and not for the tools, without justification.
@@ -157,14 +157,14 @@ function excludedTargetsFor(config, source, toolName) {
 // ═══════════════════════════════════════════════════════════════════════
 //
 // ⚠️ WHY THIS WORD EXISTS — a fact from the official doc, measured on 04/08/2026:
-//    the `additionalContext` of a PreToolUse arrives « next to the tool result »,
+//    the `additionalContext` of a PreToolUse arrives "next to the tool result",
 //    therefore AFTER the execution. An injection CANNOT prevent the gesture
 //    it targets, it protects the next one. The founding incident of the framework
 //    (a real payment click) would NOT have been avoided by an injected doc.
 //    Only a refusal does that. It is the only hole the cadence did not plug.
 //
-// ⚠️ IT REMAINS THE EXCEPTION, NEVER THE RULE: « the injection informs, never
-//    blocks » remains the DEFAULT (absent ⇒ behaviour as before, byte for byte).
+// ⚠️ IT REMAINS THE EXCEPTION, NEVER THE RULE: "the injection informs, never
+//    blocks" remains the DEFAULT (absent ⇒ behaviour as before, byte for byte).
 //    A convenience reminder that blocks makes the system unbearable, and a
 //    system one endures ends up unplugged — we would lose ALL the rules.
 //
@@ -202,15 +202,15 @@ function enforceForDoc(config, decl, source) {
 //    identically: TWO exported names for ONE code path, that is to say the
 //    anti-synonym law violated in the very file that embodies the language. No
 //    mutant could catch it (a pass-through has nothing to mutate). NEVER
-//    reintroduce it: « to block » is not one more semantics than
-//    « enforce », it is the same fact said twice.
+//    reintroduce it: "to block" is not one more semantics than
+//    "enforce", it is the same fact said twice.
 
 /**
  * THE gate's decision. PURE — mutates NO argument.
  *
  * @param {object} config  - ctxroute-config.json (mode, defaultThreshold, defaults…)
  * @param {object} decls   - { [doc]: frontmatter } of the WHOLE corpus (modes of the
- *                           « foreign » docs needed by the smart counters).
+ *                           "foreign" docs needed by the smart counters).
  * @param {string[]} matched - docs matched by the source, ORDER = injection order.
  * @param {object} state   - { [doc]: { seen, sinceLastCall, turn? } } BEFORE this call.
  * @param {number} [turnCount] - counter of the session's TURNS (turn-count.js
@@ -236,7 +236,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    identically (parity: the differentials see nothing change).
   const src = (doc) => (owners ? owners[doc] : undefined);
   // ── GLOBAL FILTER BY TARGET (52): the discarded docs LEAVE the gesture ──
-  //    Neither injected nor « recalled » (their counter is not reset) —
+  //    Neither injected nor "recalled" (their counter is not reset) —
   //    exactly as if they had not matched; the call therefore advances the
   //    foreign counters as before (historical contract of the server filter).
   //    RETURNED in `filteredOut`: a filter that cuts silently = a mute hole.
@@ -247,7 +247,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   let changed = false;
 
   // ⚠️ INDEPENDENT COUNTERS PER DOC (same doctrine as legacy-mcp-inject.js per
-  //    server): this call is « foreign » to any doc already seen and NOT matched
+  //    server): this call is "foreign" to any doc already seen and NOT matched
   //    here — its counter only advances if ITS mode is smart.
   // ⚠️ NO `entry.sinceLastCall || 0` nor `entry.seen` guard here: the state
   //    entries are ALWAYS written by decide() as { seen: true, sinceLastCall: n }
@@ -267,7 +267,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   }
 
   // Per-DOC decision on the state from BEFORE (unaffected by this call), then
-  // reset of its counter — matched = « recalled », injected or not.
+  // reset of its counter — matched = "recalled", injected or not.
   const inject = [];
   // Docs that REFUSE the gesture on THIS call (alternation: cf below).
   const blocked = [];
@@ -290,7 +290,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
     //    the mode; then the cadence resumes its normal course.
     //    That, and nothing else, is what makes an infinite loop impossible —
     //    so `dumb` becomes legitimate too (block, pass, block, pass).
-    // ⚠️ Do not confuse it with « the doc is no longer injected »: in `dumb` it
+    // ⚠️ Do not confuse it with "the doc is no longer injected": in `dumb` it
     //    is re-injected on every call, only the REFUSAL alternates.
     if (injects && enforceForDoc(config, decls[doc], src(doc)) && !(entry && entry.denied === true)) {
       blocked.push(doc);
@@ -304,7 +304,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
     //    byte for byte (no write in dumb) — parity intact, differentials green.
     const enf = enforceForDoc(config, decls[doc], src(doc));
     if (modeForDoc(config, decls[doc], src(doc)) !== 'dumb' || enf) {
-      // `turn` memorised at EVERY recall = « last delivery » timestamp,
+      // `turn` memorised at EVERY recall = "last delivery" timestamp,
       // a SINGLE state shape (never 2 forms depending on the unit). In pure
       // 'tool' unit (turnCount=0 constant), `entry.turn !== turnCount` NEVER
       // triggers an extra write — perf parity intact.
@@ -334,7 +334,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
 // protect-files.js's docLabel (FIRST [source: …] tag otherwise markdown title,
 // '' if nothing). ⚠️ Parity before correctness: even though the FIRST marker may come
 // from the CONTENT of a doc (61 measured), we keep the old behaviour —
-// « improving » the label = a behaviour change shipped on the sly (decision 8).
+// "improving" the label = a behaviour change shipped on the sly (decision 8).
 function docLabel(doc) {
   // ⚠️ No `|| ''` before String(): String(null) = 'null' matches neither tag nor
   // title → same output '' — the guard would be an equivalent mutant.
@@ -344,14 +344,14 @@ function docLabel(doc) {
   // ⚠️ MANDATORY SPACE AFTER THE `#` — REAL BUG fixed on 06/08/2026.
   //    The old form `^#\s*(.+)$` accepted a `#` glued to the text, so it
   //    took the SEAL FOOTER `###FIN:7426e64b###` for a title: the badge
-  //    of a split doc displayed « 📄 doc: ##FIN:7426e64b### » instead of the
+  //    of a split doc displayed "📄 doc: ##FIN:7426e64b###" instead of the
   //    document's name. The first piece does not carry the `[source:]` tag
   //    (it lives at the END of the document), so this fallback was genuinely
   //    reached — it was not a theoretical case.
-  // ⚠️ COMPLIANT WITH COMMONMARK, this is not a home-made choice: « the opening
+  // ⚠️ COMPLIANT WITH COMMONMARK, this is not a home-made choice: "the opening
   //    sequence of # characters must be followed by spaces or tabs, or by the
-  //    end of line ». `###FIN:xxx###` is therefore NOT an ATX heading. NEVER
-  //    loosen this regex to « catch more titles »: it would once again
+  //    end of line". `###FIN:xxx###` is therefore NOT an ATX heading. NEVER
+  //    loosen this regex to "catch more titles": it would once again
   //    catch our own transport markers.
   const title = s.match(/^#{1,6}[ \t]+(.+)$/m);
   return title ? title[1].slice(0, 40) : '';

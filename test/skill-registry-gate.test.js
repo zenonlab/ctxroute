@@ -13,7 +13,7 @@
 //    variant of THIS gate pointing at Codex's skill store.
 //
 // ⚠️ Skipped on a fresh clone / CI (skills dir absent), like
-//    source-drift-gate, porte-differential, loader-differential: the harness
+//    source-drift-gate, pretool-differential, loader-differential: the harness
 //    fleet is not there.
 // ═══════════════════════════════════════════════════════════════════════
 

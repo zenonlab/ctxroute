@@ -45,31 +45,31 @@ function runLint(parc, args = []) {
 }
 
 /**
- * Derives the frontmatter that a case's `regles` describe for the doc `rel`.
+ * Derives the frontmatter that a case's `rules` describe for the doc `rel`.
  * ⚠️ MECHANICAL translation, never a judgement: the cases keep expressing their
  *    intent in "rules", the fleet materialises them where the engine now reads
  *    them — inside the doc itself.
  * A doc targeted by NO rule → no frontmatter: that is the "dead doc" case, and
  * it must stay detectable.
  */
-function avecFrontmatter(rel, contenu, regles) {
-  const miennes = regles.filter((r) => r.doc === rel);
-  if (!miennes.length) return contenu;
+function avecFrontmatter(rel, content, rules) {
+  const miennes = rules.filter((r) => r.doc === rel);
+  if (!miennes.length) return content;
   const patterns = miennes.map((r) => r.pattern).filter((p) => typeof p === 'string');
-  if (!patterns.length) return contenu;
+  if (!patterns.length) return content;
   const decl = { match: patterns.length === 1 ? patterns[0] : patterns };
   const p0 = miennes[0];
   if (Array.isArray(p0.scope) && p0.scope.length) decl.scope = p0.scope;
   if (Array.isArray(p0.exclude) && p0.exclude.length) decl.exclude = p0.exclude;
-  const lignes = Object.entries(decl).map(([k, v]) => `${k}: ${JSON.stringify(v)}`);
-  return `---\n${lignes.join('\n')}\n---\n${contenu}`;
+  const lines = Object.entries(decl).map(([k, v]) => `${k}: ${JSON.stringify(v)}`);
+  return `---\n${lines.join('\n')}\n---\n${content}`;
 }
 
 /**
  * Builds a minimal but REALISTIC fake fleet (same shapes as the real one:
  * object root `{rules:[…]}`, docs under `docs/`, `mcpServers` in the home).
  */
-function faireParc({ regles = [], docs = {}, mcpServers = null } = {}) {
+function faireParc({ rules = [], docs = {}, mcpServers = null } = {}) {
   const hooks = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-parc-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-home-'));
   fs.mkdirSync(path.join(hooks, 'docs'), { recursive: true });
@@ -77,13 +77,13 @@ function faireParc({ regles = [], docs = {}, mcpServers = null } = {}) {
   //    It is NO LONGER the lint's rule source (27/07/2026) — the triggers live in EACH
   //    doc's frontmatter. The JSON served the OLD engine (protect-files.js), replaced on
   //    17/07; nothing to do with Codex.
-  fs.writeFileSync(path.join(hooks, 'protected-paths.json'), JSON.stringify({ rules: regles }));
-  for (const [rel, contenu] of Object.entries(docs)) {
+  fs.writeFileSync(path.join(hooks, 'protected-paths.json'), JSON.stringify({ rules: rules }));
+  for (const [rel, content] of Object.entries(docs)) {
     const p = path.join(hooks, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
     // A case already supplying its frontmatter (`---` at the top) is authoritative:
     // that is what it wants to exercise. Otherwise we derive the one its rules describe.
-    fs.writeFileSync(p, contenu.startsWith('---') ? contenu : avecFrontmatter(rel, contenu, regles));
+    fs.writeFileSync(p, content.startsWith('---') ? content : avecFrontmatter(rel, content, rules));
   }
   if (mcpServers) fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers }));
   return { hooks, home, nettoyer: () => { for (const d of [hooks, home]) fs.rmSync(d, { recursive: true, force: true }); } };
@@ -91,7 +91,7 @@ function faireParc({ regles = [], docs = {}, mcpServers = null } = {}) {
 
 // A reference HEALTHY fleet: 1 doc, 1 rule targeting it.
 const SAIN = {
-  regles: [{ doc: 'docs/lock.md', pattern: 'lock.js' }],
+  rules: [{ doc: 'docs/lock.md', pattern: 'lock.js' }],
   docs: { 'docs/lock.md': '# lock\n\nNever reimplement mkdirSync ad hoc.\n' },
 };
 
@@ -116,7 +116,7 @@ const SAIN = {
 //    fleet". Mistake made twice on 15/07/2026. Exit 2 = distinct from 1: "I
 //    could not measure" is NOT "I measured and it is healthy".
 {
-  const parc = faireParc({ regles: [], docs: SAIN.docs });
+  const parc = faireParc({ rules: [], docs: SAIN.docs });
   try {
     const r = runLint(parc);
     ok('NO rule loaded → exit 2 (hollow harness ≠ healthy fleet)', r.status === 2);
@@ -149,7 +149,7 @@ const SAIN = {
 //    would sabotage itself — exactly the mechanism that made the old case inert.
 {
   const parc = faireParc({
-    regles: [...SAIN.regles, { doc: 'docs/ignoree.md', pattern: 'ignoree.js' }],
+    rules: [...SAIN.rules, { doc: 'docs/ignoree.md', pattern: 'ignoree.js' }],
     docs: { ...SAIN.docs, 'docs/ignoree.md': '---\nmode: dumb\n---\n\n# ignored\n\nNo trigger.\n' },
   });
   try {
@@ -164,7 +164,7 @@ const SAIN = {
 // that NOTHING targets — never injected, and nobody sees it.
 {
   const parc = faireParc({
-    regles: SAIN.regles,
+    rules: SAIN.rules,
     docs: { ...SAIN.docs, 'docs/orpheline.md': '# dead doc\n\nNever injected.\n' },
   });
   try {
@@ -190,7 +190,7 @@ const SAIN = {
 //    then go red, and that is exactly its role.
 {
   const parc = faireParc({
-    regles: [...SAIN.regles, { doc: 'docs/disparue.md', pattern: 'disparu.js' }],
+    rules: [...SAIN.rules, { doc: 'docs/disparue.md', pattern: 'disparu.js' }],
     docs: SAIN.docs, // `docs/disparue.md` does NOT exist: the rule cannot be born
   });
   try {
@@ -206,7 +206,7 @@ const SAIN = {
 //    That is the world AFTER the migration, proven BEFORE switching over.
 {
   const parc = faireParc({
-    regles: SAIN.regles, // rule on lock.md only — nothing targets moderne.md
+    rules: SAIN.rules, // rule on lock.md only — nothing targets moderne.md
     docs: {
       ...SAIN.docs,
       'docs/moderne.md': '---\nmatch: moderne.js\n---\n\n# modern\n\nInvariant.\n',
@@ -227,13 +227,13 @@ const SAIN = {
   //    NO trigger at all, and the liveness probe (exit 2) would answer — we would
   //    no longer prove anything about the mute doc. The real fleet has 300 live docs.
   const parc = faireParc({
-    regles: [
+    rules: [
       { doc: 'docs/moitie.md', pattern: 'moitie.js' },
-      { doc: 'docs/saine.md', pattern: 'saine.js' },
+      { doc: 'docs/healthyOne.md', pattern: 'healthyOne.js' },
     ],
     docs: {
       'docs/moitie.md': '---\ntitle: nice title\n---\n\n# half migrated\n',
-      'docs/saine.md': '# healthy\n\nA properly declared doc.\n',
+      'docs/healthyOne.md': '# healthy\n\nA properly declared doc.\n',
     },
   });
   try {
@@ -264,14 +264,14 @@ const SAIN = {
 
 // ── Case 9 — `--level` must NEVER silently smother an error ──────────
 // ⚠️ `off` switches everything off, that is a DECLARED choice (see lint.js). But
-//    a typo (`--level erreur`) must fall back on the default, NEVER on off.
+//    a typo (`--level error`) must fall back on the default, NEVER on off.
 {
   const parc = faireParc({
-    regles: SAIN.regles,
+    rules: SAIN.rules,
     docs: { ...SAIN.docs, 'docs/orpheline.md': '# dead\n' },
   });
   try {
-    const r = runLint(parc, ['--level', 'erreur-typo']);
+    const r = runLint(parc, ['--level', 'error-typo']);
     ok('--level with a TYPO → default, the error screams anyway (exit 1)', r.status === 1);
   } finally { parc.nettoyer(); }
 }

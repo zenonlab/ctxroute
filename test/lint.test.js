@@ -33,7 +33,7 @@ test('list: single source of the "array or nothing" guard', () => {
   }
 });
 
-const doc = (chemin, declaration) => ({ chemin, declaration });
+const doc = (filePath, declaration) => ({ filePath, declaration });
 const codes = (c) => c.map((x) => x.code);
 
 // ── Contract ─────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ test('doc without a trigger = ERROR (14 measured out of 306 on 15/07)', () => {
   assert.strictEqual(c.length, 1);
   assert.strictEqual(c[0].niveau, 'error');
   assert.strictEqual(c[0].code, 'invalid-declaration');
-  assert.strictEqual(c[0].cible, 'docs/orpheline.md');
+  assert.strictEqual(c[0].target, 'docs/orpheline.md');
 });
 
 test('doc with `inject: never` = SILENT AND VALID (declared silence)', () => {
@@ -94,13 +94,13 @@ test('delegation: `inject: never` + a trigger = contradiction reported', () => {
 });
 
 test('doc without a usable path = ignored, never a crash', () => {
-  assert.deepStrictEqual(analyze({ docs: [{ declaration: {} }, null, { chemin: 42 }] }), []);
+  assert.deepStrictEqual(analyze({ docs: [{ declaration: {} }, null, { filePath: 42 }] }), []);
   // ⚠️ SAME GUARD, ON THE `hardcoded-source-tag` CHECK (surviving mutant killed on
   //    08/08/2026). Each loop carries ITS OWN totality guard: a non-string
-  //    `chemin` with the flag raised must neither crash nor produce a finding
+  //    `filePath` with the flag raised must neither crash nor produce a finding
   //    whose TARGET would be unusable.
   assert.deepStrictEqual(
-    analyze({ docs: [null, { chemin: 42, tagSourceEnDur: true }, { tagSourceEnDur: true }] }), []);
+    analyze({ docs: [null, { filePath: 42, tagSourceEnDur: true }, { tagSourceEnDur: true }] }), []);
 });
 
 // ── ERROR: phantom rule (exact mirror) ───────────────────────────────
@@ -117,14 +117,14 @@ test('phantom rule = ERROR (0 measured on 15/07 — this check maintains the 0)'
 //    GREEN even with a dead channel. It is the exact gesture of someone
 //    INVESTIGATING a dead injection that made the witness lie.
 test('hard-pasted [source:] tag = ERROR (the canary would count it as an injection that arrived)', () => {
-  const c = analyze({ docs: [{ chemin: 'docs/a.md', declaration: { match: 'x.js' }, tagSourceEnDur: true }] });
+  const c = analyze({ docs: [{ filePath: 'docs/a.md', declaration: { match: 'x.js' }, tagSourceEnDur: true }] });
   assert.deepStrictEqual(codes(c), ['hardcoded-source-tag']);
   assert.strictEqual(c[0].niveau, 'error');
-  assert.strictEqual(c[0].cible, 'docs/a.md');
+  assert.strictEqual(c[0].target, 'docs/a.md');
 });
 
 test('doc WITHOUT a hard-pasted tag = silence (the case of 389 docs out of 393)', () => {
-  const c = analyze({ docs: [{ chemin: 'docs/a.md', declaration: { match: 'x.js' } }] });
+  const c = analyze({ docs: [{ filePath: 'docs/a.md', declaration: { match: 'x.js' } }] });
   assert.deepStrictEqual(codes(c), []);
 });
 
@@ -134,7 +134,7 @@ test('doc WITHOUT a hard-pasted tag = silence (the case of 389 docs out of 393)'
 //    drown it in the noise.
 test('severity: the hard-pasted tag comes BEFORE any warn in the output', () => {
   const c = analyze({
-    docs: [{ chemin: 'docs/a.md', declaration: { match: 'x.js' }, tagSourceEnDur: true }],
+    docs: [{ filePath: 'docs/a.md', declaration: { match: 'x.js' }, tagSourceEnDur: true }],
     mcpServers: ['ssh'],
   });
   assert.deepStrictEqual(codes(c), ['hardcoded-source-tag', 'mcp-without-doc']);
@@ -144,7 +144,7 @@ test('severity: the hard-pasted tag comes BEFORE any warn in the output', () => 
 test('MCP server without a doc = WARN (arbitrated: not forgotten, not done yet)', () => {
   const c = analyze({ mcpServers: ['ssh', 'infra', 'stripe'], serveursDocumentes: ['stripe'] });
   assert.deepStrictEqual(codes(c), ['mcp-without-doc', 'mcp-without-doc']);
-  assert.deepStrictEqual(c.map((x) => x.cible), ['ssh', 'infra']);
+  assert.deepStrictEqual(c.map((x) => x.target), ['ssh', 'infra']);
   assert.ok(c.every((x) => x.niveau === 'warn'));
 });
 
@@ -165,7 +165,7 @@ test('output sorted by severity (errors before warns) — by order of the checks
   const c = analyze({
     mcpServers: ['ssh'],
     docs: [doc('mort.md', {})],
-    docsFantomes: ['fantome.md'],
+    docsFantomes: ['ghost.md'],
   });
   assert.deepStrictEqual(c.map((x) => x.niveau), ['error', 'error', 'warn']);
   // ⚠️ Expectation HARD-CODED: never derive it from LEVELS (it would mutate with the code).

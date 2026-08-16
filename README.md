@@ -120,6 +120,6 @@ harness dialect; the dialect lives in `harness-profile.js`, as data).
 
 - `node tools/explain.js --doc <name> --tool X --input '{...}'` — why a doc did or
   did not inject (exact reason, from the real engine).
-- `node tools/doctor.js [--settings …] [--codex-hooks …] [--harnais …]` — is the
+- `node tools/doctor.js [--settings …] [--codex-hooks …] [--harness …]` — is the
   wiring alive, does the harness conform.
 - `node tools/lint-corpus.js` — audit of the whole doc corpus.

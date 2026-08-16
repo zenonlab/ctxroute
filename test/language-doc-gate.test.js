@@ -16,7 +16,7 @@ import { verify, regenerate, extract } from '../src/docfacts.js';
 import { facts, DOC } from '../tools/language-doc.js';
 import { KNOWN, MODES, DRIFT_UNITS, RULE_KEYS, TRIGGERS } from '../src/frontmatter.js';
 
-const lire = () => readFileSync(DOC, 'utf8');
+const read = () => readFileSync(DOC, 'utf8');
 
 describe('gate: the language doc cannot contradict the code', () => {
   it('① the facts are DERIVED and non-empty (deriver anti-dormancy)', () => {
@@ -27,11 +27,11 @@ describe('gate: the language doc cannot contradict the code', () => {
     expect(f.length, 'no derived fact').toBeGreaterThanOrEqual(3);
     expect(KNOWN.length, 'KNOWN empty: the engine or the import is broken').toBeGreaterThan(5);
     expect(MODES.length).toBeGreaterThan(1);
-    for (const x of f) expect(x.contenu.trim().length, `fact « ${x.nom} » EMPTY`).toBeGreaterThan(0);
+    for (const x of f) expect(x.content.trim().length, `fact "${x.name}" EMPTY`).toBeGreaterThan(0);
   });
 
   it('② no AUTO block of the doc is stale', () => {
-    const { ok, discrepancies } = verify(lire(), facts());
+    const { ok, discrepancies } = verify(read(), facts());
     expect(ok, `\n${discrepancies.join('\n')}\n\nFix with: node tools/language-doc.js --write`).toBe(true);
   });
 
@@ -40,26 +40,26 @@ describe('gate: the language doc cannot contradict the code', () => {
     //    be "conformant". This one requires the vocabulary to be actually
     //    READABLE by the agent — that is what closes the AMPUTATION (the
     //    founding defect: a word lost in a copy, breaking nothing).
-    const texte = lire();
-    const manquants = [...KNOWN, ...RULE_KEYS, ...TRIGGERS, ...MODES, ...DRIFT_UNITS]
-      .filter((mot) => !texte.includes(`\`${mot}\``));
-    expect(manquants, `engine words ABSENT from the doc: ${manquants.join(', ')}`).toEqual([]);
+    const text = read();
+    const missingOnes = [...KNOWN, ...RULE_KEYS, ...TRIGGERS, ...MODES, ...DRIFT_UNITS]
+      .filter((word) => !text.includes(`\`${word}\``));
+    expect(missingOnes, `engine words ABSENT from the doc: ${missingOnes.join(', ')}`).toEqual([]);
   });
 
   it('④ NEGATIVE-CHECK — the gate really bites (IN-MEMORY sabotage)', () => {
     // 🛑 NEVER on the real file: an on-disk sabotage brought down 38 tests of
     //    other suites on 03/08/2026. We sabotage the IN-MEMORY copy.
-    const sabote = lire().replace(String(MODES[0]), 'MODE_THAT_DOES_NOT_EXIST');
-    expect(sabote, 'the sabotage changed nothing: this check would prove nothing').not.toBe(lire());
-    const { ok, discrepancies } = verify(sabote, facts());
+    const sabotaged = read().replace(String(MODES[0]), 'MODE_THAT_DOES_NOT_EXIST');
+    expect(sabotaged, 'the sabotage changed nothing: this check would prove nothing').not.toBe(read());
+    const { ok, discrepancies } = verify(sabotaged, facts());
     expect(ok).toBe(false);
     expect(discrepancies.join(' ')).toMatch(/STALE/);
   });
 
   it('⑤ --write REPAIRS what the check refuses (never an unsatisfiable gate)', () => {
-    const casse = lire().replace(/<!-- AUTO:bounds -->[\s\S]*?<!-- \/AUTO -->/, '<!-- AUTO:bounds -->\nwrong\n<!-- /AUTO -->');
-    expect(verify(casse, facts()).ok).toBe(false);
-    expect(verify(regenerate(casse, facts()), facts()).ok).toBe(true);
+    const brokenOne = read().replace(/<!-- AUTO:bounds -->[\s\S]*?<!-- \/AUTO -->/, '<!-- AUTO:bounds -->\nwrong\n<!-- /AUTO -->');
+    expect(verify(brokenOne, facts()).ok).toBe(false);
+    expect(verify(regenerate(brokenOne, facts()), facts()).ok).toBe(true);
   });
 
   it('⑥ the PROSE restates no generated fact (else the copy re-drifts)', () => {
@@ -67,9 +67,9 @@ describe('gate: the language doc cannot contradict the code', () => {
     // generated, once by hand — recreates exactly the problem: the manual
     // copy drifts and nothing sees it. Here: the mode list must appear ONLY
     // inside its block.
-    const texte = lire();
-    const dansBloc = extract(texte, 'cadence').contenu;
-    const horsBloc = texte.replace(dansBloc, '');
+    const text = read();
+    const dansBloc = extract(text, 'cadence').content;
+    const horsBloc = text.replace(dansBloc, '');
     const listeModes = MODES.map((m) => `\`${m}\``).join(' · ');
     expect(horsBloc.includes(listeModes), 'the mode list is COPIED outside the AUTO block').toBe(false);
   });

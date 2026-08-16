@@ -2,7 +2,7 @@
 // harness-conformance.js — THE CONFORMANCE TEST OF A HARNESS (㊾, 15/08/2026)
 // ═══════════════════════════════════════════════════════════════════════
 //
-// 🔴 WHY: « will it work on their side? » had NO measurable answer —
+// 🔴 WHY: "will it work on their side?" had NO measurable answer —
 //    a port is PROVEN at the adopter's, never at ours. This module returns the
 //    verdict an adopter obtains BY RUNNING `doctor.js --harnais` on a
 //    REAL payload captured from THEIR harness: supported / degraded (named points) /
@@ -48,13 +48,13 @@ function looksLikePath(v) {
 // that the profile does not know — the CANDIDATES for `pathKeys`, named once.
 function candidateKeys(toolInput, profil) {
   const p = profil || DEFAULT_PROFILE;
-  const connues = new Set([...p.pathKeys, ...p.commandKeys, ...p.contentKeys, 'cwd']);
+  const known = new Set([...p.pathKeys, ...p.commandKeys, ...p.contentKeys, 'cwd']);
   const out = new Set();
-  const visiter = (v, cle, prof) => {
+  const visiter = (v, key, prof) => {
     if (typeof v === 'string') {
-      if (cle && !connues.has(cle) && looksLikePath(v)) out.add(cle);
+      if (key && !known.has(key) && looksLikePath(v)) out.add(key);
     } else if (Object(v) === v && prof < 20) {
-      for (const [k, x] of Object.entries(v)) visiter(x, Array.isArray(v) ? cle : k, prof + 1);
+      for (const [k, x] of Object.entries(v)) visiter(x, Array.isArray(v) ? key : k, prof + 1);
     }
   };
   visiter(toolInput, null, 0);
@@ -76,19 +76,19 @@ function candidateKeys(toolInput, profil) {
 function conformance(payload) {
   const p = payload || {};
   const requis = [
-    { capacite: 'tool_name', present: typeof p.tool_name === 'string' && p.tool_name !== '',
+    { capability: 'tool_name', present: typeof p.tool_name === 'string' && p.tool_name !== '',
       role: 'the `tool` trigger and the context of `exclude` — without it, no source can target a gesture' },
-    { capacite: 'tool_input', present: Object(p.tool_input) === p.tool_input,
+    { capability: 'tool_input', present: Object(p.tool_input) === p.tool_input,
       role: 'the ENTIRE universe of matching (match/scope/exclude) — without it, the framework is blind' },
   ];
   const optionnels = [
-    { capacite: 'session_id', present: typeof p.session_id === 'string' && p.session_id !== '',
+    { capability: 'session_id', present: typeof p.session_id === 'string' && p.session_id !== '',
       degradation: 'once/smart cadence per PROCESS instead of per session (more frequent re-injections, never a loss)' },
-    { capacite: 'cwd', present: typeof p.cwd === 'string' && p.cwd !== '',
-      degradation: 'the « by current directory » skill perimeter is MUTE (an `npm test` launched inside the project does not trigger its skill)' },
-    { capacite: 'transcript_path', present: typeof p.transcript_path === 'string' && p.transcript_path !== '',
+    { capability: 'cwd', present: typeof p.cwd === 'string' && p.cwd !== '',
+      degradation: 'the "by current directory" skill perimeter is MUTE (an `npm test` launched inside the project does not trigger its skill)' },
+    { capability: 'transcript_path', present: typeof p.transcript_path === 'string' && p.transcript_path !== '',
       degradation: 'the canary (dead-man switch) answers `undecidable` — the framework works but its death would be silent' },
-    { capacite: 'agent_id', present: typeof p.agent_id === 'string' && p.agent_id !== '',
+    { capability: 'agent_id', present: typeof p.agent_id === 'string' && p.agent_id !== '',
       degradation: 'the sub-agents share the master\'s injection state (a `once` consumed by the master deprives the sub-agent)' },
   ];
   const degradations = optionnels.filter((o) => !o.present);

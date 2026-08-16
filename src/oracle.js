@@ -26,17 +26,17 @@ const { execFile } = require('child_process');
 function legacyDocs(legacyPath, payload) {
   return new Promise((resolve) => {
     const child = execFile(process.execPath, [legacyPath], { encoding: 'utf8' }, (_err, stdout) => {
-      let contexte = '';
+      let context = '';
       try {
         // Fail-open: no JSON = the hook injected nothing (legitimate case).
         const j = JSON.parse(stdout || '{}');
-        contexte = (j.hookSpecificOutput && j.hookSpecificOutput.additionalContext) || '';
+        context = (j.hookSpecificOutput && j.hookSpecificOutput.additionalContext) || '';
       } catch (e) {
-        contexte = '';
+        context = '';
       }
       const docs = [];
-      for (const bloc of contexte.split('\n\n---\n\n')) {
-        const markers = [...bloc.matchAll(/\[source: \.claude\/hooks\/([^\]]+)\]/g)];
+      for (const block of context.split('\n\n---\n\n')) {
+        const markers = [...block.matchAll(/\[source: \.claude\/hooks\/([^\]]+)\]/g)];
         if (markers.length) docs.push(markers[markers.length - 1][1]);
       }
       resolve(docs);

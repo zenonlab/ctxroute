@@ -47,7 +47,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ⚠️ RATCHET: 100, never less. Measured as reachable by the 16 modules.
 //    NEVER lower it to make a red pass — a survivor is KILLED (targeted test)
@@ -67,7 +67,7 @@ const TUE = new Set(['Killed', 'Timeout', 'CompileError']);
 function sousPlancher(rapport, plancher) {
   if (!rapport || typeof rapport !== 'object' || !rapport.files) return null;
   const fautifs = [];
-  for (const [fichier, donnees] of Object.entries(rapport.files)) {
+  for (const [file, donnees] of Object.entries(rapport.files)) {
     const mutants = (donnees && donnees.mutants) || [];
     let tues = 0;
     let total = 0;
@@ -79,7 +79,7 @@ function sousPlancher(rapport, plancher) {
     if (total === 0) continue; // file without mutants: nothing to judge
     const score = (tues / total) * 100;
     if (score < plancher) {
-      fautifs.push(`${fichier}: ${score.toFixed(2)} % (${total - tues} survivor(s) out of ${total})`);
+      fautifs.push(`${file}: ${score.toFixed(2)} % (${total - tues} survivor(s) out of ${total})`);
     }
   }
   return fautifs;
@@ -88,7 +88,7 @@ function sousPlancher(rapport, plancher) {
 test('㉞ — no mutated module falls below the per-file floor', () => {
   let rapport = null;
   try {
-    rapport = JSON.parse(fs.readFileSync(path.join(ICI, '..', 'reports', 'mutation.json'), 'utf8'));
+    rapport = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'reports', 'mutation.json'), 'utf8'));
   } catch {
     return; // report absent = out of scope (cf the header comment)
   }

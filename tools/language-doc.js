@@ -40,7 +40,7 @@ const DOC_EN = require('path').join(__dirname, '..', 'LANGUAGE.md');
 
 /**
  * THE FACTS. PURE — no I/O, hence mutable and testable without a disk.
- * @returns {Array<{nom: string, contenu: string}>}
+ * @returns {Array<{name: string, content: string}>}
  *
  * ⚠️ A fact only enters here if it is ENUMERABLE (a list, a bound, a
  *    number). Everything that is JUDGEMENT ("the code is authoritative",
@@ -51,22 +51,22 @@ const DOC_EN = require('path').join(__dirname, '..', 'LANGUAGE.md');
 function facts() {
   return [
     {
-      nom: 'vocabulary',
-      contenu:
+      name: 'vocabulary',
+      content:
         `File doc keys: ${docfacts.wordList(fm.KNOWN)}\n`
         + `\`rules\` entry keys: ${docfacts.wordList(fm.RULE_KEYS)}\n`
         + `Triggers: ${docfacts.wordList(fm.TRIGGERS)} · tool wildcard \`${fm.WILDCARD}\` · \`inject: ${fm.INJECT.join('|')}\` disarms\n`
         + 'Unknown key ⇒ doc REJECTED (never silently ignored).',
     },
     {
-      nom: 'cadence',
-      contenu:
+      name: 'cadence',
+      content:
         `\`mode\`: ${docfacts.wordList(fm.MODES)} · \`driftUnit\`: ${docfacts.wordList(fm.DRIFT_UNITS)}\n`
         + 'Cascade: entry > `defaults.{source}` > global > framework default.',
     },
     {
-      nom: 'bounds',
-      contenu:
+      name: 'bounds',
+      content:
         `\`scope\` is BOUNDED: ${file.MAX_DEPTH} nesting levels · ${file.MAX_SIZE} characters.\n`
         + 'Beyond that the value is truncated ⇒ `scope` goes mute — and `explain.js` says so.',
     },
@@ -74,12 +74,12 @@ function facts() {
 }
 
 // The CLI's TARGETS — both docs carry the SAME facts (single derivation).
-const CIBLES = [
-  { chemin: DOC, facts },
-  { chemin: DOC_EN, facts },
+const TARGETS = [
+  { filePath: DOC, facts },
+  { filePath: DOC_EN, facts },
 ];
 
-module.exports = { facts, factsEn: facts, DOC, DOC_EN, CIBLES };
+module.exports = { facts, factsEn: facts, DOC, DOC_EN, TARGETS };
 
 // ── CLI SHELL (I/O + output + exit code) ─────────────────────────────────
 // ⚠️ `require.main === module`: nothing runs when a test imports the module.
@@ -88,28 +88,28 @@ if (require.main === module) {
   const fs = require('fs');
   let echec = false;
 
-  for (const cible of CIBLES) {
-    const texte = fs.readFileSync(cible.chemin, 'utf8');
-    const f = cible.facts();
+  for (const target of TARGETS) {
+    const text = fs.readFileSync(target.filePath, 'utf8');
+    const f = target.facts();
 
     if (process.argv.includes('--write')) {
-      const out = docfacts.regenerate(texte, f);
-      if (out !== texte) {
-        fs.writeFileSync(cible.chemin, out);
-        console.log(`✅ ${f.length} block(s) regenerated in ${cible.chemin}`);
+      const out = docfacts.regenerate(text, f);
+      if (out !== text) {
+        fs.writeFileSync(target.filePath, out);
+        console.log(`✅ ${f.length} block(s) regenerated in ${target.filePath}`);
       } else {
-        console.log(`✅ ${cible.chemin} already up to date.`);
+        console.log(`✅ ${target.filePath} already up to date.`);
       }
       continue;
     }
 
-    const { ok, discrepancies } = docfacts.verify(texte, f);
+    const { ok, discrepancies } = docfacts.verify(text, f);
     if (ok) {
-      console.log(`✅ ${f.length} fact(s) match the code in ${cible.chemin}.`);
+      console.log(`✅ ${f.length} fact(s) match the code in ${target.filePath}.`);
     } else {
       // FAIL-LOUD: a diagnostic silent about its own failure reads as "all good".
       echec = true;
-      console.error(`\n❌ ${cible.chemin} STATES what the code contradicts:\n`);
+      console.error(`\n❌ ${target.filePath} STATES what the code contradicts:\n`);
       discrepancies.forEach((e) => console.error(`  • ${e}\n`));
     }
   }

@@ -13,7 +13,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 import fc from 'fast-check';
-import { OUVRE, FERME, extract, rewrite, verify, regenerate } from '../src/docfacts.js';
+import { OPENER, CLOSER, extract, rewrite, verify, regenerate } from '../src/docfacts.js';
 
 // A plausible block name: no `-->`, which would close the HTML comment.
 const nomArb = fc.stringMatching(/^[A-Za-z][A-Za-z0-9_-]{0,20}$/);
@@ -21,37 +21,37 @@ const nomArb = fc.stringMatching(/^[A-Za-z][A-Za-z0-9_-]{0,20}$/);
 const contenuArb = fc.string({ maxLength: 200 });
 const proseArb = fc.string({ maxLength: 100 });
 
-const docAvecBloc = (avant, nom, dedans, apres) =>
-  `${avant}\n${OUVRE(nom)}\n${dedans}\n${FERME}\n${apres}`;
+const docAvecBloc = (avant, name, dedans, after) =>
+  `${avant}\n${OPENER(name)}\n${dedans}\n${CLOSER}\n${after}`;
 
 test('ROUND-TRIP: what is WRITTEN is what is READ BACK (up to trimming)', () => {
-  fc.assert(fc.property(proseArb, nomArb, contenuArb, proseArb, (av, nom, c, ap) => {
+  fc.assert(fc.property(proseArb, nomArb, contenuArb, proseArb, (av, name, c, ap) => {
     // ⚠️ Content carrying the END marker: unrepresentable by construction (the
     //    reader stops at the first `-->`). We exclude it HERE and we REPORT it
     //    as a known limit — never by letting it silently produce a false
     //    round-trip.
-    fc.pre(!c.includes(FERME) && !c.includes('<!-- AUTO:'));
-    const t = docAvecBloc(av, nom, 'ancien', ap);
-    assert.strictEqual(extract(rewrite(t, nom, c), nom).contenu, c.trim());
+    fc.pre(!c.includes(CLOSER) && !c.includes('<!-- AUTO:'));
+    const t = docAvecBloc(av, name, 'former', ap);
+    assert.strictEqual(extract(rewrite(t, name, c), name).content, c.trim());
   }), { numRuns: 400 });
 });
 
 test('IDEMPOTENCE: regenerating twice changes nothing more', () => {
-  fc.assert(fc.property(proseArb, nomArb, contenuArb, (av, nom, c) => {
-    fc.pre(!c.includes(FERME) && !c.includes('<!-- AUTO:'));
-    const t = docAvecBloc(av, nom, 'x', '');
-    const un = rewrite(t, nom, c);
-    assert.strictEqual(rewrite(un, nom, c), un);
+  fc.assert(fc.property(proseArb, nomArb, contenuArb, (av, name, c) => {
+    fc.pre(!c.includes(CLOSER) && !c.includes('<!-- AUTO:'));
+    const t = docAvecBloc(av, name, 'x', '');
+    const un = rewrite(t, name, c);
+    assert.strictEqual(rewrite(un, name, c), un);
   }), { numRuns: 400 });
 });
 
 test('REPAIR: after `regenerate`, `verify` is ALWAYS green', () => {
   // The property that makes the gate satisfiable: --write repairs what the check
   // refuses. Without it, we could ship a gate impossible to satisfy.
-  fc.assert(fc.property(nomArb, contenuArb, proseArb, (nom, c, ap) => {
-    fc.pre(!c.includes(FERME) && !c.includes('<!-- AUTO:'));
-    const facts = [{ nom, contenu: c }];
-    const t = docAvecBloc('', nom, 'perime', ap);
+  fc.assert(fc.property(nomArb, contenuArb, proseArb, (name, c, ap) => {
+    fc.pre(!c.includes(CLOSER) && !c.includes('<!-- AUTO:'));
+    const facts = [{ name, content: c }];
+    const t = docAvecBloc('', name, 'perime', ap);
     assert.strictEqual(verify(regenerate(t, facts), facts).ok, true);
   }), { numRuns: 400 });
 });
@@ -71,7 +71,7 @@ test('KNOWN LIMIT, WRITTEN DOWN: content carrying the END marker is truncated on
   //    harmless here (the facts are DERIVED from code constants, never typed in
   //    by hand). We FREEZE it so it stops being a surprise — and if one day a
   //    fact must carry that text, this test will say exactly why.
-  const t = `${OUVRE('x')}\nancien\n${FERME}`;
-  const ecrit = rewrite(t, 'x', `avant ${FERME} apres`);
-  assert.strictEqual(extract(ecrit, 'x').contenu, 'avant');
+  const t = `${OPENER('x')}\nformer\n${CLOSER}`;
+  const written = rewrite(t, 'x', `avant ${CLOSER} after`);
+  assert.strictEqual(extract(written, 'x').content, 'avant');
 });

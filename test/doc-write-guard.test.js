@@ -29,13 +29,13 @@ function run(rel, content, { kind = 'file' } = {}) {
 }
 
 test('HEALTHY file doc = total silence (zero context pollution)', () => {
-  const r = run('ok.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  const r = run('ok.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   expect(r.status).toBe(0);
   expect(r.stdout).toBe('');
 });
 
 test('file doc with the typo `mach:` = immediate BLOCK, the reason names the key', () => {
-  const r = run('typo.md', '---\nmach: server.js\n---\ncontenu\n');
+  const r = run('typo.md', '---\nmach: server.js\n---\ncontent\n');
   expect(r.status).toBe(0);
   const out = JSON.parse(r.stdout);
   expect(out.decision).toBe('block');
@@ -43,28 +43,28 @@ test('file doc with the typo `mach:` = immediate BLOCK, the reason names the key
 });
 
 test('file doc WITHOUT a trigger = BLOCK (otherwise a doc that is dead in silence)', () => {
-  const r = run('morte.md', '---\nmode: dumb\n---\ncontenu\n');
+  const r = run('stale.md', '---\nmode: dumb\n---\ncontent\n');
   expect(JSON.parse(r.stdout).decision).toBe('block');
 });
 
 test('MCP doc: `mode: dumb` alone = silence; a key outside mode/threshold = BLOCK', () => {
-  expect(run('stripe.md', '---\nmode: dumb\n---\ncontenu\n', { kind: 'mcp' }).stdout).toBe('');
-  const r = run('stripe.md', '---\nmatch: x.js\n---\ncontenu\n', { kind: 'mcp' });
+  expect(run('stripe.md', '---\nmode: dumb\n---\ncontent\n', { kind: 'mcp' }).stdout).toBe('');
+  const r = run('stripe.md', '---\nmatch: x.js\n---\ncontent\n', { kind: 'mcp' });
   expect(JSON.parse(r.stdout).decision).toBe('block');
   expect(JSON.parse(r.stdout).reason).toContain('match');
 });
 
 test('SESSION doc = never blocked (nothing to validate by construction)', () => {
-  const r = run('note.md', '---\nnimporte: quoi\n---\ncontenu\n', { kind: 'session' });
+  const r = run('note.md', '---\nnimporte: quoi\n---\ncontent\n', { kind: 'session' });
   expect(r.status).toBe(0);
   expect(r.stdout).toBe('');
 });
 
 test('file outside the 3 fleets, missing file, broken stdin = silent fail-open', () => {
   const base = mkdtempSync(join(tmpdir(), 'doc-guard-out-'));
-  writeFileSync(join(base, 'autre.md'), '---\nmach: x\n---\nx');
+  writeFileSync(join(base, 'other.md'), '---\nmach: x\n---\nx');
   const r1 = spawnSync(process.execPath, [HOOK], {
-    input: JSON.stringify({ tool_input: { file_path: join(base, 'autre.md') } }),
+    input: JSON.stringify({ tool_input: { file_path: join(base, 'other.md') } }),
     encoding: 'utf8',
     env: process.env,
   });

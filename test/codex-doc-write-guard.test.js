@@ -37,7 +37,7 @@ afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
 test('BLOCK: apply_patch (command) on an INVALID doc of the fleet → decision block + reason', async () => {
   const doc = path.join(FILEDOCS, 'cassee.md');
-  fs.writeFileSync(doc, '---\nmach: typo.js\n---\ncontenu\n'); // unknown key = invalid
+  fs.writeFileSync(doc, '---\nmach: typo.js\n---\ncontent\n'); // unknown key = invalid
   const { code, stdout } = await run({ tool_name: 'apply_patch', tool_input: { command: patchFor(doc) } });
   assert.strictEqual(code, 0);
   const out = JSON.parse(stdout);
@@ -46,19 +46,19 @@ test('BLOCK: apply_patch (command) on an INVALID doc of the fleet → decision b
 });
 
 test('SILENCE: HEALTHY doc of the fleet → empty stdout', async () => {
-  const doc = path.join(FILEDOCS, 'saine.md');
-  fs.writeFileSync(doc, '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  const doc = path.join(FILEDOCS, 'healthyOne.md');
+  fs.writeFileSync(doc, '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   const { code, stdout } = await run({ tool_name: 'apply_patch', tool_input: { command: patchFor(doc) } });
   assert.strictEqual(code, 0);
   assert.strictEqual(stdout.trim(), '');
 });
 
 test('MULTI-FILE: patch touching a healthy doc THEN a broken one → block on the broken one', async () => {
-  const saine = path.join(FILEDOCS, 'saine.md');
+  const healthyOne = path.join(FILEDOCS, 'healthyOne.md');
   const cassee = path.join(FILEDOCS, 'cassee.md');
-  fs.writeFileSync(saine, '---\nmatch: a.js\nmode: dumb\n---\nok\n');
+  fs.writeFileSync(healthyOne, '---\nmatch: a.js\nmode: dumb\n---\nok\n');
   fs.writeFileSync(cassee, '---\nmach: typo.js\n---\nko\n');
-  const { stdout } = await run({ tool_name: 'apply_patch', tool_input: { command: patchFor(saine, cassee) } });
+  const { stdout } = await run({ tool_name: 'apply_patch', tool_input: { command: patchFor(healthyOne, cassee) } });
   const out = JSON.parse(stdout);
   assert.strictEqual(out.decision, 'block');
   assert.ok(out.reason.includes('cassee.md'));

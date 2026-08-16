@@ -92,18 +92,18 @@ function extractFilePaths(toolName, toolInput, profil) {
  * 🛑 SAME depth BOUND as the filters: two different bounds for the
  *    same payload means one operator sees further than another for no reason.
  */
-function keyValues(valeur, cles, depth, cle, out) {
+function keyValues(value, keys, depth, key, out) {
   const acc = out || [];
-  if (typeof valeur === 'string') {
-    if (cles.includes(cle)) acc.push(valeur);
+  if (typeof value === 'string') {
+    if (keys.includes(key)) acc.push(value);
     // ⚠️ `Object(x) === x` = "it is an object", in ONE expression. The form
     //    `x !== null && typeof x === 'object'` has TWO conjunctions, one of which is
     //    EQUIVALENT in practice (mutating the `typeof` into `true` changes nothing: a
     //    number yields `Object.entries(42) === []`). An equivalent mutant is avoided by
     //    CONSTRUCTION, it is not tested — measured on 15/08/2026.
-  } else if (Object(valeur) === valeur && depth > 0) {
-    for (const [k, v] of Object.entries(valeur)) {
-      keyValues(v, cles, depth - 1, Array.isArray(valeur) ? cle : k, acc);
+  } else if (Object(value) === value && depth > 0) {
+    for (const [k, v] of Object.entries(value)) {
+      keyValues(v, keys, depth - 1, Array.isArray(value) ? key : k, acc);
     }
   }
   return acc;
@@ -136,12 +136,12 @@ const MAX_SIZE = 262144;
  *    that is the original semantics, only the depth has changed.
  * 🛑 NO cycle detection: a payload comes from `JSON.parse` (network/stdin), which
  *    NEVER produces one. Adding one would be DEAD CODE. The depth bound suffices.
- * @returns {{ chunks: string[], truncated: null|'depth'|'taille' }} — `truncated` is
+ * @returns {{ chunks: string[], truncated: null|'depth'|'size' }} — `truncated` is
  *   USED by explain.js: a MUTE bound would recreate the defect we fix here
  *   (a scope that fails without a visible reason is indistinguishable from an absent scope).
  */
-function textValues(valeur, depth, etat, cle) {
-  const acc = etat || { chunks: [], taille: 0, truncated: null };
+function textValues(value, depth, etat, key) {
+  const acc = etat || { chunks: [], size: 0, truncated: null };
   // 🛑 ㊿ (15/08/2026) — THE PAYLOAD CONTENT IS OUT OF THE FILTERS' UNIVERSE. A param that
   //    CARRIES content (`old_string`, `content`…) DESIGNATES nothing: reading it
   //    made `scope`/`exclude` decide on the text one TYPES. **Measured: 55
@@ -151,19 +151,19 @@ function textValues(valeur, depth, etat, cle) {
   // ⚠️ Removed from BOTH filters, never from just one: their duality is theorem ㊼.
   // ⚠️ Assumed and measured price: 13 docs whose `scope` was satisfied only by the
   //    written text — that is SEMANTICALLY correct, a filter qualifies the GESTURE.
-  // ⚠️ NO `cle !== undefined` guard: at the root `cle` is `undefined`, and
+  // ⚠️ NO `key !== undefined` guard: at the root `key` is `undefined`, and
   //    `includes(undefined)` already yields `false`. Adding it would be a
   //    REDUNDANT guard, hence an EQUIVALENT mutant — we avoid it by CONSTRUCTION.
-  if (typeof valeur === 'string') {
-    if (acc.taille + valeur.length > MAX_SIZE) acc.truncated = acc.truncated || 'taille';
+  if (typeof value === 'string') {
+    if (acc.size + value.length > MAX_SIZE) acc.truncated = acc.truncated || 'size';
     else {
-      acc.chunks.push(valeur);
-      acc.taille += valeur.length;
+      acc.chunks.push(value);
+      acc.size += value.length;
     }
-  } else if (valeur !== null && typeof valeur === 'object') {
+  } else if (value !== null && typeof value === 'object') {
     if ((depth || 0) >= MAX_DEPTH) acc.truncated = acc.truncated || 'depth';
-    else for (const [k, v] of Object.entries(valeur)) {
-      const sousCle = Array.isArray(valeur) ? cle : k;
+    else for (const [k, v] of Object.entries(value)) {
+      const sousCle = Array.isArray(value) ? key : k;
       // 🛑 THE PAYLOAD CONTENT IS DISCARDED **HERE**, on the way down — never by an early
       //    return at the head of the function: the return value of a RECURSIVE call
       //    is read by nobody, so that guard would be an EQUIVALENT mutant
@@ -172,7 +172,7 @@ function textValues(valeur, depth, etat, cle) {
     }
   }
   // ⚠️ `chunks` = THE form consumed by the filters (per-value, 53bis).
-  //    🛑 There is NO LONGER a concatenated `texte` field: a pattern with a space
+  //    🛑 There is NO LONGER a concatenated `text` field: a pattern with a space
   //    matched there straddling two values — a text that exists in no
   //    param. The field was DELETED (not kept "for diagnostics"):
   //    a dead field always ends up finding a reader.

@@ -66,4 +66,4 @@ Beyond that the value is truncated ⇒ `scope` goes mute — and `explain.js` sa
   flat/grouped `scope` parity) + **mutation testing at 100 %** with a
   per-file floor.
 - **Harness conformity**: see `HARNESS-CONTRACT.md` — prove the contract on
-  YOUR harness with `node doctor.js --harnais <payload.json>`.
+  YOUR harness with `node doctor.js --harness <payload.json>`.

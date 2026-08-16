@@ -123,8 +123,8 @@ test('SORTING AT SCALE — 25 docs, equal rank, reverse order → strict alpha (
     docs.push({ doc: name, text: md('match: p' + k + '\nrank: 1') });
   }
   const flat = rulesFromCorpus(docs);
-  const attendu = [...docs.map((d) => d.doc)].sort();
-  assert.deepStrictEqual(flat.map((r) => r.doc), attendu);
+  const expected = [...docs.map((d) => d.doc)].sort();
+  assert.deepStrictEqual(flat.map((r) => r.doc), expected);
 });
 test('SORTING AT SCALE — 25 entries of the SAME doc: declared local order preserved', () => {
   const pats = Array.from({ length: 25 }, (_, k) => ({ pattern: 'p' + String(k).padStart(2, '0') }));

@@ -85,15 +85,15 @@ function requiresLocaux(rel, source) {
   const dir = path.dirname(rel);
   const out = [];
   for (const m of source.matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
-    let cible = path.posix.normalize(path.posix.join(dir === '.' ? '' : dir, m[1]));
-    if (!cible.endsWith('.js')) cible += '.js';
-    out.push(cible);
+    let target = path.posix.normalize(path.posix.join(dir === '.' ? '' : dir, m[1]));
+    if (!target.endsWith('.js')) target += '.js';
+    out.push(target);
   }
   return out;
 }
 
 // Does it reach the layer, directly or through its own requires?
-function atteintLaCouche(rel, lire) {
+function atteintLaCouche(rel, read) {
   const vus = new Set();
   const pile = [rel];
   while (pile.length > 0) {
@@ -101,7 +101,7 @@ function atteintLaCouche(rel, lire) {
     if (vus.has(cur)) continue;
     vus.add(cur);
     if (cur === COUCHE) return true;
-    const src = lire(cur);
+    const src = read(cur);
     if (src === null) continue;
     for (const dep of requiresLocaux(cur, src)) pile.push(dep);
   }
@@ -114,13 +114,13 @@ const lireReel = (rel) => {
 };
 
 test('GATE: every file that writes `additionalContext` goes through emission-core', () => {
-  const trouves = emitters();
+  const foundOnes = emitters();
   // Existence net: if the scan no longer finds anything, it is the GATE that is
   // broken (pattern changed, files moved), not the repo that has become pure.
   // A gate that turns green by looking at nothing is the worst of both worlds.
-  assert.ok(trouves.length >= 3, `suspicious scan: ${trouves.length} emitter(s) found`);
+  assert.ok(foundOnes.length >= 3, `suspicious scan: ${foundOnes.length} emitter(s) found`);
 
-  const fautifs = trouves.filter(
+  const fautifs = foundOnes.filter(
     (f) => !EXEMPTIONS[f] && !atteintLaCouche(f, lireReel)
   );
   assert.deepStrictEqual(
@@ -133,13 +133,13 @@ test('GATE: every file that writes `additionalContext` goes through emission-cor
 });
 
 test('GATE (inverse part): an obsolete exemption turns red', () => {
-  const trouves = new Set(emitters());
-  const perimees = Object.keys(EXEMPTIONS).filter((f) => !trouves.has(f));
+  const foundOnes = new Set(emitters());
+  const staleOnes = Object.keys(EXEMPTIONS).filter((f) => !foundOnes.has(f));
   assert.deepStrictEqual(
-    perimees,
+    staleOnes,
     [],
     'Exemption(s) declared for a file that no longer emits: remove it.\n  '
-      + perimees.join('\n  ')
+      + staleOnes.join('\n  ')
   );
 });
 
@@ -151,8 +151,8 @@ test('GATE (inverse part): an obsolete exemption turns red', () => {
 //    made 38 tests of other suites fall which imported the file IN
 //    PARALLEL.
 test('NEGATIVE: an emitter deprived of the layer is DETECTED (gate not inert)', () => {
-  const cible = 'src/hooks/session-inject.js';
-  assert.ok(emitters().includes(cible), 'the target of the sabotage must be a real emitter');
+  const target = 'src/hooks/session-inject.js';
+  assert.ok(emitters().includes(target), 'the target of the sabotage must be a real emitter');
 
   // In-memory copy, import of the layer REMOVED from the whole chain.
   const lireSabote = (rel) => {
@@ -161,9 +161,9 @@ test('NEGATIVE: an emitter deprived of the layer is DETECTED (gate not inert)', 
     return src.replace(/require\(\s*['"](?:\.\.?\/)+emission-core['"]\s*\)/g, 'null');
   };
 
-  assert.ok(atteintLaCouche(cible, lireReel), 'witness: intact, the target reaches the layer');
+  assert.ok(atteintLaCouche(target, lireReel), 'witness: intact, the target reaches the layer');
   assert.strictEqual(
-    atteintLaCouche(cible, lireSabote),
+    atteintLaCouche(target, lireSabote),
     false,
     'SABOTAGE NOT DETECTED: the gate is INERT — it would turn green on an emitter without transport.'
   );

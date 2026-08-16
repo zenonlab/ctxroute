@@ -39,13 +39,13 @@
 
 // Markers of a generated block. ⚠️ HTML form: invisible in markdown rendering,
 //    so the doc stays readable by a human AND by the agent it is injected into.
-// ⚠️ `txt(nom)` AND NOT `${nom}` — TOTALITY. Found by property-based testing on
-//    14/08/2026: `nom = { toString: false }` makes interpolation throw (JS calls
+// ⚠️ `txt(name)` AND NOT `${name}` — TOTALITY. Found by property-based testing on
+//    14/08/2026: `name = { toString: false }` makes interpolation throw (JS calls
 //    `toString()`, which is not a function) ⇒ the CORE throws ⇒ the injection
 //    gate dies. No real caller passes that, and that is exactly why no
 //    hand-written test would have found it.
-const OUVRE = (nom) => `<!-- AUTO:${txt(nom)} -->`;
-const FERME = '<!-- /AUTO -->';
+const OPENER = (name) => `<!-- AUTO:${txt(name)} -->`;
+const CLOSER = '<!-- /AUTO -->';
 
 // ⚠️ TWO NORMALISERS, EACH DEFINED ONCE — and that is a MUTATION decision, not
 //    a style one. The original form (`String(v == null ? '' : v)`, repeated 3×)
@@ -62,20 +62,20 @@ const asListe = (x) => (Array.isArray(x) ? x : []);
 
 /**
  * Extracts the content of an AUTO block. PURE.
- * @returns {{trouve: boolean, contenu: string}} — `trouve:false` = block
+ * @returns {{found: boolean, content: string}} — `found:false` = block
  *   missing, which is a CALLER FAILURE (a fact that is no longer displayed
  *   anywhere is indistinguishable from a correct fact), never a silence.
  * ⚠️ No regex over the whole text: we bound with indexOf so that a marker
  *    QUOTED in the prose of another section does not capture up to it.
  */
-function extract(texte, nom) {
-  const t = txt(texte);
-  const debut = t.indexOf(OUVRE(nom));
-  if (debut === -1) return { trouve: false, contenu: '' };
-  const apres = debut + OUVRE(nom).length;
-  const fin = t.indexOf(FERME, apres);
-  if (fin === -1) return { trouve: false, contenu: '' };
-  return { trouve: true, contenu: t.slice(apres, fin).trim() };
+function extract(text, name) {
+  const t = txt(text);
+  const start = t.indexOf(OPENER(name));
+  if (start === -1) return { found: false, content: '' };
+  const after = start + OPENER(name).length;
+  const fin = t.indexOf(CLOSER, after);
+  if (fin === -1) return { found: false, content: '' };
+  return { found: true, content: t.slice(after, fin).trim() };
 }
 
 /**
@@ -84,26 +84,26 @@ function extract(texte, nom) {
  *    it: the author decides where a fact belongs in their narrative). The gate,
  *    for its part, will refuse — so the oversight is loud, never silent.
  */
-function rewrite(texte, nom, contenu) {
-  const t = txt(texte);
-  const debut = t.indexOf(OUVRE(nom));
-  if (debut === -1) return t;
-  const apres = debut + OUVRE(nom).length;
-  const fin = t.indexOf(FERME, apres);
+function rewrite(text, name, content) {
+  const t = txt(text);
+  const start = t.indexOf(OPENER(name));
+  if (start === -1) return t;
+  const after = start + OPENER(name).length;
+  const fin = t.indexOf(CLOSER, after);
   if (fin === -1) return t;
   // ⚠️ `txt` AND NOT `String` — MANDATORY SYMMETRY with `verify`, which
   //    normalises the same way. With `String`, non-textual content was written
   //    as "42" while `verify` expected `''`: the --write mode produced a file
   //    the check mode REFUSED. An unsatisfiable gate ends up disarmed.
-  return t.slice(0, apres) + '\n' + txt(contenu).trim() + '\n' + t.slice(fin);
+  return t.slice(0, after) + '\n' + txt(content).trim() + '\n' + t.slice(fin);
 }
 
 /**
  * THE core. Confronts the EXPECTED facts (derived from the code by the caller)
  * with the REAL text of the doc. PURE.
  *
- * @param {string} texte - the doc content.
- * @param {Array<{nom: string, contenu: string}>} facts - one block per fact.
+ * @param {string} text - the doc content.
+ * @param {Array<{name: string, content: string}>} facts - one block per fact.
  * @returns {{ok: boolean, discrepancies: string[]}} — `discrepancies` = ACTIONABLE messages.
  *
  * ⚠️ ANTI-DORMANCY (non-negotiable aspect): EMPTY `facts` = FAILURE. A broken
@@ -115,7 +115,7 @@ function rewrite(texte, nom, contenu) {
  *    one extra blank line would redden a perfectly correct fact, and a gate
  *    that reddens wrongly ends up bypassed.
  */
-function verify(texte, facts) {
+function verify(text, facts) {
   const list = asListe(facts);
   if (list.length === 0) {
     return {
@@ -126,19 +126,19 @@ function verify(texte, facts) {
   const discrepancies = [];
   for (const f of list) {
     // ⚠️ `txt` here TOO: the name goes back into the discrepancy MESSAGES,
-    //    which interpolate it. `OUVRE` alone was not enough — the core still
+    //    which interpolate it. `OPENER` alone was not enough — the core still
     //    threw on a broken `toString`, but from the "block missing" branch. A
     //    total core must be total on ALL its paths, including the error ones.
-    const nom = txt(f && f.nom);
-    const attendu = txt(f && f.contenu).trim();
-    const { trouve, contenu } = extract(texte, nom);
-    if (!trouve) {
-      discrepancies.push(`block « ${nom} » ABSENT from the doc: add ${OUVRE(nom)} … ${FERME} where this fact must be read.`);
+    const name = txt(f && f.name);
+    const expected = txt(f && f.content).trim();
+    const { found, content } = extract(text, name);
+    if (!found) {
+      discrepancies.push(`block "${name}" ABSENT from the doc: add ${OPENER(name)} … ${CLOSER} where this fact must be read.`);
       continue;
     }
-    if (contenu !== attendu) {
+    if (content !== expected) {
       discrepancies.push(
-        `block « ${nom} » STALE — the code says otherwise.\n  doc  : ${contenu}\n  code : ${attendu}\n  ⇒ regenerate (the CODE is authoritative, never the doc).`,
+        `block "${name}" STALE — the code says otherwise.\n  doc  : ${content}\n  code : ${expected}\n  ⇒ regenerate (the CODE is authoritative, never the doc).`,
       );
     }
   }
@@ -149,10 +149,10 @@ function verify(texte, facts) {
  * Applies ALL the facts to a text. PURE — returns the regenerated text.
  * Used by the "write" mode of the shell (the equivalent of `go generate`).
  */
-function regenerate(texte, facts) {
+function regenerate(text, facts) {
   const list = asListe(facts);
-  let out = txt(texte);
-  for (const f of list) out = rewrite(out, f && f.nom, f && f.contenu);
+  let out = txt(text);
+  for (const f of list) out = rewrite(out, f && f.name, f && f.content);
   return out;
 }
 
@@ -162,8 +162,8 @@ function regenerate(texte, facts) {
  *    `TRIGGERS` changes precedence). Sorting here would mask that change. The
  *    caller sorts if it wants to, knowingly.
  */
-function wordList(mots) {
-  return asListe(mots).map((m) => `\`${m}\``).join(' · ');
+function wordList(words) {
+  return asListe(words).map((m) => `\`${m}\``).join(' · ');
 }
 
-module.exports = { OUVRE, FERME, extract, rewrite, verify, regenerate, wordList };
+module.exports = { OPENER, CLOSER, extract, rewrite, verify, regenerate, wordList };

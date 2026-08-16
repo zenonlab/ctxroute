@@ -102,25 +102,25 @@ test('ALLOW: reading a documented file → doc injected, protect-files format', 
 //    it is the SHELL that writes `permissionDecision`, so it is the shell that
 //    could reintroduce an `ask` without the engine knowing anything about it.
 test('ANTI-RETURN: a write on a documented doc stays `allow` — never `ask`', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   // `confirm` is no longer vocabulary: even set in the config, it has NO effect.
   fs.writeFileSync(CONFIG, JSON.stringify({ confirm: true }));
   const { stdout } = await run({ tool_name: 'Edit', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 's1' });
   const out = parseOut(stdout);
   assert.strictEqual(out.hookSpecificOutput.permissionDecision, 'allow');
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('contenu'), 'the knowledge is delivered, without human escalation');
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('content'), 'the knowledge is delivered, without human escalation');
   assert.strictEqual(out.hookSpecificOutput.permissionDecisionReason, undefined);
 });
 
 test('SILENCE: no match → empty stdout, exit 0', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
-  const { code, stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/autre.js' }, session_id: 's1' });
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
+  const { code, stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/other.js' }, session_id: 's1' });
   assert.strictEqual(code, 0);
   assert.strictEqual(stdout.trim(), '');
 });
 
 test('smart DEDUP: 1st call injects, immediate recall silent (per-session state)', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: smart\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: smart\n---\ncontent\n');
   const payload = { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'dedup' };
   const r1 = await run(payload);
   assert.ok(parseOut(r1.stdout), 'the 1st call must inject');
@@ -129,20 +129,20 @@ test('smart DEDUP: 1st call injects, immediate recall silent (per-session state)
 });
 
 test('perf PARITY: 100 % dumb corpus → NO state file written', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'perf' });
   const files = fs.existsSync(STATE) ? fs.readdirSync(STATE).filter((f) => f.startsWith('doc-seen-')) : [];
   assert.deepStrictEqual(files, []);
 });
 
 test('PARITY: a doc with an empty body = non-existent (no injection, no ask)', async () => {
-  writeDoc('vide.md', '---\nmatch: server.js\nmode: dumb\n---\n');
+  writeDoc('empty.md', '---\nmatch: server.js\nmode: dumb\n---\n');
   const { stdout } = await run({ tool_name: 'Edit', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 's1' });
   assert.strictEqual(stdout.trim(), '');
 });
 
 test('enabled: false → total silence even on a match', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   fs.writeFileSync(CONFIG, JSON.stringify({ enabled: false }));
   const { stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 's1' });
   assert.strictEqual(stdout.trim(), '');
@@ -182,7 +182,7 @@ test('REAL CONCURRENCY: 10 parallel foreign calls → NO increment lost (lock)',
 });
 
 test('Bash git: never an injection (false positives from commit messages)', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   const { stdout } = await run({ tool_name: 'Bash', tool_input: { command: 'git commit -m "fix server.js"' }, session_id: 's1' });
   assert.strictEqual(stdout.trim(), '');
 });
@@ -261,19 +261,19 @@ test('SKILL: the CONTENT of the skill is injected (read live, frontmatter stripp
     '---\ndescription: harness meta\n---\n# Skill monprojet\nINVARIANT_DU_SKILL here.\n');
   fs.writeFileSync(CONFIG, JSON.stringify({
     skills: {
-      monprojet: { match: ['proj-corps'], mode: 'dumb' },
-      fantome: { match: ['proj-fantome'], mode: 'dumb' },
+      monprojet: { match: ['proj-body'], mode: 'dumb' },
+      ghost: { match: ['proj-ghost'], mode: 'dumb' },
     },
   }));
   const env = { CTXROUTE_SKILLS_DIR: skillsDir };
   // Existing skill → its BODY (without the harness frontmatter), not a pointer.
-  const r1 = parseOut((await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj-corps/x.js' }, session_id: 'sk1' }, { env })).stdout);
+  const r1 = parseOut((await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj-body/x.js' }, session_id: 'sk1' }, { env })).stdout);
   assert.ok(r1.hookSpecificOutput.additionalContext.includes('INVARIANT_DU_SKILL'));
   assert.ok(!r1.hookSpecificOutput.additionalContext.includes('description: harness meta'));
   assert.ok(!r1.hookSpecificOutput.additionalContext.includes('load it via the Skill tool'));
   // Skill file ABSENT → pointer fallback (the perimeter still signals).
-  const r2 = parseOut((await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj-fantome/x.js' }, session_id: 'sk1' }, { env })).stdout);
-  assert.ok(r2.hookSpecificOutput.additionalContext.includes('fantome'));
+  const r2 = parseOut((await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj-ghost/x.js' }, session_id: 'sk1' }, { env })).stdout);
+  assert.ok(r2.hookSpecificOutput.additionalContext.includes('ghost'));
   assert.ok(r2.hookSpecificOutput.additionalContext.includes('Skill'));
 });
 
@@ -349,14 +349,14 @@ test('SUB-AGENT: master PreCompact purges the master store AND those of the sub-
 //    (official documentation 03/08/2026) ⇒ different indices are NOT merged.
 
 function troisDocs() {
-  writeDoc('un.md', '---\nmatch: cible.js\nmode: dumb\n---\n' + 'A'.repeat(400) + '\n');
-  writeDoc('deux.md', '---\nmatch: cible.js\nmode: dumb\n---\n' + 'B'.repeat(400) + '\n');
-  writeDoc('trois.md', '---\nmatch: cible.js\nmode: dumb\n---\n' + 'C'.repeat(400) + '\n');
+  writeDoc('un.md', '---\nmatch: target.js\nmode: dumb\n---\n' + 'A'.repeat(400) + '\n');
+  writeDoc('deux.md', '---\nmatch: target.js\nmode: dumb\n---\n' + 'B'.repeat(400) + '\n');
+  writeDoc('trois.md', '---\nmatch: target.js\nmode: dumb\n---\n' + 'C'.repeat(400) + '\n');
   fs.writeFileSync(CONFIG, JSON.stringify({ budgetInjection: 1000 }));
 }
 const geste = (extra) => ({
   tool_name: 'Read',
-  tool_input: { file_path: 'C:/proj/cible.js' },
+  tool_input: { file_path: 'C:/proj/target.js' },
   session_id: 'sP',
   tool_use_id: 'toolu_01PAQUET',
   ...extra,
@@ -371,9 +371,9 @@ test('FRAMES: 3 docs too big for one frame → delivered in 3 frames, NOTHING ev
     sorties.push(parseOut(stdout).hookSpecificOutput.additionalContext);
   }
   // Each doc arrives once and only once — the conservation invariant, seen end to end.
-  for (const [lettre, nom] of [['A', 'un'], ['B', 'deux'], ['C', 'trois']]) {
+  for (const [lettre, name] of [['A', 'un'], ['B', 'deux'], ['C', 'trois']]) {
     const porteuses = sorties.filter((s) => s.includes(lettre.repeat(400)));
-    assert.strictEqual(porteuses.length, 1, 'doc ' + nom + ' delivered exactly once');
+    assert.strictEqual(porteuses.length, 1, 'doc ' + name + ' delivered exactly once');
   }
   // ⚠️ Zero eviction announcement: that is the WHOLE point of the work item.
   for (const s of sorties) assert.ok(!s.includes('DEFERRED'), 'no residual deferral');
@@ -387,8 +387,8 @@ test('FRAMES: a `once` doc IS NOT consumed by the first frame', async () => {
   // ⚠️ THE defect that per-invocation memoization exists to prevent: without
   //    it, frame 1 marks the doc "seen" and frames 2..N, deciding
   //    again, no longer find ANYTHING to inject — empty frames, doc lost.
-  writeDoc('un.md', '---\nmatch: cible.js\nmode: once\n---\n' + 'A'.repeat(400) + '\n');
-  writeDoc('deux.md', '---\nmatch: cible.js\nmode: once\n---\n' + 'B'.repeat(400) + '\n');
+  writeDoc('un.md', '---\nmatch: target.js\nmode: once\n---\n' + 'A'.repeat(400) + '\n');
+  writeDoc('deux.md', '---\nmatch: target.js\nmode: once\n---\n' + 'B'.repeat(400) + '\n');
   fs.writeFileSync(CONFIG, JSON.stringify({ budgetInjection: 1000 }));
   const p1 = parseOut((await run(geste(), { args: ['--frame', '1', '--frames', '2'] })).stdout);
   const p2 = parseOut((await run(geste(), { args: ['--frame', '2', '--frames', '2'] })).stdout);
@@ -406,7 +406,7 @@ test('FRAMES: without an invocation identifier → SINGLE frame (degradation, ne
   //    multi-frames — as complete as Claude Code, just slower.
   troisDocs();
   const { code, stdout } = await run(
-    { tool_name: 'Read', tool_input: { file_path: 'C:/proj/cible.js' }, session_id: 'sQ' },
+    { tool_name: 'Read', tool_input: { file_path: 'C:/proj/target.js' }, session_id: 'sQ' },
     { args: ['--frame', '1', '--frames', '3'] }
   );
   assert.strictEqual(code, 0);
@@ -417,7 +417,7 @@ test('FRAMES: without an invocation identifier → SINGLE frame (degradation, ne
 
 test('FRAMES: a frame without content goes out SILENTLY (exit 0, empty stdout)', async () => {
   // A single small doc, 4 frames declared: the last 3 have nothing to say.
-  writeDoc('un.md', '---\nmatch: cible.js\nmode: dumb\n---\npetit\n');
+  writeDoc('un.md', '---\nmatch: target.js\nmode: dumb\n---\nsmallOne\n');
   const { code, stdout } = await run(geste(), { args: ['--frame', '4', '--frames', '4'] });
   assert.strictEqual(code, 0);
   assert.strictEqual(stdout.trim(), '', 'no empty envelope emitted');
@@ -443,7 +443,7 @@ test('QUEUE: a corpus bigger than the capacity of ONE call arrives WHOLE over se
   //    re-decided (`once`/`smart`) — and that is precisely the real case that opened
   //    this work item: a `once` skill that did not arrive whole.
   for (let k = 0; k < 6; k++) {
-    writeDoc('f' + k + '.md', '---\nmatch: cible.js\nmode: once\n---\n' + String.fromCharCode(65 + k).repeat(700) + '\n');
+    writeDoc('f' + k + '.md', '---\nmatch: target.js\nmode: once\n---\n' + String.fromCharCode(65 + k).repeat(700) + '\n');
   }
   fs.writeFileSync(CONFIG, JSON.stringify({ budgetInjection: 1200 }));
 
@@ -474,9 +474,9 @@ test('QUEUE: a corpus bigger than the capacity of ONE call arrives WHOLE over se
   }
   // ⚠️ The queue must EMPTY: without termination, "everything arrives" would be true and
   //    the system unusable (it would never deliver anything new again).
-  const reste = fs.readdirSync(STATE).filter((f) => f.startsWith('remainder-'));
-  assert.strictEqual(reste.length, 1, 'one single queue file, keyed by session');
-  const file = JSON.parse(fs.readFileSync(path.join(STATE, reste[0]), 'utf8'));
+  const rest = fs.readdirSync(STATE).filter((f) => f.startsWith('remainder-'));
+  assert.strictEqual(rest.length, 1, 'one single queue file, keyed by session');
+  const file = JSON.parse(fs.readFileSync(path.join(STATE, rest[0]), 'utf8'));
   assert.deepStrictEqual(file.segments, [], 'the queue is EMPTY once everything is delivered');
 });
 
@@ -484,7 +484,7 @@ test('QUEUE: PreCompact purge — an orphan fragment NEVER survives a compaction
   // ⚠️ Keeping the queue after a compaction would deliver the END of a document whose
   //    BEGINNING has disappeared from the context: unreadable, and worse than a re-injection.
   for (let k = 0; k < 4; k++) {
-    writeDoc('p' + k + '.md', '---\nmatch: cible.js\nmode: dumb\n---\n' + 'Z'.repeat(700) + k + '\n');
+    writeDoc('p' + k + '.md', '---\nmatch: target.js\nmode: dumb\n---\n' + 'Z'.repeat(700) + k + '\n');
   }
   fs.writeFileSync(CONFIG, JSON.stringify({ budgetInjection: 1200 }));
   await run(geste({ session_id: 'sFile', tool_use_id: 'toolu_x' }), { args: ['--frame', '1', '--frames', '2'] });
@@ -524,7 +524,7 @@ test('DENY: enforce doc → the tool is REFUSED and the doc goes out in the REAS
 });
 
 test('DENY: the action REDONE right after PASSES (alternation, zero infinite loop)', async () => {
-  writeDoc('paiement.md', '---\nmatch: server.js\nmode: once\nenforce: true\n---\ncontenu\n');
+  writeDoc('paiement.md', '---\nmatch: server.js\nmode: once\nenforce: true\n---\ncontent\n');
   const payload = { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'enf2' };
   const r1 = await run(payload);
   assert.strictEqual(parseOut(r1.stdout).hookSpecificOutput.permissionDecision, 'deny');
@@ -533,7 +533,7 @@ test('DENY: the action REDONE right after PASSES (alternation, zero infinite loo
 });
 
 test('NEGATIVE: a doc WITHOUT enforce NEVER blocks (parity contract)', async () => {
-  writeDoc('normale.md', '---\nmatch: server.js\nmode: once\n---\ncontenu\n');
+  writeDoc('normale.md', '---\nmatch: server.js\nmode: once\n---\ncontent\n');
   const { stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'enf3' });
   assert.strictEqual(parseOut(stdout).hookSpecificOutput.permissionDecision, 'allow');
 });
@@ -557,7 +557,7 @@ test('BADGE: a CHUNKED doc announces its position — never N identical badges',
   //    harnesses DECLARE a limit. Here the budget comes from the conservative
   //    floor. My 1st version passed that non-existent flag: the test
   //    was GREEN on the wrong path, exactly the defect it hunts down.
-  writeDoc('gros.md', '---\nmatch: server.js\nmode: dumb\n---\n' + 'L\n'.repeat(6000));
+  writeDoc('big.md', '---\nmatch: server.js\nmode: dumb\n---\n' + 'L\n'.repeat(6000));
   const { code, stdout } = await run(
     { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'badge1' },
   );
@@ -568,7 +568,7 @@ test('BADGE: a CHUNKED doc announces its position — never N identical badges',
   //    now announced to the human. The optional group is NAMED on purpose:
   //    replacing the anchor with a plain `includes` would let through any
   //    future suffix, that is to say give up verifying the format of the badge.
-  assert.match(out.systemMessage, /^📄 doc: gros \(chunk 1\/\d+\)( · ⚠️ \d+ doc\(s\) DEFERRED.*)?$/, 'the badge carries the position of the chunk');
+  assert.match(out.systemMessage, /^📄 doc: big \(chunk 1\/\d+\)( · ⚠️ \d+ doc\(s\) DEFERRED.*)?$/, 'the badge carries the position of the chunk');
   assert.ok(out.hookSpecificOutput.additionalContext.includes('CHUNK 1/'), 'and the content really is a chunk');
 });
 
@@ -576,9 +576,9 @@ test('BADGE: a doc that FITS has NO suffix (parity to the byte)', async () => {
   // ⚠️ THE NORMAL CASE. If this test turned red, all the parity differentials
   //    would fall with it: the badge of a whole delivery must gain
   //    NOTHING. It is the mandatory counterpart of the previous test.
-  writeDoc('petit.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu court\n');
+  writeDoc('smallOne.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent court\n');
   const { stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'badge2' });
-  assert.strictEqual(parseOut(stdout).systemMessage, '📄 doc: petit');
+  assert.strictEqual(parseOut(stdout).systemMessage, '📄 doc: smallOne');
 });
 
 test('BADGE: the FILE badge ignores showNotification — including when CHUNKED (parity)', async () => {
@@ -594,7 +594,7 @@ test('BADGE: the FILE badge ignores showNotification — including when CHUNKED 
   // ⚠️ The invariant "never an orphan suffix" lives, for its part, in pretool-core.js
   //    (empty badge ⇒ suffix removed) and is proven on `chunkSuffix`.
   fs.writeFileSync(CONFIG, JSON.stringify({ showNotification: false, mode: 'dumb' }));
-  writeDoc('gros.md', '---\nmatch: server.js\nmode: dumb\n---\n' + 'L\n'.repeat(6000));
+  writeDoc('big.md', '---\nmatch: server.js\nmode: dumb\n---\n' + 'L\n'.repeat(6000));
   const { stdout } = await run(
     { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'badge3' },
   );
@@ -603,7 +603,7 @@ test('BADGE: the FILE badge ignores showNotification — including when CHUNKED 
   // ⚠️ Same named tolerance as in the previous case: what is sealed here is
   //    that `showNotification: false` does NOT change the file badge (protect-files
   //    parity) — not the absence of the alarm, which has its own suite.
-  assert.match(out.systemMessage, /^📄 doc: gros \(chunk 1\/\d+\)( · ⚠️ \d+ doc\(s\) DEFERRED.*)?$/, 'file badge UNCHANGED by showNotification (parity)');
+  assert.match(out.systemMessage, /^📄 doc: big \(chunk 1\/\d+\)( · ⚠️ \d+ doc\(s\) DEFERRED.*)?$/, 'file badge UNCHANGED by showNotification (parity)');
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -637,11 +637,11 @@ test('BADGE: the FILE badge ignores showNotification — including when CHUNKED 
 //    JUSTIFIED re-injection; an empty state manufactured a PHANTOM one, at every
 //    contention. NEVER "simplify" this loadState into `{}`.
 test('FALLBACK WITHOUT A LOCK: a `once` already delivered is NOT re-injected when the lock is taken', async () => {
-  writeDoc('once.md', '---\nmatch: server.js\nmode: once\n---\n# Knowledge\ncorps\n');
+  writeDoc('once.md', '---\nmatch: server.js\nmode: once\n---\n# Knowledge\nbody\n');
   const payload = { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'lockfb' };
 
-  const premier = parseOut((await run(payload)).stdout);
-  assert.ok(premier && premier.hookSpecificOutput.additionalContext.includes('corps'), '1st delivery expected');
+  const first = parseOut((await run(payload)).stdout);
+  assert.ok(first && first.hookSpecificOutput.additionalContext.includes('body'), '1st delivery expected');
 
   // The lock is TAKEN by "another process": mkdirSync will fail with EEXIST.
   // ⚠️ Fresh mtime mandatory — beyond STALE_MS (5 s) lock.js forces it and
@@ -698,9 +698,9 @@ test('SOURCE CONTRACT: the path stays extractable AS IS, even with the ordinal',
   // ⚠️ ANTI-SILENT-PROBE WITNESS: without a capture, "no invalid path"
   //    would be a false green. A trap that has cost 5 false probes on this repo.
   assert.ok(vus.length >= 3, 'silent probe: ' + vus.length + ' [source:] tag(s) captured');
-  for (const chemin of vus) {
-    assert.ok(chemin.endsWith('.md') && !chemin.includes('DOC '),
-      'UNUSABLE path: ' + JSON.stringify(chemin)
+  for (const filePath of vus) {
+    assert.ok(filePath.endsWith('.md') && !filePath.includes('DOC '),
+      'UNUSABLE path: ' + JSON.stringify(filePath)
       + ' — the agent could not go and fix this doc.');
   }
 });
@@ -712,9 +712,9 @@ test('DOCUMENT ORDER: the 3 documents announce their global position', async () 
   for (let k = 1; k <= 3; k++) {
     tout += (await run(geste(), { args: ['--frame', String(k), '--frames', '3'] })).stdout;
   }
-  for (const attendu of ['[DOC 1/3]', '[DOC 2/3]', '[DOC 3/3]']) {
-    assert.ok(tout.includes(attendu),
-      attendu + ' missing — the order intended by rank becomes unobservable again');
+  for (const expected of ['[DOC 1/3]', '[DOC 2/3]', '[DOC 3/3]']) {
+    assert.ok(tout.includes(expected),
+      expected + ' missing — the order intended by rank becomes unobservable again');
   }
 });
 
@@ -731,8 +731,8 @@ test('FILTER 52: PARTIAL exclusion (defaults.file) → the other source injects 
   // ⚠️ This is the OBSERVABILITY contract of the backlog: "a filter that cuts is
   //    a silence" — when something still goes out, the badge must say what
   //    was removed and NAME the setting (filterMode/filterList).
-  writeDoc('cible-fichier.md', '---\nmatch: server.js\nmode: dumb\n---\n# File doc\nA.\n');
-  writeDoc('cible-outil.md', '---\ntool: [Read]\nscope: [server.js]\nmode: dumb\n---\n# Tool doc\nB.\n');
+  writeDoc('target-file.md', '---\nmatch: server.js\nmode: dumb\n---\n# File doc\nA.\n');
+  writeDoc('target-outil.md', '---\ntool: [Read]\nscope: [server.js]\nmode: dumb\n---\n# Tool doc\nB.\n');
   fs.writeFileSync(CONFIG, JSON.stringify({ defaults: { file: { filterMode: 'blacklist', filterList: ['Read'] } } }));
   const { code, stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 's52b' });
   assert.strictEqual(code, 0);

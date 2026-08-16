@@ -53,9 +53,9 @@ function patcher(dir, write) {
 }
 
 // Launches a hook WITHOUT ever closing its stdin = exact reproduction of the real bug.
-function hookSurvit(fichier, timeoutMs) {
+function hookSurvit(file, timeoutMs) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [fichier], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [file], { stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdout.on('data', () => {});
     child.stderr.on('data', () => {});
     const t = setTimeout(() => {
@@ -98,8 +98,8 @@ test('DRY-RUN modifies NO file', { skip, timeout: 300000 }, () => {
   const avant = fs.readdirSync(dir).map((f) => [f, fs.readFileSync(path.join(dir, f), 'utf8')]);
   const r = patcher(dir, false);
   assert.strictEqual(r.status, 0, r.stderr);
-  for (const [f, contenu] of avant) {
-    assert.strictEqual(fs.readFileSync(path.join(dir, f), 'utf8'), contenu, `dry-run modified ${f}`);
+  for (const [f, content] of avant) {
+    assert.strictEqual(fs.readFileSync(path.join(dir, f), 'utf8'), content, `dry-run modified ${f}`);
   }
   assert.ok(!fs.existsSync(path.join(dir, 'deadline.js')), 'dry-run copied deadline.js');
 });
@@ -151,8 +151,8 @@ test('ANTI-REGRESSION — the 9 suites of the fleet stay GREEN after the patch',
   //    already red for a reason unrelated to the patch — that is not our subject).
   //    We require that the patch CHANGE NOTHING. That is anti-regression.
   const avant = stripBanner(clonerParc(true));
-  const apres = stripBanner(clonerParc(true));
-  patcher(apres, true);
+  const after = stripBanner(clonerParc(true));
+  patcher(after, true);
 
   const suites = fs.readdirSync(PARC).filter((f) => f.endsWith('.test.js'));
   assert.ok(suites.length > 0, 'no suite found in the fleet — blind test');
@@ -161,7 +161,7 @@ test('ANTI-REGRESSION — the 9 suites of the fleet stay GREEN after the patch',
   for (const s of suites) {
     if (!fs.existsSync(path.join(avant, s))) continue;
     const a = spawnSync(process.execPath, ['--test', s], { cwd: avant, encoding: 'utf8', timeout: 60000 });
-    const b = spawnSync(process.execPath, ['--test', s], { cwd: apres, encoding: 'utf8', timeout: 60000 });
+    const b = spawnSync(process.execPath, ['--test', s], { cwd: after, encoding: 'utf8', timeout: 60000 });
     if (a.status !== b.status) {
       regressions.push(`${s}: before=${a.status} → after=${b.status}\n${(b.stdout || '').slice(-700)}`);
     }

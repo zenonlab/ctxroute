@@ -23,7 +23,7 @@
 //     source ('' = nothing). The gateway joins the messages with ' · '.
 //   - The order of the ADAPTERS array = inter-source concatenation order.
 //
-// ⚠️ PARITY sealed: porte-differential (file, byte-wise) + mcp-differential
+// ⚠️ PARITY sealed: pretool-differential (file, byte-wise) + mcp-differential
 //    (MCP, old vs new). Any change here = re-run BOTH.
 // ⚠️ A SOURCE INFORMS; it is the GATE that can refuse (`enforce: true` ⇒
 //    decision `deny`, gate.js:267 → pretool-core.js:417). 🛑 THESE TWO LINES
@@ -124,7 +124,7 @@ function badgeLabel(injected, ctx) {
 
   // ⚠️ NOMINAL CASE UNTOUCHED — A SINGLE DOC: historical path, BYTE-wise
   //    (`[source:]` tag first, `acc.labels` as fallback). That is the
-  //    protect-files parity, sealed by `porte-differential`. Touching this path
+  //    protect-files parity, sealed by `pretool-differential`. Touching this path
   //    would turn the differential red without any engine having changed.
   if (bases.length <= 1) {
     const parTag = gate.docLabel(ctx.fullDoc);
@@ -140,10 +140,10 @@ function badgeLabel(injected, ctx) {
   //    diagnosing a nonexistent failure, on the strength of a false counter.
   // ⚠️ LESSON TO KEEP: a correct but UNREADABLE transport gets mistaken
   //    for a failure. Display is part of the contract, not decoration.
-  const noms = bases.map((b) => nomCourt(b, ctx)).filter(Boolean);
-  if (noms.length === 0) return '';
-  const cites = noms.slice(0, MAX_NOMS).join(' · ');
-  return noms.length > MAX_NOMS ? cites + ' +' + (noms.length - MAX_NOMS) : cites;
+  const names = bases.map((b) => nomCourt(b, ctx)).filter(Boolean);
+  if (names.length === 0) return '';
+  const citedNames = names.slice(0, MAX_NOMS).join(' · ');
+  return names.length > MAX_NOMS ? citedNames + ' +' + (names.length - MAX_NOMS) : citedNames;
 }
 
 // ── "MCP" SOURCE: docs/mcp/ of the repo, pure selection sources/mcp.js ──

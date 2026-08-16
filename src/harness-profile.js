@@ -8,7 +8,7 @@
 //    and never a modification of the engine.
 //
 // 🔴 WHY IT EXISTS (audit of 14/08/2026, measured). The porting contract
-//    declares « ABSOLUTELY FORBIDDEN to modify `sources/` for a port », and
+//    declares "ABSOLUTELY FORBIDDEN to modify `sources/` for a port", and
 //    `sources-must-not-know-the-harness` is supposed to guarantee it. **That gate
 //    only looks at the IMPORTS** (dependency-cruiser): it cannot see a
 //    LITERAL. Measured result: `sources/file.js` carried 4 hard-coded dialects
@@ -39,8 +39,8 @@
 //      and we would extract phantom paths. **A tool name does not lie; a
 //      content does.** (Maintainer's objection, 14/08/2026: it was right.)
 //
-//    ▸ THE PATH KEYS stay a LIST, because « this parameter designates a
-//      path » is a **semantics**, not a shape. 🛑 Guessing by the NAME
+//    ▸ THE PATH KEYS stay a LIST, because "this parameter designates a
+//      path" is a **semantics**, not a shape. 🛑 Guessing by the NAME
 //      (`path`/`file`/`dir`) has been RULED OUT: it is an **anglophone** convention,
 //      and this framework targets international distribution — a server exposing
 //      `dateipfad` or `chemin_fichier` would make the rule SILENTLY blind,

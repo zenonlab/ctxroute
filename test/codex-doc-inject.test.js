@@ -71,24 +71,24 @@ test('DIALECT: match on a Codex Bash command → additionalContext WITHOUT permi
 //    is nothing left to degrade, `ask` was removed from the framework. This test
 //    forbids the Codex shell from reinventing an escalation — prefix included.
 test('ANTI-RETURN: apply_patch on a documented doc → BARE context, without a confirmation prefix', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   const { stdout } = await run({ tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: C:/proj/server.js\n@@\n*** End Patch' }, session_id: 'cx1' });
   const out = parseOut(stdout);
   assert.strictEqual(out.hookSpecificOutput.permissionDecision, undefined);
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('contenu'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('content'));
   assert.ok(!/Confirm before/i.test(out.hookSpecificOutput.additionalContext),
     'no confirmation request must remain: 0-human is the load-bearing wall');
 });
 
 test('SILENCE: no match → empty stdout, exit 0', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
-  const { code, stdout } = await run({ tool_name: 'Bash', tool_input: { command: 'ls C:/proj/autre' }, session_id: 'cx1' });
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
+  const { code, stdout } = await run({ tool_name: 'Bash', tool_input: { command: 'ls C:/proj/other' }, session_id: 'cx1' });
   assert.strictEqual(code, 0);
   assert.strictEqual(stdout.trim(), '');
 });
 
 test('SHARED STATE ASSUMED (no Codex agent_id): smart dedups on the simple session key', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: smart\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: smart\n---\ncontent\n');
   const payload = { tool_name: 'Bash', tool_input: { command: 'cat C:/proj/server.js' }, session_id: 'cx-dedup' };
   const r1 = await run(payload);
   assert.ok(parseOut(r1.stdout), 'the 1st call must inject');
@@ -106,7 +106,7 @@ test('FAIL-OPEN: garbage stdin → exit 0, empty stdout', async () => {
 });
 
 test('enabled: false → total silence even on a match', async () => {
-  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontenu\n');
+  writeDoc('piege.md', '---\nmatch: server.js\nmode: dumb\n---\ncontent\n');
   fs.writeFileSync(CONFIG, JSON.stringify({ enabled: false }));
   const { stdout } = await run({ tool_name: 'Bash', tool_input: { command: 'cat C:/proj/server.js' }, session_id: 'cx1' });
   assert.strictEqual(stdout.trim(), '');
@@ -128,7 +128,7 @@ test('CODEX DENY: the tool is refused, the doc goes out in permissionDecisionRea
 });
 
 test('CODEX DENY: the REDONE action passes (alternation identical on both harnesses)', async () => {
-  writeDoc('paiement.md', '---\nmatch: server.js\nmode: once\nenforce: true\n---\ncontenu\n');
+  writeDoc('paiement.md', '---\nmatch: server.js\nmode: once\nenforce: true\n---\ncontent\n');
   const payload = { tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'cdx-enf2' };
   const r1 = await run(payload);
   assert.strictEqual(JSON.parse(r1.stdout).hookSpecificOutput.permissionDecision, 'deny');
@@ -137,9 +137,9 @@ test('CODEX DENY: the REDONE action passes (alternation identical on both harnes
 });
 
 test('CODEX NEGATIVE: without enforce, NEVER a permissionDecision (parity 19/07)', async () => {
-  writeDoc('normale.md', '---\nmatch: server.js\nmode: once\n---\ncontenu\n');
+  writeDoc('normale.md', '---\nmatch: server.js\nmode: once\n---\ncontent\n');
   const { stdout } = await run({ tool_name: 'Read', tool_input: { file_path: 'C:/proj/server.js' }, session_id: 'cdx-enf3' });
   const out = JSON.parse(stdout);
   assert.strictEqual(out.hookSpecificOutput.permissionDecision, undefined);
-  assert.ok(out.hookSpecificOutput.additionalContext.includes('contenu'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('content'));
 });

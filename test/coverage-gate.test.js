@@ -40,13 +40,13 @@ import { DEFAULT_BUDGET } from '../src/budget.js';
 //    budget.js in silence — the very bug class this whole file fights.
 const BUDGET_NEUF = DEFAULT_BUDGET;
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Same source as the ENGINE (paths.fileDocsDir honours CTXROUTE_FILEDOCS_DIR):
 // the gate judges the fleet the gate really reads, never a copied path.
 const PARC = require('../src/paths.js').fileDocsDir();
 const SKILL = path.join(os.homedir(), '.claude', 'commands', 'ctxroute.md');
 // File map moved out of the skill on 31/07/2026 (progressive disclosure) — cf part ②.
-const ARBO = path.join(ICI, '..', 'FILE-MAP.md');
+const ARBO = path.join(HERE, '..', 'FILE-MAP.md');
 
 // ⚠️ ㉟① (16/08/2026): TRACKED **∪ UNTRACKED but not ignored** — never
 //    `ls-files` alone. "What a gate draws its list from defines its blind
@@ -58,7 +58,7 @@ const ARBO = path.join(ICI, '..', 'FILE-MAP.md');
 //    08/08 — the answer was not "give up" but "honour the ignore").
 const trackedFiles = () => {
   const git = (args) =>
-    execFileSync('git', args, { cwd: ICI, encoding: 'utf8' })
+    execFileSync('git', args, { cwd: HERE, encoding: 'utf8' })
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
@@ -68,7 +68,7 @@ const trackedFiles = () => {
 // A file is "covered" if a fleet rule REALLY matches it — measured by the
 // real source, never by a name heuristic.
 function docsPour(rules, relPath) {
-  const abs = path.join(ICI, relPath).replace(/\\/g, '/');
+  const abs = path.join(HERE, relPath).replace(/\\/g, '/');
   return fileSource.matchingDocs(rules, { toolName: 'Read', toolInput: { file_path: abs } });
 }
 
@@ -79,12 +79,12 @@ test('① every module and every suite of the repo gets an injectable doc', () =
 
   // DERIVED perimeter: the .js at the root and in sources/ (the code and its
   // suites). Excludes .example/config — their doc is carried otherwise.
-  const cibles = trackedFiles().filter(
+  const targets = trackedFiles().filter(
     (f) => f.endsWith('.js') && (!f.includes('/') || f.startsWith('sources/'))
   );
-  assert.ok(cibles.length > 20, 'suspicious perimeter (too few files): blind gate');
+  assert.ok(targets.length > 20, 'suspicious perimeter (too few files): blind gate');
 
-  const nus = cibles.filter((f) => docsPour(rules, f).length === 0);
+  const nus = targets.filter((f) => docsPour(rules, f).length === 0);
   assert.deepStrictEqual(nus, [],
     'These files have NO injectable doc — an agent touching them receives NOTHING.\n' +
     '      Add their name to the `rules:` of the relevant doc (or create the doc).');
@@ -100,10 +100,10 @@ test('② every TRACKED file appears in the skill file map (exhaustiveness net)'
   const skill = fs.readFileSync(SKILL, 'utf8') + '\n' +
     (fs.existsSync(ARBO) ? fs.readFileSync(ARBO, 'utf8') : '');
   // Personal docs (gitignored) and .example files do not have to appear there.
-  const cibles = trackedFiles().filter(
+  const targets = trackedFiles().filter(
     (f) => !f.startsWith('docs/framework/') && !f.startsWith('docs/mcp/') && !f.endsWith('.md.example')
   );
-  const absents = cibles.filter((f) => !skill.includes(path.basename(f)));
+  const absents = targets.filter((f) => !skill.includes(path.basename(f)));
   assert.deepStrictEqual(absents, [],
     'Files outside the skill file map. The map is the exhaustiveness net:\n' +
     '      a file outside the list is a hole BY DEFINITION, with no judgement of importance.');
@@ -111,12 +111,12 @@ test('② every TRACKED file appears in the skill file map (exhaustiveness net)'
 
 test('③ every `.js` of the repo is analysed by dependency-cruiser (`includeOnly`)', () => {
   // ⚠️ 100 % repo part: holds on a fresh clone too.
-  const conf = JSON.parse(fs.readFileSync(path.join(ICI, '..', '.dependency-cruiser.json'), 'utf8'));
+  const conf = JSON.parse(fs.readFileSync(path.join(HERE, '..', '.dependency-cruiser.json'), 'utf8'));
   const re = new RegExp(conf.options.includeOnly);
-  const cibles = trackedFiles().filter(
+  const targets = trackedFiles().filter(
     (f) => f.endsWith('.js') && !f.endsWith('.test.js') && (!f.includes('/') || f.startsWith('sources/'))
   );
-  const invisibles = cibles.filter((f) => !re.test(f));
+  const invisibles = targets.filter((f) => !re.test(f));
   assert.deepStrictEqual(invisibles, [],
     'These modules are NOT in `includeOnly`: dependency-cruiser does not see them.\n' +
     '      The coupling gate is then GREEN while analysing nothing — a silent false negative\n' +
@@ -127,17 +127,17 @@ test('NEGATIVE-CHECK: the 3 parts really DETECT an oversight', () => {
   // ⚠️ Without this, this gate could certify instead of protecting — the
   //    exact mistake already made by a 1st version of `deadline-gate` (green
   //    while analysing NO real hook).
-  const conf = JSON.parse(fs.readFileSync(path.join(ICI, '..', '.dependency-cruiser.json'), 'utf8'));
+  const conf = JSON.parse(fs.readFileSync(path.join(HERE, '..', '.dependency-cruiser.json'), 'utf8'));
   const re = new RegExp(conf.options.includeOnly);
-  assert.equal(re.test('module-jamais-declare.js'), false, 'part ③ would not detect a missing module');
+  assert.equal(re.test('module-never-declared.js'), false, 'part ③ would not detect a missing module');
 
   if (fs.existsSync(SKILL)) {
     const skill = fs.readFileSync(SKILL, 'utf8');
-    assert.equal(skill.includes('fichier-fantome-xyz.js'), false, 'part ② would not detect a missing entry');
+    assert.equal(skill.includes('file-ghost-xyz.js'), false, 'part ② would not detect a missing entry');
   }
   if (fs.existsSync(PARC)) {
     const rules = rulesFromCorpus(readCorpus(PARC, 'docs/'));
-    assert.equal(docsPour(rules, 'fichier-sans-aucune-doc-xyz.js').length, 0,
+    assert.equal(docsPour(rules, 'file-sans-aucune-doc-xyz.js').length, 0,
       'part ① would not detect a file without a doc');
   }
 });

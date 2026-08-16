@@ -310,10 +310,10 @@ process.stdin.on('end', () => {
     // ⚠️ TOML format: that is the REAL terrain (hooks.json is IGNORED by
     //    Codex 0.144, measured on 19/07/2026).
     const toml = path.join(tmp, 'requirements.toml');
-    const bloc = (fichier, limite) => [
+    const block = (file, limite) => [
       '[[hooks.PreToolUse.hooks]]',
       'type = "command"',
-      `command = 'node ${path.join(repo, fichier)}'`,
+      `command = 'node ${path.join(repo, file)}'`,
       'timeout = 10',
       ...(limite === null ? [] : [`additionalContextLimit = ${limite}`]),
       '',
@@ -323,12 +323,12 @@ process.stdin.on('end', () => {
     //    for a reason foreign to what they test — and we would then "fix" the
     //    wrong end. Its own negative-check is part 7f.
     // 🛑 DO NOT give it an `additionalContextLimit`: it emits no context.
-    const cablage = (limInject, limSession) => bloc('codex-doc-inject.js', limInject)
-      + bloc('codex-doc-write-guard.js', null)
-      + bloc('ctxroute-reset.js', null)
-      + bloc('session-inject.js', limSession)
-      + bloc('turn-count.js', null)
-      + bloc('canary-check.js', null);
+    const cablage = (limInject, limSession) => block('codex-doc-inject.js', limInject)
+      + block('codex-doc-write-guard.js', null)
+      + block('ctxroute-reset.js', null)
+      + block('session-inject.js', limSession)
+      + block('turn-count.js', null)
+      + block('canary-check.js', null);
 
     // 7d-1 — BOTH emitters declare 0 → green.
     fs.writeFileSync(toml, cablage(0, 0));
@@ -376,11 +376,11 @@ process.stdin.on('end', () => {
     //    anti-deprecation gate (the 3 other leads were measured and closed on
     //    05/08). Unwired, it is not a convenience that goes missing: it makes
     //    the Codex harness entirely blind, in silence.
-    const sansCanari = bloc('codex-doc-inject.js', 0)
-      + bloc('codex-doc-write-guard.js', null)
-      + bloc('ctxroute-reset.js', null)
-      + bloc('session-inject.js', 0)
-      + bloc('turn-count.js', null);
+    const sansCanari = block('codex-doc-inject.js', 0)
+      + block('codex-doc-write-guard.js', null)
+      + block('ctxroute-reset.js', null)
+      + block('session-inject.js', 0)
+      + block('turn-count.js', null);
     fs.writeFileSync(toml, sansCanari);
     const rSansCanari = runDoctor(DOCTOR, ['--codex-hooks', toml]);
     ok('CODEX wiring WITHOUT canary-check.js → doctor exit ≠ 0', rSansCanari.status !== 0);
@@ -455,7 +455,7 @@ process.stdin.on('end', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-wiring2-'));
   try {
     const settings = path.join(tmp, 'settings.json');
-    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ command: 'node autre-hook.js' }] }] } }));
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ command: 'node other-hook.js' }] }] } }));
     const r = runDoctor(DOCTOR, ['--settings', settings]);
     ok('framework NOT wired → doctor exit ≠ 0', r.status !== 0);
     // Since the merge (17/07/2026): it must name BOTH missing wirings

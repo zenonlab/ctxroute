@@ -27,16 +27,16 @@ test('normalizePath: separators, case and trailing slash make only ONE form', ()
 });
 
 test('forgottenRoots: only the root neither derived nor ignored comes out', () => {
-  const vues = () => ['C:/p/clients-seo', 'C:/p/agent/clients', 'C:/p/clients-vrac'];
+  const seen = () => ['C:/p/clients-seo', 'C:/p/agent/clients', 'C:/p/clients-vrac'];
   assert.deepEqual(
-    forgottenRoots(vues(), ['C:/p/clients-seo'], ['C:/p/agent/clients']),
+    forgottenRoots(seen(), ['C:/p/clients-seo'], ['C:/p/agent/clients']),
     ['C:/p/clients-vrac']);
   // Everything decided ⇒ silence.
   assert.deepEqual(
-    forgottenRoots(vues(), ['C:/p/clients-seo', 'C:/p/clients-vrac'], ['C:/p/agent/clients']),
+    forgottenRoots(seen(), ['C:/p/clients-seo', 'C:/p/clients-vrac'], ['C:/p/agent/clients']),
     []);
   // Nothing decided ⇒ all three come out, IN DISCOVERY ORDER.
-  assert.deepEqual(forgottenRoots(vues(), [], []), vues());
+  assert.deepEqual(forgottenRoots(seen(), [], []), seen());
 });
 
 test('forgottenRoots: case/separators NEVER create a false red', () => {
@@ -81,7 +81,7 @@ test('a term that is too short invents NO pattern', () => {
 
 test('a term present twice creates only ONE pattern (dedup)', () => {
   const m = forbiddenPatterns('dupont', 'C:/Users/dupont', ['dupont']);
-  assert.equal(m.filter((x) => x.nom.includes('dupont')).length, 1);
+  assert.equal(m.filter((x) => x.name.includes('dupont')).length, 1);
 });
 
 test('non-string / non-array inputs: ignored, never a throw', () => {
@@ -162,7 +162,7 @@ test('scan: TOTAL — absurd inputs, never a throw', () => {
   const m = forbiddenPatterns('dupont', 'C:/Users/dupont', []);
   for (const mauvais of [undefined, null, 42, {}, []]) {
     assert.deepEqual(scan(mauvais, m), []);
-    assert.deepEqual(scan('texte', mauvais), []);
+    assert.deepEqual(scan('text', mauvais), []);
   }
 });
 
@@ -172,8 +172,8 @@ test('scan: returns the PATTERN and the EXCERPT (a mute gate is unusable)', () =
   const m = forbiddenPatterns(undefined, undefined, ['dupont']);
   const r = scan('author: dupont', m);
   assert.equal(r.length, 1);
-  assert.match(r[0].nom, /dupont/);
-  assert.equal(r[0].extrait, 'dupont');
+  assert.match(r[0].name, /dupont/);
+  assert.equal(r[0].excerpt, 'dupont');
 });
 
 test('NEGATIVE-CHECK: a clean text triggers NOTHING', () => {
@@ -188,9 +188,9 @@ test('the HOME FOLDER contributes its own pattern, distinct from the OS account'
   // ⚠️ Without this case, deleting the whole "home folder" branch passed GREEN:
   //    the other tests used a folder whose last segment EQUALS the OS account,
   //    so the dedup masked the loss.
-  const m = forbiddenPatterns('compte', 'C:/Users/autre-dossier', []);
+  const m = forbiddenPatterns('compte', 'C:/Users/other-folder', []);
   assert.equal(m.length, 4, 'email + IP + account + folder');
-  assert.equal(scan('path C:/Users/autre-dossier/x', m).length, 1);
+  assert.equal(scan('path C:/Users/other-folder/x', m).length, 1);
 });
 
 test('3-character THRESHOLD: exactly 3 counts, 2 does not', () => {
@@ -217,10 +217,10 @@ test('every pattern carries a LABEL saying what was found', () => {
   //    author searches blindly and ends up unplugging it. The labels are
   //    therefore CONTRACT, not decoration.
   const m = forbiddenPatterns(undefined, undefined, []);
-  assert.equal(scan('a' + '@' + 'societe.fr', m)[0].nom, 'real email');
-  assert.equal(scan(ip(100, 88, 41, 95), m)[0].nom, 'real machine IP (CGNAT/Tailscale)');
+  assert.equal(scan('a' + '@' + 'societe.fr', m)[0].name, 'real email');
+  assert.equal(scan(ip(100, 88, 41, 95), m)[0].name, 'real machine IP (CGNAT/Tailscale)');
   assert.equal(
-    scan('dupont', forbiddenPatterns(undefined, undefined, ['dupont']))[0].nom,
+    scan('dupont', forbiddenPatterns(undefined, undefined, ['dupont']))[0].name,
     'personal data: dupont'
   );
 });

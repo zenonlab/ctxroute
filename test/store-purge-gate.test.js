@@ -63,9 +63,9 @@ function sourceFiles() {
  *    settles for a mention is a gate that certifies prose.
  */
 function purgedPrefixes(source) {
-  const bloc = /for\s*\(\s*const\s+prefix\s+of\s*\[([^\]]*)\]/.exec(source);
-  if (!bloc) return null;                       // loop not found ⇒ broken gate
-  return new Set([...bloc[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
+  const block = /for\s*\(\s*const\s+prefix\s+of\s*\[([^\]]*)\]/.exec(source);
+  if (!block) return null;                       // loop not found ⇒ broken gate
+  return new Set([...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
 }
 
 /**
@@ -148,8 +148,8 @@ test('NEGATIVE-CHECK: the gate TURNS RED on a non-purged store (IN-MEMORY sabota
   //    very condition of the pattern. Without it, this negative-check would pass for a
   //    bad reason (zero prefixes found) and would be INERT — the trap it
   //    exists to avoid.
-  const sabote = "const store = require('../src/session-store');\nconst STORE_PREFIX = 'canari-brouillon-';";
-  const orphelins = declaredPrefixes(sabote).filter((p) => !purges.has(p));
+  const sabotaged = "const store = require('../src/session-store');\nconst STORE_PREFIX = 'canari-brouillon-';";
+  const orphelins = declaredPrefixes(sabotaged).filter((p) => !purges.has(p));
   assert.deepStrictEqual(
     orphelins, ['canari-brouillon-'],
     'the gate DOES NOT SEE a non-purged store: it certifies instead of protecting.',

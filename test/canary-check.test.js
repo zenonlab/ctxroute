@@ -4,8 +4,8 @@
 //
 // ⚠️ REWORK OF 07/08/2026 — READ BEFORE MODIFYING. The canary's denominator is
 //    NO LONGER counted in the transcript. Official Codex hooks doc
-//    (learn.chatgpt.com/docs/hooks): « the transcript format isn't a stable
-//    interface for hooks and may change over time ». We build nothing on a
+//    (learn.chatgpt.com/docs/hooks): "the transcript format isn't a stable
+//    interface for hooks and may change over time". We build nothing on a
 //    format the vendor reserves the right to break. The denominator therefore
 //    comes from the EMISSIONS counter written by `emission-core` — our data.
 //    Direct consequence: this suite SETS an emissions state instead of
@@ -21,7 +21,7 @@ import {
   sourceTag, EMISSIONS_THRESHOLD, BYTE_WINDOW,
 } from '../src/canary.js';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const SID = 'canari-test-session';
 // Harness-specific noise: it must NEVER weigh on the verdict.
@@ -29,8 +29,8 @@ const bruitHarnais = () => '{"type":"tool_use","name":"Read"}\n';
 const injection = () => 'my doc\n[source: .claude/hooks/docs/x.md]\n';
 
 // ── END TO END, BY REAL SPAWN ───────────────────────────────────────────
-function lancer(payload, stateDir) {
-  execFileSync(process.execPath, [path.join(ICI, '..', 'src', 'hooks', 'canary-check.js')], {
+function launch(payload, stateDir) {
+  execFileSync(process.execPath, [path.join(HERE, '..', 'src', 'hooks', 'canary-check.js')], {
     input: JSON.stringify(payload),
     // ⚠️ EXACT name of the framework env var (`CTXROUTE_STATE_DIR`): with a
     //    near-miss name, the test writes into the REAL state folder and
@@ -56,18 +56,18 @@ function poserEmissions(stateDir, n) {
   );
 }
 
-test("REAL SPAWN: one LANDED injection ⇒ verdict « alive », whatever the volume emitted", () => {
+test("REAL SPAWN: one LANDED injection ⇒ verdict 'alive', whatever the volume emitted", () => {
   const d = tmp();
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(40) + injection());
   poserEmissions(d, 40);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
   assert.equal(sante.verdict, 'alive');
   assert.equal(sante.injections, 1);
 });
 
-test('REAL SPAWN — THE CASE THAT JUSTIFIES EVERYTHING: channel DEAD ⇒ verdict « dead »', () => {
+test('REAL SPAWN — THE CASE THAT JUSTIFIES EVERYTHING: channel DEAD ⇒ verdict "dead"', () => {
   // ⚠️ THIS is the scenario nothing else can see: the framework emits, and no
   //    injection lands any more. Our hooks would be green, the doctor too. Only
   //    this file knows.
@@ -75,7 +75,7 @@ test('REAL SPAWN — THE CASE THAT JUSTIFIES EVERYTHING: channel DEAD ⇒ verdic
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(EMISSIONS_THRESHOLD));
   poserEmissions(d, EMISSIONS_THRESHOLD);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
   assert.equal(sante.verdict, 'dead');
   assert.equal(sante.emissions, EMISSIONS_THRESHOLD);
@@ -93,7 +93,7 @@ test("REAL SPAWN — NEGATIVE: a NOISY transcript without emissions NEVER accuse
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(EMISSIONS_THRESHOLD * 10));
   // No `poserEmissions`: the framework emitted nothing.
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
   assert.equal(sante.verdict, 'undecidable');
   assert.equal(sante.emissions, 0);
@@ -105,7 +105,7 @@ test('REAL SPAWN: MUTE by contract — EMPTY stdout and exit 0 (never blocks a p
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(EMISSIONS_THRESHOLD));
   poserEmissions(d, EMISSIONS_THRESHOLD);
-  const out = execFileSync(process.execPath, [path.join(ICI, '..', 'src', 'hooks', 'canary-check.js')], {
+  const out = execFileSync(process.execPath, [path.join(HERE, '..', 'src', 'hooks', 'canary-check.js')], {
     input: JSON.stringify({ transcript_path: t, session_id: SID }),
     env: { ...process.env, CTXROUTE_STATE_DIR: d },
   });
@@ -114,10 +114,10 @@ test('REAL SPAWN: MUTE by contract — EMPTY stdout and exit 0 (never blocks a p
 
 test('REAL SPAWN: transcript MISSING or empty payload ⇒ silence, no file written', () => {
   const d = tmp();
-  lancer({}, d);
+  launch({}, d);
   assert.equal(fs.existsSync(path.join(d, 'canary.json')), false, 'no verdict fabricated without evidence');
   // Path that does not exist: I/O error ⇒ fail-open, always exit 0.
-  lancer({ transcript_path: path.join(d, 'nexiste-pas.jsonl') }, d);
+  launch({ transcript_path: path.join(d, 'nexiste-pas.jsonl') }, d);
   assert.equal(fs.existsSync(path.join(d, 'canary.json')), false);
 });
 
@@ -128,9 +128,9 @@ test("REAL SPAWN: on error, the PREVIOUS verdict is PRESERVED (never repainted g
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(EMISSIONS_THRESHOLD));
   poserEmissions(d, EMISSIONS_THRESHOLD);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   assert.equal(JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8')).verdict, 'dead');
-  lancer({ transcript_path: path.join(d, 'disparu.jsonl'), session_id: SID }, d);
+  launch({ transcript_path: path.join(d, 'disparu.jsonl'), session_id: SID }, d);
   assert.equal(
     JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8')).verdict, 'dead',
     "the alert survives a failed measurement",
@@ -141,7 +141,7 @@ test('REAL SPAWN: BOUNDED read — a big transcript does not cost its size', () 
   // ⚠️ Measured 03/08/2026: a fleet transcript weighed 104 MB; reading it whole
   //    cost 524 ms ON EVERY TURN. This test seals the bound.
   const d = tmp();
-  const t = path.join(d, 'gros.jsonl');
+  const t = path.join(d, 'big.jsonl');
   // OLD injections, then enough noise to push them OUT of the window.
   // ⚠️ It is not enough for the file to be big: the padding must SEPARATE the
   //    old injections from the end (mistake made while writing this test — the
@@ -150,7 +150,7 @@ test('REAL SPAWN: BOUNDED read — a big transcript does not cost its size', () 
   fs.writeFileSync(t, injection().repeat(1000) + bourrage);
   assert.ok(fs.statSync(t).size > BYTE_WINDOW, 'premise: the file exceeds the window');
   poserEmissions(d, EMISSIONS_THRESHOLD);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
   assert.equal(sante.verdict, 'dead', 'old injections outside the window do not mask the ONGOING failure');
 });
@@ -185,15 +185,15 @@ test('AFTER COMPACTION: the canary KEEPS QUIET, it NEVER accuses wrongly', () =>
   poserEmissions(d, EMISSIONS_THRESHOLD);
   fs.rmSync(path.join(d, `remainder-${SID}.json`)); // ⇐ what the reset does
 
-  lancer({ transcript_path: t, session_id: SID }, d);
-  const apres = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
-  assert.equal(apres.verdict, 'undecidable', 'the canary ACCUSES after a compaction: a false alarm guaranteed every cycle');
-  assert.equal(sourceTag(apres.verdict), '', 'and it must stay MUTE, not merely cautious');
+  launch({ transcript_path: t, session_id: SID }, d);
+  const after = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
+  assert.equal(after.verdict, 'undecidable', 'the canary ACCUSES after a compaction: a false alarm guaranteed every cycle');
+  assert.equal(sourceTag(after.verdict), '', 'and it must stay MUTE, not merely cautious');
 
   // And it BECOMES decidable again as soon as emissions resume — without which
   // compaction would kill it for good instead of suspending it.
   poserEmissions(d, EMISSIONS_THRESHOLD);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   assert.equal(
     JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8')).verdict, 'dead',
     'the canary does not re-arm after a compaction: it would be blind FOR THE REST of the session',
@@ -212,16 +212,16 @@ test("BOUNDARY CONTRACT: the canary reads the key THAT the emission layer writes
   fs.writeFileSync(t, bruitHarnais());
 
   // We write through the REAL emission layer, never through an imitation.
-  const ecrire = `
+  const write = `
     process.env.CTXROUTE_STATE_DIR = ${JSON.stringify(d)};
-    const em = require(${JSON.stringify(path.join(ICI, '..', 'src', 'emission-core.js'))});
+    const em = require(${JSON.stringify(path.join(HERE, '..', 'src', 'emission-core.js'))});
     for (let i = 0; i < ${EMISSIONS_THRESHOLD}; i++) {
       em.emit({ frais: [{ id: 'd' + i, text: 'x' }], budgetMax: 8000, nbFrames: 1, indice: 1, scopeId: ${JSON.stringify(SID)} });
     }
   `;
-  execFileSync(process.execPath, ['-e', ecrire], { env: { ...process.env, CTXROUTE_STATE_DIR: d } });
+  execFileSync(process.execPath, ['-e', write], { env: { ...process.env, CTXROUTE_STATE_DIR: d } });
 
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
   assert.equal(
     sante.emissions, EMISSIONS_THRESHOLD,
@@ -248,7 +248,7 @@ test("LOG: the verdict says WHICH transcript was read, and HOW MUCH", () => {
   const t = path.join(d, 'transcript.jsonl');
   fs.writeFileSync(t, bruitHarnais().repeat(40) + injection());
   poserEmissions(d, 40);
-  lancer({ transcript_path: t, session_id: SID }, d);
+  launch({ transcript_path: t, session_id: SID }, d);
   const sante = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
 
   // the EXACT file on which the verdict was rendered
@@ -266,19 +266,19 @@ test("LOG: the verdict says WHICH transcript was read, and HOW MUCH", () => {
 //    we change file AND size: the log MUST follow.
 test('LOG: it describes the CURRENT run, never a frozen value', () => {
   const d = tmp();
-  const petit = path.join(d, 'petit.jsonl');
-  const gros = path.join(d, 'gros.jsonl');
-  fs.writeFileSync(petit, injection());
-  fs.writeFileSync(gros, bruitHarnais().repeat(500) + injection());
+  const smallOne = path.join(d, 'smallOne.jsonl');
+  const big = path.join(d, 'big.jsonl');
+  fs.writeFileSync(smallOne, injection());
+  fs.writeFileSync(big, bruitHarnais().repeat(500) + injection());
   poserEmissions(d, EMISSIONS_THRESHOLD + 5);
 
-  lancer({ transcript_path: petit, session_id: SID }, d);
+  launch({ transcript_path: smallOne, session_id: SID }, d);
   const a = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
-  lancer({ transcript_path: gros, session_id: SID }, d);
+  launch({ transcript_path: big, session_id: SID }, d);
   const b = JSON.parse(fs.readFileSync(path.join(d, 'canary.json'), 'utf8'));
 
-  assert.equal(a.transcript, petit);
-  assert.equal(b.transcript, gros);
+  assert.equal(a.transcript, smallOne);
+  assert.equal(b.transcript, big);
   assert.ok(b.tailleTranscript > a.tailleTranscript,
     'the logged size must follow the file actually read');
 });

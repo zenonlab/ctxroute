@@ -115,7 +115,7 @@ function exportsDe(src) {
 
 /** The contract breaches, DERIVED from both sides. `[]` = contract honoured. */
 function contratRompu(afficheurs, canariSrc, checkSrc) {
-  const casses = [];
+  const brokenOnes = [];
   for (const a of afficheurs) {
     // ① PATHS — the REAL failure of 04→07/08.
     for (const m of a.src.matchAll(CHEMIN_ABSOLU)) {
@@ -124,7 +124,7 @@ function contratRompu(afficheurs, canariSrc, checkSrc) {
       //    a false positive that would discredit the gate before its first
       //    service.
       if (!fs.existsSync(m[1]) && !fs.existsSync(path.dirname(m[1]))) {
-        casses.push(`${a.name}: dead path → ${m[1]}`);
+        brokenOnes.push(`${a.name}: dead path → ${m[1]}`);
       }
     }
     // ② EXPORT — every name destructured from canary.js must be exported.
@@ -134,18 +134,18 @@ function contratRompu(afficheurs, canariSrc, checkSrc) {
     //    `sourceTag`, which was very much exported. A false positive that
     //    would have discredited the whole gate.
     for (const m of a.src.matchAll(/const\s*\{([^}]*)\}\s*=\s*require\([^)]*canary\.js[^)]*\)/g)) {
-      for (const nom of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
-        if (!exportsDe(canariSrc).has(nom)) {
-          casses.push(`${a.name}: canary.js does not export \`${nom}\``);
+      for (const name of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+        if (!exportsDe(canariSrc).has(name)) {
+          brokenOnes.push(`${a.name}: canary.js does not export \`${name}\``);
         }
       }
     }
   }
   // ③ VERDICT KEY — the display reads `.verdict`, the shell writes it.
   if (afficheurs.some((a) => /\.verdict\b/.test(a.src)) && !/verdict:/.test(checkSrc)) {
-    casses.push('canary-check.js no longer writes the `verdict` key the display reads');
+    brokenOnes.push('canary-check.js no longer writes the `verdict` key the display reads');
   }
-  return casses;
+  return brokenOnes;
 }
 
 const CANARI_SRC = read(path.join(import.meta.dirname, '..', 'src', 'canary.js'));
@@ -154,10 +154,10 @@ const CHECK_SRC = read(path.join(import.meta.dirname, '..', 'src', 'hooks', 'can
 test.skipIf(!parcExists)('④ canary ⟷ display contract: paths, export and verdict key hold', () => {
   const afficheurs = afficheursDuCanari();
   if (afficheurs.length === 0) return; // no display = a legitimate choice
-  const casses = contratRompu(afficheurs, CANARI_SRC, CHECK_SRC);
-  assert.deepStrictEqual(casses, [],
+  const brokenOnes = contratRompu(afficheurs, CANARI_SRC, CHECK_SRC);
+  assert.deepStrictEqual(brokenOnes, [],
     'canary ⟷ display contract BROKEN — the alarm would write for NOBODY, in silence:\n  ' +
-    casses.join('\n  '));
+    brokenOnes.join('\n  '));
 });
 
 test('④ NEGATIVE: the part really goes red on the 3 breaches (IN-MEMORY sabotage)', () => {
@@ -165,7 +165,7 @@ test('④ NEGATIVE: the part really goes red on the 3 breaches (IN-MEMORY sabota
   //    agents execute it on every render.
   // ① THE EXACT 04/08 CASE: the OLD repo name, which does not contain
   //    "ctxroute" — precisely what the 1st version of the pattern missed.
-  const perime = [{ name: 'faux.js', src: "require('C:/Users/dev/Desktop/mcp-doc-hooks/canary.js')" }];
+  const perime = [{ name: 'fakeOnes.js', src: "require('C:/Users/dev/Desktop/mcp-doc-hooks/canary.js')" }];
   assert.strictEqual(contratRompu(perime, CANARI_SRC, CHECK_SRC).length, 1,
     'the part does not see the STALE path of 04/08: it misses its founding case');
 
@@ -179,17 +179,17 @@ test('④ NEGATIVE: the part really goes red on the 3 breaches (IN-MEMORY sabota
     'false positive on a path that does exist');
 
   // ② An export that does not exist.
-  const exportFantome = [{ name: 'faux.js', src: "const { marqueurFantome } = require('../src/canary.js');" }];
+  const exportFantome = [{ name: 'fakeOnes.js', src: "const { marqueurFantome } = require('../src/canary.js');" }];
   assert.match(contratRompu(exportFantome, CANARI_SRC, CHECK_SRC)[0] || '', /does not export/,
     'the part does not see a vanished export');
 
   // ③ The verdict key renamed on the shell side.
-  const lecteur = [{ name: 'faux.js', src: 'const v = JSON.parse(x); v.verdict;' }];
+  const lecteur = [{ name: 'fakeOnes.js', src: 'const v = JSON.parse(x); v.verdict;' }];
   assert.strictEqual(contratRompu(lecteur, CANARI_SRC, 'fs.writeFileSync(t, JSON.stringify({ etat: v }))').length, 1,
     'the part does not see the `verdict` key vanished from the shell');
 
   // …and it stays SILENT on a healthy display (otherwise it would end up unplugged).
-  const sain = [{ name: 'ok.js', src: "const { sourceTag } = require('../src/canary.js');\nconst v = j.verdict;" }];
-  assert.deepStrictEqual(contratRompu(sain, CANARI_SRC, CHECK_SRC), [],
+  const healthy = [{ name: 'ok.js', src: "const { sourceTag } = require('../src/canary.js');\nconst v = j.verdict;" }];
+  assert.deepStrictEqual(contratRompu(healthy, CANARI_SRC, CHECK_SRC), [],
     'false positive on a display that is in fact compliant');
 });

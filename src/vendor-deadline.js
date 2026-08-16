@@ -60,10 +60,10 @@ function alreadyArmed(src) {
 // blank lines and 'use strict' (which MUST stay at the head of its scope).
 // ⚠️ Returns -1 if the file has no executable code: we DO NOT PATCH
 //    blindly. An unexpected file is REPORTED to a human, never guessed.
-function pointInsertion(lignes) {
+function pointInsertion(lines) {
   let dansBloc = false;
-  for (let i = 0; i < lignes.length; i++) {
-    const l = lignes[i].trim();
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].trim();
     if (dansBloc) {
       if (l.includes('*/')) dansBloc = false;
       continue;
@@ -115,8 +115,8 @@ function main() {
     }
 
     const eol = src.includes('\r\n') ? '\r\n' : '\n';
-    const lignes = src.split(/\r?\n/);
-    const idx = pointInsertion(lignes);
+    const lines = src.split(/\r?\n/);
+    const idx = pointInsertion(lines);
     if (idx === -1) {
       // ⚠️ NEVER a guessed patch: we report, a human decides.
       rapport.manuels.push(f);
@@ -130,8 +130,8 @@ function main() {
     //    vendor-deadline.test.js on a COPY. ⚠️ The "the process dies" test was GREEN
     //    on that broken file: a process that CRASHES also dies. Death never
     //    proves that it works — keep both tests, never one without the other.
-    lignes.splice(idx, 0, BANNIERE.replace(/\n/g, eol));
-    if (WRITE) fs.writeFileSync(abs, lignes.join(eol));
+    lines.splice(idx, 0, BANNIERE.replace(/\n/g, eol));
+    if (WRITE) fs.writeFileSync(abs, lines.join(eol));
     rapport.armes.push(f);
   }
 

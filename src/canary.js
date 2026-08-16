@@ -84,8 +84,8 @@ const LONGUEUR_ETIQUETTE_MAX = 200;
 //    guessing ITS equivalent marker.
 // 🛑 THAT APPROACH IS DEAD, AND THE OFFICIAL DOC SAYS SO IN BLACK AND WHITE.
 //    Codex hooks (learn.chatgpt.com/docs/hooks, re-read on 07/08/2026):
-//    « the transcript format isn't a stable interface for hooks and may change
-//    over time ». The transcript is a reading CONVENIENCE, never a contract.
+//    "the transcript format isn't a stable interface for hooks and may change
+//    over time". The transcript is a reading CONVENIENCE, never a contract.
 //    Building a denominator on its schema means betting on a format the vendor
 //    reserves the right to break — a permanent ban in this repo.
 // ✅ WHAT REPLACES IT: the EMISSIONS counter from `emission-core.js`, data of
@@ -167,13 +167,13 @@ function countInjections(extrait) {
   let n = 0;
   let k = extrait.indexOf(INJECTION_MARK);
   while (k !== -1) {
-    const debut = k + INJECTION_MARK.length;
-    const fin = extrait.indexOf(']', debut);
+    const start = k + INJECTION_MARK.length;
+    const fin = extrait.indexOf(']', start);
     // ⚠️ `fin === -1` = mark CUT by the 2 MB window. Undecidable ⇒ we do not
     //    count. NEVER count here "so as not to miss anything": that would
     //    reopen exactly hole ㉘ on truncated marks.
-    if (fin !== -1 && isTagEmitted(extrait.slice(debut, fin))) n++;
-    k = extrait.indexOf(INJECTION_MARK, debut);
+    if (fin !== -1 && isTagEmitted(extrait.slice(start, fin))) n++;
+    k = extrait.indexOf(INJECTION_MARK, start);
   }
   return n;
 }

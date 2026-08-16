@@ -25,31 +25,31 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
-const EXPLAIN = path.join(ICI, '..', 'tools', 'explain.js');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const EXPLAIN = path.join(HERE, '..', 'tools', 'explain.js');
 
 // Throwaway corpus + doc(s) written by the test itself (thunk: nothing at
 // module level, cf perTest doctrine).
 function parcAvec(docs) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-parc-'));
-  for (const [nom, contenu] of Object.entries(docs)) {
-    fs.writeFileSync(path.join(dir, nom), contenu, 'utf8');
+  for (const [name, content] of Object.entries(docs)) {
+    fs.writeFileSync(path.join(dir, name), content, 'utf8');
   }
   return dir;
 }
 
-function lancer(args, parc) {
+function launch(args, parc) {
   return execFileSync(process.execPath, [EXPLAIN, ...args], {
     encoding: 'utf8',
     env: { ...process.env, CTXROUTE_FILEDOCS_DIR: parc },
   });
 }
-const json = (args, parc) => JSON.parse(lancer([...args, '--json'], parc));
+const json = (args, parc) => JSON.parse(launch([...args, '--json'], parc));
 
 test('VERDICT: a doc matching through the path is reported as INJECTED', () => {
-  const parc = parcAvec({ 'cible.md': '---\nmatch: gate.js\nmode: dumb\n---\nCorps.\n' });
+  const parc = parcAvec({ 'target.md': '---\nmatch: gate.js\nmode: dumb\n---\nCorps.\n' });
   const r = json(['--file', 'C:/projet/gate.js'], parc);
-  assert.ok(r.inject.includes('docs/cible.md'), 'the doc should be injected');
+  assert.ok(r.inject.includes('docs/target.md'), 'the doc should be injected');
   assert.equal(r.decision, 'allow');
 });
 
@@ -91,9 +91,9 @@ test('FOUNDING CASE (b) — `mcp:` in the file corpus: mute, and we say WHERE to
 
 test('REASON `scope` not satisfied — distinguished from "pattern absent"', () => {
   const parc = parcAvec({ 's.md': '---\nmatch: gate.js\nscope: [projet-x]\nmode: dumb\n---\nCorps.\n' });
-  const r = json(['--file', 'C:/autre/gate.js'], parc);
+  const r = json(['--file', 'C:/other/gate.js'], parc);
   assert.equal(r.diagnostic, null, 'without --doc, no targeted diagnostic');
-  const d = json(['--doc', 's.md', '--file', 'C:/autre/gate.js'], parc).diagnostic;
+  const d = json(['--doc', 's.md', '--file', 'C:/other/gate.js'], parc).diagnostic;
   assert.equal(d.injects, false);
   assert.ok(/scope/.test(d.motif), 'expected reason: scope not satisfied, received: ' + d.motif);
 });
@@ -155,7 +155,7 @@ test('FAIL-LOUD: corpus not found → exit 2 + a message saying it is THE TOOL',
   //    its own failure reads as "nothing gets injected" = a false engine verdict.
   let output = null;
   try {
-    lancer(['--file', 'C:/projet/gate.js'], path.join(os.tmpdir(), 'parc-qui-n-existe-pas-' + Date.now()));
+    launch(['--file', 'C:/projet/gate.js'], path.join(os.tmpdir(), 'parc-qui-n-existe-pas-' + Date.now()));
     assert.fail('explain should have exited with an error');
   } catch (e) {
     output = e;
@@ -168,7 +168,7 @@ test('FAIL-LOUD: corpus not found → exit 2 + a message saying it is THE TOOL',
 test('NEGATIVE-CHECK: the test harness can really FAIL (otherwise it certifies emptiness)', () => {
   // ⚠️ Without this test, a suite calling nothing would stay green forever —
   //    exactly the "blind gate that certifies instead of protecting".
-  const parc = parcAvec({ 'x.md': '---\nmatch: jamais-ce-nom.js\nmode: dumb\n---\nCorps.\n' });
+  const parc = parcAvec({ 'x.md': '---\nmatch: never-this-name.js\nmode: dumb\n---\nCorps.\n' });
   const r = json(['--file', 'C:/projet/gate.js'], parc);
   assert.equal(r.inject.includes('docs/x.md'), false,
     'a doc whose pattern does not match MUST NOT be reported as injected');
@@ -181,25 +181,25 @@ test('NEGATIVE-CHECK: the test harness can really FAIL (otherwise it certifies e
 //    on text NEVER READ is indistinguishable from an absent term, and the
 //    author looks for their mistake in the wrong doc. BOTH parts are
 //    mandatory — without the negative one, a message displayed ALWAYS would pass.
-const enfoui = (n, feuille) => {
-  let v = feuille;
+const enfoui = (n, leaf) => {
+  let v = leaf;
   for (let i = 0; i < n; i++) v = { a: v };
   return v;
 };
 
 test('㊵.a explain SAYS that a payload was TRUNCATED at the depth bound', () => {
-  const parc = parcAvec({ 'cible.md': '---\ntool: ["T"]\nscope: ["cherche"]\nmode: dumb\n---\nCorps.\n' });
+  const parc = parcAvec({ 'target.md': '---\ntool: ["T"]\nscope: ["cherche"]\nmode: dumb\n---\nCorps.\n' });
   const input = JSON.stringify({ args: enfoui(25, 'cherche') });
-  const output = lancer(['--doc', 'cible', '--tool', 'T', '--input', input], parc);
+  const output = launch(['--doc', 'target', '--tool', 'T', '--input', input], parc);
   assert.match(output, /scope. NOT SATISFIED/, 'the scope must fail (beyond the bound)');
   assert.match(output, /TRUNCAT/, 'the truncation reason MUST be announced');
   assert.match(output, /depth/, 'it must name WHICH of the two bounds');
 });
 
 test('㊵.a NEGATIVE — payload within the bounds: NO mention of truncation', () => {
-  const parc = parcAvec({ 'cible.md': '---\ntool: ["T"]\nscope: ["cherche"]\nmode: dumb\n---\nCorps.\n' });
+  const parc = parcAvec({ 'target.md': '---\ntool: ["T"]\nscope: ["cherche"]\nmode: dumb\n---\nCorps.\n' });
   const input = JSON.stringify({ args: { to: 'absent' } });
-  const output = lancer(['--doc', 'cible', '--tool', 'T', '--input', input], parc);
+  const output = launch(['--doc', 'target', '--tool', 'T', '--input', input], parc);
   assert.match(output, /scope. NOT SATISFIED/);
   assert.doesNotMatch(output, /TRUNCAT/, 'a message displayed even without truncation would be permanent noise');
 });

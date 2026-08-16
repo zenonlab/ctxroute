@@ -163,10 +163,10 @@ function toolMatches(config, payload) {
 function matchingSkills(config, payload) {
   const seen = new Set();
   const out = [];
-  const trouves = fileMatches(config, payload)
+  const foundOnes = fileMatches(config, payload)
     .concat(serverMatches(config, payload))
     .concat(toolMatches(config, payload));
-  for (const m of trouves) {
+  for (const m of foundOnes) {
     if (seen.has(m.doc)) continue;
     seen.add(m.doc);
     out.push(m);

@@ -34,14 +34,14 @@ import toolSource from '../src/sources/tool.js';
 // source supposed to consume it. Thunks (never module-level consts: perTest).
 const CAS = () => ({
   match: {
-    fm: '---\nmatch: cible-unique.js\nmode: dumb\n---\nBody.\n',
-    payload: { toolName: 'Read', toolInput: { file_path: 'C:/p/cible-unique.js' } },
-    via: 'fichier',
+    fm: '---\nmatch: target-unique.js\nmode: dumb\n---\nBody.\n',
+    payload: { toolName: 'Read', toolInput: { file_path: 'C:/p/target-unique.js' } },
+    via: 'file',
   },
   rules: {
-    fm: '---\nrules: [{"pattern":"cible-unique.js"}]\nmode: dumb\n---\nBody.\n',
-    payload: { toolName: 'Read', toolInput: { file_path: 'C:/p/cible-unique.js' } },
-    via: 'fichier',
+    fm: '---\nrules: [{"pattern":"target-unique.js"}]\nmode: dumb\n---\nBody.\n',
+    payload: { toolName: 'Read', toolInput: { file_path: 'C:/p/target-unique.js' } },
+    via: 'file',
   },
   tool: {
     fm: '---\ntool: ["WebFetch"]\nmode: dumb\n---\nBody.\n',
@@ -51,14 +51,14 @@ const CAS = () => ({
 });
 
 // Passes a frontmatter through the REAL chain of its source, returns true if it matches.
-function declenche(texte, payload, via) {
-  const doc = 'docs/preuve.md';
-  if (via === 'fichier') {
-    return fileSource.matchingDocs(rulesFromCorpus([{ doc, text: texte }]), payload).length > 0;
+function declenche(text, payload, via) {
+  const doc = 'docs/proof.md';
+  if (via === 'file') {
+    return fileSource.matchingDocs(rulesFromCorpus([{ doc, text: text }]), payload).length > 0;
   }
   // Tool axis: the source consumes the parsed frontmatter (sources/tool.js contract).
   const { parse } = require('../src/frontmatter.js');
-  return toolSource.matchingDocs([{ doc, fm: parse(texte).data }], payload).length > 0;
+  return toolSource.matchingDocs([{ doc, fm: parse(text).data }], payload).length > 0;
 }
 
 test('GATE: every trigger of TRIGGERS has a proof case', () => {
@@ -90,9 +90,9 @@ test('CONTRACT: `mcp` IS NO LONGER a trigger of the file corpus', () => {
 test('§A: a FILE doc carrying `mcp:` is RED, with the message that says where to go', () => {
   const errs = validate({ mcp: 'stripe' });
   assert.ok(errs.length > 0, '`mcp:` in a file doc MUST be rejected (before: 0 errors, mute doc)');
-  const texte = errs.join(' | ');
-  assert.ok(/PATH/.test(texte), 'the message must state the PATH docs/mcp/{server}.md');
-  assert.ok(!/no trigger/.test(texte),
+  const text = errs.join(' | ');
+  assert.ok(/PATH/.test(text), 'the message must state the PATH docs/mcp/{server}.md');
+  assert.ok(!/no trigger/.test(text),
     'a single useful message: piling "no trigger" on top would drown the line that repairs');
 });
 
@@ -100,10 +100,10 @@ test('NEGATIVE-CHECK: the gate DETECTS a non-consumed trigger', () => {
   // ⚠️ Without this, the gate could turn green while proving NOTHING.
   //    We simulate the addition of a phantom trigger and demand detection.
   const cas = CAS();
-  const fantome = 'perimetre'; // a synonym actually invented then removed on 18/07/2026
-  const listeSabotee = [...TRIGGERS, fantome];
-  const manquants = listeSabotee.filter((k) => !cas[k]);
-  assert.deepStrictEqual(manquants, [fantome],
+  const ghost = 'perimetre'; // a synonym actually invented then removed on 18/07/2026
+  const listeSabotee = [...TRIGGERS, ghost];
+  const missingOnes = listeSabotee.filter((k) => !cas[k]);
+  assert.deepStrictEqual(missingOnes, [ghost],
     'the gate does not detect a trigger without proof: it proves NOTHING.');
 });
 

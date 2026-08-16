@@ -56,7 +56,7 @@ function cheminQuiMatche() {
   return r ? path.join(os.homedir(), 'Desktop', r.pattern) : null;
 }
 
-function lance(payload) {
+function launched(payload) {
   return new Promise((resolve) => {
     const c = execFile(process.execPath, [LEGACY], { cwd: PARC, encoding: 'utf8' }, (_e, out) => resolve(out || ''));
     c.stdin.end(payload);
@@ -64,24 +64,24 @@ function lance(payload) {
 }
 
 test.skipIf(skip)('UNDER LOAD — the armed hooks ALWAYS inject (0 empty output)', { timeout: 60000 }, async () => {
-  const cible = cheminQuiMatche();
-  assert.ok(cible, 'no usable rule found — the test would be blind');
-  const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: cible } });
+  const target = cheminQuiMatche();
+  assert.ok(target, 'no usable rule found — the test would be blind');
+  const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: target } });
 
   // ⚠️ MANDATORY SELF-VALIDATION: at rest, this payload MUST inject. Without this
   //    check, a payload that matches nothing would make the test green-blind under
   //    load (0 injected = 0 "lost to the deadline"… and 0 proof).
-  const temoin = await lance(payload);
-  assert.match(temoin, /\[source:/, `invalid setup: ${cible} injects nothing AT REST — the test would prove nothing`);
+  const witness = await launched(payload);
+  assert.match(witness, /\[source:/, `invalid setup: ${target} injects nothing AT REST — the test would prove nothing`);
 
   // ⚠️ ALL launched at once, NEVER in a pool: the contention IS the subject of the test.
-  const sorties = await Promise.all(Array.from({ length: N }, () => lance(payload)));
+  const sorties = await Promise.all(Array.from({ length: N }, () => launched(payload)));
 
-  const vides = sorties.filter((o) => !o.includes('[source:')).length;
+  const emptyOnes = sorties.filter((o) => !o.includes('[source:')).length;
   assert.strictEqual(
-    vides,
+    emptyOnes,
     0,
-    `${vides}/${N} hooks exited WITHOUT injecting under load → the deadline kills legitimate ` +
+    `${emptyOnes}/${N} hooks exited WITHOUT injecting under load → the deadline kills legitimate ` +
       `work. The doc is no longer injected, SILENTLY. Raise DEFAULT_MS (current: ${DEFAULT_MS} ms).`
   );
 });

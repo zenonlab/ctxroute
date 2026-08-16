@@ -77,7 +77,7 @@ test('① CONSERVATION: every segment goes out — emitted OR announced, never l
   fc.assert(
     fc.property(casArb, ([segments, budget]) => {
       const r = plan(segments, budget);
-      const sortis = [...r.emis, ...r.deferred.map((d) => d.id)];
+      const sortis = [...r.emitted, ...r.deferred.map((d) => d.id)];
       const entres = segments.map((s) => s.id);
       // Same set, same cardinality (hence no duplicate, no disappearance).
       expect(sortis.slice().sort()).toEqual(entres.slice().sort());
@@ -124,7 +124,7 @@ const casConvergence = casArb.map(([segments, budget]) => [segments, Math.max(bu
 test('⑧ CONVERGENCE: replayed action after action, the queue empties AND everything is delivered', () => {
   fc.assert(
     fc.property(casConvergence, fc.integer({ min: 1, max: 4 }), ([segments, budget], nbFrames) => {
-      const attendus = new Set(segments.map((s) => s.id));
+      const expectedOnes = new Set(segments.map((s) => s.id));
       const livres = new Set();
       let file = segments;
       let tours = 0;
@@ -132,10 +132,10 @@ test('⑧ CONVERGENCE: replayed action after action, the queue empties AND every
         expect(tours++).toBeLessThan(300); // strict progress required
         const frames = planFrames(file, budget, nbFrames);
         // A chunk carries `id#j`: we bring it back to the DOCUMENT, like porte-core.
-        for (const p of frames) for (const id of p.emis) livres.add(String(id).split('#')[0]);
+        for (const p of frames) for (const id of p.emitted) livres.add(String(id).split('#')[0]);
         file = frames[frames.length - 1].deferred;
       }
-      expect([...attendus].every((id) => livres.has(id))).toBe(true);
+      expect([...expectedOnes].every((id) => livres.has(id))).toBe(true);
     }),
     { numRuns: 150 }
   );
@@ -159,7 +159,7 @@ test('② BOUND: as soon as at least one segment is emitted, the rendering fits 
       // Degenerate case ASSUMED and documented: if NOTHING fits, we emit the bare
       // announcement (tiny) rather than a truncated block. The bound therefore applies
       // only to renderings that actually carry content.
-      if (r.emis.length > 0) expect(r.texte.length).toBeLessThanOrEqual(budget);
+      if (r.emitted.length > 0) expect(r.text.length).toBeLessThanOrEqual(budget);
     }),
     { numRuns: 500 }
   );
@@ -169,10 +169,10 @@ test('③ PRIORITY: the emitted ones are ALWAYS a prefix of the input (rank resp
   fc.assert(
     fc.property(casArb, ([segments, budget]) => {
       const r = plan(segments, budget);
-      const attendu = segments.slice(0, r.emis.length).map((s) => s.id);
+      const expected = segments.slice(0, r.emitted.length).map((s) => s.id);
       // ⚠️ If this falls, the loader's `rank` sorting would no longer be honoured:
       //    we would keep a secondary doc while evicting a critical doc.
-      expect(r.emis).toEqual(attendu);
+      expect(r.emitted).toEqual(expected);
     }),
     { numRuns: 500 }
   );
@@ -192,20 +192,20 @@ test('⑤ SEAL: header and foot carry the SAME marker, always', () => {
     fc.property(casArb, ([segments, budget]) => {
       const r = plan(segments, budget);
       if (segments.length === 0) return; // nothing to seal
-      // ⚠️ CONDITIONAL seal (cf. SEUIL_SCEAU_RATIO): under half the
+      // ⚠️ CONDITIONAL seal (cf. SEAL_THRESHOLD_RATIO): under half the
       //    budget, the rendering is the historical format, WITHOUT an envelope — that is
       //    deliberate, and it is what keeps the switch safe. The property therefore bears
       //    on CONSISTENCY: sealed ⇒ header AND foot matching.
       if (r.marker === '') {
-        expect(r.texte).not.toContain('###END:');
+        expect(r.text).not.toContain('###END:');
         expect(r.deferred).toEqual([]); // never a silent eviction on this path
         return;
       }
       // The marker announced at the TOP must be the one that closes the block, otherwise
       // the agent would conclude "truncated" on a complete block (or the opposite).
-      expect(r.texte.startsWith('⚠️ SEALED INJECTION')).toBe(true);
-      expect(r.texte).toContain('###END:' + r.marker + '###');
-      expect(r.texte.endsWith('###END:' + r.marker + '###')).toBe(true);
+      expect(r.text.startsWith('⚠️ SEALED INJECTION')).toBe(true);
+      expect(r.text).toContain('###END:' + r.marker + '###');
+      expect(r.text.endsWith('###END:' + r.marker + '###')).toBe(true);
     }),
     { numRuns: 300 }
   );
@@ -227,11 +227,11 @@ test('⑥ ANNOUNCEMENT: every deferral is NAMED in the emitted text (never silen
       //    first ones are named. What the DELIVERY guarantees is the queue
       //    (property ⑧) — the announcement informs, it no longer carries the promise.
       const labels = [...new Set(r.deferred.map((d) => d.label))];
-      expect(r.texte).toContain(String(labels.length) + ' doc(s) DEFERRED');
+      expect(r.text).toContain(String(labels.length) + ' doc(s) DEFERRED');
       // Never SILENT: at least one deferral stays named, whatever happens.
-      expect(r.texte).toContain(labels[0]);
-      if (labels.length > 5) expect(r.texte).toContain('and ' + (labels.length - 5) + ' other(s)');
-      else for (const l of labels) expect(r.texte).toContain(l);
+      expect(r.text).toContain(labels[0]);
+      if (labels.length > 5) expect(r.text).toContain('and ' + (labels.length - 5) + ' other(s)');
+      else for (const l of labels) expect(r.text).toContain(l);
     }),
     { numRuns: 300 }
   );
@@ -248,7 +248,7 @@ test('⑦ COVERAGE: the generator really REACHES the mixed zone (meta-test)', ()
     fc.property(casArb, ([segments, budget]) => {
       const r = plan(segments, budget);
       total++;
-      if (r.emis.length > 0 && r.deferred.length > 0) mixte++;
+      if (r.emitted.length > 0 && r.deferred.length > 0) mixte++;
     }),
     { numRuns: 400 }
   );
@@ -264,25 +264,25 @@ test('FOUNDING CASE: 6 docs, narrow budget — nothing disappears', () => {
   //    the case stays. A deleted founding case = the class of bug becomes invisible again.
   const segs = Array.from({ length: 6 }, (_, k) => ({ id: 'd' + k, text: 'x'.repeat(300), label: 'L' + k }));
   const r = plan(segs, 900);
-  expect([...r.emis, ...r.deferred.map((d) => d.id)].length).toBe(6);
-  expect(r.emis.length).toBeGreaterThan(0);
+  expect([...r.emitted, ...r.deferred.map((d) => d.id)].length).toBe(6);
+  expect(r.emitted.length).toBeGreaterThan(0);
   expect(r.deferred.length).toBeGreaterThan(0);
-  for (const d of r.deferred) expect(r.texte).toContain(d.label);
+  for (const d of r.deferred) expect(r.text).toContain(d.label);
 });
 
 test('NEGATIVE-CHECK: the invariants KNOW HOW to fall (otherwise they certify)', () => {
   // ⚠️ Without this, a property always true by construction of the test (and not
   //    of the code) would give an eternal green — the mistake already made by a 1st
   //    version of `deadline-gate`, green by analysing no real hook.
-  const faux = { emis: ['a'], deferred: [], texte: 'x'.repeat(999) };
-  expect(faux.texte.length <= 10).toBe(false);           // ② would fall
-  expect([...faux.emis, ...faux.deferred].length === 2).toBe(false); // ① would fall
+  const fakeOnes = { emitted: ['a'], deferred: [], text: 'x'.repeat(999) };
+  expect(fakeOnes.text.length <= 10).toBe(false);           // ② would fall
+  expect([...fakeOnes.emitted, ...fakeOnes.deferred].length === 2).toBe(false); // ① would fall
 
   // And the real module holds on the same case: 1 huge segment, dwarf budget.
-  const r = plan([{ id: 'a', text: 'x'.repeat(5000), label: 'gros.md' }], 100);
-  expect(r.emis).toEqual([]);            // nothing emitted
+  const r = plan([{ id: 'a', text: 'x'.repeat(5000), label: 'big.md' }], 100);
+  expect(r.emitted).toEqual([]);            // nothing emitted
   expect(r.deferred.map((d) => d.id)).toEqual(['a']); // but NOTHING LOST
-  expect(r.texte).toContain('gros.md');  // and it is SAID
+  expect(r.text).toContain('big.md');  // and it is SAID
 });
 
 test('budget absent/absurd ⇒ framework default (authority ① of the cascade)', () => {
@@ -290,7 +290,7 @@ test('budget absent/absurd ⇒ framework default (authority ① of the cascade)'
     fc.property(fc.oneof(fc.constant(undefined), fc.constant(0), fc.constant(-5), fc.constant(NaN)), (mauvais) => {
       const seg = [{ id: 'a', text: 'y'.repeat(200), label: 'a.md' }];
       // TOTAL fallback: never a crash, never a null budget that would block everything.
-      expect(plan(seg, mauvais).emis).toEqual(['a']);
+      expect(plan(seg, mauvais).emitted).toEqual(['a']);
     }),
     { numRuns: 20 }
   );
@@ -317,15 +317,15 @@ test('FRAMES ① CONSERVATION: each segment in EXACTLY one frame, or announced',
       const frames = planFrames(segments, budget, n);
 
       expect(frames.length).toBe(n);
-      const emis = frames.flatMap((p) => p.emis);
+      const emitted = frames.flatMap((p) => p.emitted);
       const deferred = frames.flatMap((p) => p.deferred.map((d) => d.id));
       // No DUPLICATE — the new invariant of multi-frame mode.
-      expect(new Set(emis).size).toBe(emis.length);
-      expect(new Set([...emis, ...deferred]).size).toBe(emis.length + deferred.length);
+      expect(new Set(emitted).size).toBe(emitted.length);
+      expect(new Set([...emitted, ...deferred]).size).toBe(emitted.length + deferred.length);
       // No LOSS. ⚠️ A doc may go out in CHUNKS (`id#j`): we
       //    therefore recompose the set of docs SEEN, not the raw list of ids.
       const docId = (id) => id.split('#')[0];
-      expect([...new Set([...emis, ...deferred].map(docId))].sort()).toEqual(segments.map((s) => s.id).sort());
+      expect([...new Set([...emitted, ...deferred].map(docId))].sort()).toEqual(segments.map((s) => s.id).sort());
     }),
     { numRuns: 300 }
   );
@@ -344,7 +344,7 @@ test('FRAMES ② BOUND: a frame that CARRIES CONTENT never exceeds the budget', 
       const total = segments.reduce((a, s) => a + s.text.length + SEPARATEUR_APPROX, 0);
       const budget = Math.max(envelopeSize() + 50, Math.floor((total * pct) / 100));
       for (const p of planFrames(segments, budget, n)) {
-        if (p.emis.length > 0) expect(p.texte.length).toBeLessThanOrEqual(budget);
+        if (p.emitted.length > 0) expect(p.text.length).toBeLessThanOrEqual(budget);
       }
     }),
     { numRuns: 300 }
@@ -372,7 +372,7 @@ test('FRAMES ④ PARITY: nothing to evict ⇒ frame 1 = plan(), the others empty
       const budget = 1000000; // everything fits easily
       const frames = planFrames(segments, budget, n);
       expect(frames[0]).toEqual(plan(segments, budget));
-      for (let i = 1; i < n; i++) expect(frames[i]).toEqual({ texte: '', emis: [], deferred: [], marker: '' });
+      for (let i = 1; i < n; i++) expect(frames[i]).toEqual({ text: '', emitted: [], deferred: [], marker: '' });
     }),
     { numRuns: 100 }
   );
@@ -387,12 +387,12 @@ test('FRAMES ⑤ CONTENT CONSERVATION: nothing evaporates, even on a tiny frame'
   fc.assert(
     fc.property(segmentsArb, fc.integer({ min: 2, max: 6 }), fc.integer({ min: 250, max: 2000 }), (segments, n, budget) => {
       const frames = planFrames(segments, budget, n);
-      const emis = frames.flatMap((p) => p.emis);
+      const emitted = frames.flatMap((p) => p.emitted);
       const deferred = frames.flatMap((p) => p.deferred.map((d) => d.id));
       // Each input doc is EITHER delivered (whole or in chunks `id#j`),
       // OR announced. Never absent from both.
       for (const s of segments) {
-        const vue = emis.some((id) => id === s.id || id.startsWith(s.id + '#')) ||
+        const vue = emitted.some((id) => id === s.id || id.startsWith(s.id + '#')) ||
           deferred.some((id) => id === s.id || id.startsWith(s.id + '#'));
         expect(vue, `doc ${s.id} EVAPORATED (budget ${budget}, n ${n})`).toBe(true);
       }
@@ -450,10 +450,10 @@ test('SCANNER ③ ORDER: the chunks are numbered 1..m, with no gap nor duplicate
 test('SCANNER ④ NEGATIVE-CHECK: the properties KNOW HOW to fall (otherwise they certify)', () => {
   // ⚠️ REAL sabotage: a splitter that LOSES the last slice must make
   //    ② turn red — without this check, an always-true property proves nothing.
-  const sabote = (segments, capacite) => fragment(segments, capacite).slice(0, -1);
+  const sabotaged = (segments, capability) => fragment(segments, capability).slice(0, -1);
   const t = 'x'.repeat(400);
   const cap = H_MAX() + 20;
-  const recolle = sabote([{ id: 'a', label: 'A', text: t }], cap)
+  const recolle = sabotaged([{ id: 'a', label: 'A', text: t }], cap)
     .map((m) => m.text.replace(/^⟦[^⟧]*⟧\n/, '')).join('');
   expect(recolle.replace(/\n/g, '')).not.toBe(t);
 });
@@ -501,8 +501,8 @@ test('PROPERTY ⑨c: CONSERVATION — every non-duplicated fresh segment survive
   fc.assert(fc.property(fc.array(segGen, { maxLength: 8 }), fc.array(segGen, { maxLength: 8 }),
     (file, frais) => {
       const enFile = new Set(file.map((s) => baseId(s.id)));
-      const attendus = frais.filter((s) => !enFile.has(baseId(s.id)));
-      expect(orderSegments(file, frais).slice(file.length)).toEqual(attendus);
+      const expectedOnes = frais.filter((s) => !enFile.has(baseId(s.id)));
+      expect(orderSegments(file, frais).slice(file.length)).toEqual(expectedOnes);
     }));
 });
 

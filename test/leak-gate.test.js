@@ -48,7 +48,7 @@ function scanRepo(racine, m) {
     } catch {
       continue; // binary or unreadable: out of scope
     }
-    for (const v of scan(texte, m)) violations.push(`${rel} → ${v.nom} (${v.extrait})`);
+    for (const v of scan(texte, m)) violations.push(`${rel} → ${v.name} (${v.excerpt})`);
   }
   return violations;
 }
@@ -108,8 +108,8 @@ test('② every client root is DECIDED — derived, or ignored with its reason',
   } catch {
     return; // no private list: mute, like aspect ①
   }
-  const derivees = (decl.derivedFolders || []).map((s) => s.racine);
-  const ignorees = (decl.ignoredRoots || []).map((s) => s.racine);
+  const derivees = (decl.derivedFolders || []).map((s) => s.root);
+  const ignorees = (decl.ignoredRoots || []).map((s) => s.root);
   const zones = [...new Set(derivees.map((r) => path.dirname(r)))];
   const oubliees = forgottenRoots(racinesVues(zones), derivees, ignorees);
   assert.deepEqual(
@@ -171,7 +171,7 @@ test('NEGATIVE-CHECK: the gate KNOWS how to redden (sabotage on a COPY)', () => 
     execFileSync('git', ['init', '-q'], { cwd: bac });
     fs.writeFileSync(path.join(bac, 'piege.md'), 'author: ' + TERME + '\n');
     execFileSync('git', ['add', 'piege.md'], { cwd: bac });
-    fs.writeFileSync(list, JSON.stringify({ termes: [TERME], derivedFolders: [] }));
+    fs.writeFileSync(list, JSON.stringify({ terms: [TERME], derivedFolders: [] }));
 
     const avant = process.env.CTXROUTE_LEAK_LIST;
     process.env.CTXROUTE_LEAK_LIST = list;
@@ -219,8 +219,8 @@ test('DERIVATION: clients come from the FOLDERS, never from a written list', () 
     fs.writeFileSync(path.join(bac, 'clients', 'boulangerie-durand', 'brief.md'), '# brief');
     fs.mkdirSync(path.join(bac, 'clients', 'node_modules'), { recursive: true }); // NOT a client
     fs.writeFileSync(list, JSON.stringify({
-      termes: [],
-      derivedFolders: [{ racine: path.join(bac, 'clients'), marker: 'brief.md' }],
+      terms: [],
+      derivedFolders: [{ root: path.join(bac, 'clients'), marker: 'brief.md' }],
     }));
 
     const avant = process.env.CTXROUTE_LEAK_LIST;
@@ -298,5 +298,5 @@ test('forbiddenPatterns: an absent or too short input invents no pattern', () =>
 
 test('forbiddenPatterns: a term present twice creates only ONE pattern', () => {
   const m = forbiddenPatterns('dupont', 'C:/Users/dupont', ['dupont']);
-  assert.equal(m.filter((x) => x.nom.includes('dupont')).length, 1);
+  assert.equal(m.filter((x) => x.name.includes('dupont')).length, 1);
 });

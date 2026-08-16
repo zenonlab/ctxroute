@@ -50,34 +50,34 @@ import { fileURLToPath } from 'node:url';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SEP = String.fromCharCode(92);
-const manifeste = JSON.parse(fs.readFileSync(path.join(repo, 'layers.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(repo, 'layers.json'), 'utf8'));
 
 // ⚠️ THE PURE CORE IS DERIVED FROM `stryker.conf.json`, NOT COPIED. That file
 //    already declares "ALL the PURE modules" and it is the authority: a 2nd
 //    list would diverge, and that is precisely the implicit coupling this
 //    whole repository fights. Adding a pure module to Stryker protects it
 //    here automatically — no gesture to forget.
-function noyauPur() {
+function pureCore() {
   const conf = JSON.parse(fs.readFileSync(path.join(repo, 'stryker.conf.json'), 'utf8'));
   return new Set(conf.mutate);
 }
 
 // A file's layer. ⚠️ MEANINGFUL ORDER: from the most constrained to the most
 // permitted. A file never belongs to two layers — the first match wins.
-function coucheDe(rel, purs) {
-  if (purs.has(rel)) return 'noyau-pur';
-  if (/-core\.js$/.test(rel)) return 'coeur-partage';
-  return 'coquille';
+function layerOf(rel, pure) {
+  if (pure.has(rel)) return 'pure-core';
+  if (/-core\.js$/.test(rel)) return 'shared-core';
+  return 'shell';
 }
 
-function autorisees(couche) {
-  const c = manifeste.couches.find((x) => x.nom === couche);
-  return new Set(c ? c.autorise : []);
+function allowedFor(layer) {
+  const c = manifest.layers.find((x) => x.name === layer);
+  return new Set(c ? c.allowed : []);
 }
 
 // Scanned files: repository sources only. The TESTS are outside the table
 // (they orchestrate spawns, write, exit — that is their job).
-function pertinent(rel) {
+function relevant(rel) {
   return rel.endsWith('.js')
     && !rel.includes('node_modules')
     && !rel.includes('.test.')
@@ -96,9 +96,9 @@ function pertinent(rel) {
 // ⚠️ WIDER LESSON: a measurement made on ONE machine proves nothing. The
 //    local run reads the real config of the workstation, the CI a fresh clone
 //    on another OS.
-function binaireAstGrep() {
-  const nom = process.platform === 'win32' ? 'ast-grep.exe' : 'ast-grep';
-  const bin = path.join(repo, 'node_modules', '@ast-grep', 'cli', nom);
+function astGrepBinary() {
+  const name = process.platform === 'win32' ? 'ast-grep.exe' : 'ast-grep';
+  const bin = path.join(repo, 'node_modules', '@ast-grep', 'cli', name);
   // ⚠️ LOUD FAILURE, never an empty scan: a gate that finds nothing because
   //    its TOOL is missing would go green while blind. Same class as the
   //    inert `*-must-stay-pure` rules — the worst of both worlds.
@@ -110,7 +110,7 @@ function binaireAstGrep() {
 
 // ⚠️ TWO FORMS, AND THE CHOICE IS NOT COSMETIC (measured on 06/08/2026):
 //    · `pattern` — enough for an expression (`process.exit($$$)`).
-//    · `regle` — MANDATORY as soon as an object PROPERTY is targeted. The
+//    · `rule` — MANDATORY as soon as an object PROPERTY is targeted. The
 //      pattern `{ shell: true }` only finds the object with a single
 //      property: the real case `{ encoding: 'utf8', shell: true, maxBuffer: N }`
 //      escapes it, and `$$$` does not catch it either. A `kind: pair` rule
@@ -118,19 +118,19 @@ function binaireAstGrep() {
 //    🛑 A pattern where a rule is needed = an INERT rule, green while blind.
 //       That is precisely what this gate exists to make impossible — hence
 //       the sabotage VERIFICATION further down, on each capability.
-function argumentsScan(def, cible) {
+function scanArgs(def, target) {
   const base = def.pattern
     ? ['run', '--pattern', def.pattern, '--lang', 'js', '--json=compact']
     : ['scan', '--inline-rules',
-        ['id: couche-capacite', 'language: JavaScript', 'severity: error', 'rule:']
-          .concat(def.regle.map((l) => '  ' + l)).join('\n'),
+        ['id: layer-capability', 'language: JavaScript', 'severity: error', 'rule:']
+          .concat(def.rule.map((l) => '  ' + l)).join('\n'),
         '--json=compact'];
-  return cible ? base.concat([cible]) : base;
+  return target ? base.concat([target]) : base;
 }
 
 /**
- * @param {object} def  capability (pattern OR regle)
- * @param {string} [cible]  ABSOLUTE path to scan; absent ⇒ the whole repository.
+ * @param {object} def  capability (pattern OR rule)
+ * @param {string} [target]  ABSOLUTE path to scan; absent ⇒ the whole repository.
  *
  * ⚠️ `ast-grep` HONOURS `.gitignore` (measured on 06/08/2026, 3rd blindness of
  *    the day). The witnesses written into `state/` — ignored — were therefore
@@ -140,10 +140,10 @@ function argumentsScan(def, cible) {
  *    folder, this gate would go blind on it WITHOUT SAYING A WORD. It is the
  *    "existence" part that would catch it — never remove it.
  */
-function occurrences(def, cible) {
+function occurrences(def, target) {
   let out = '';
   try {
-    out = execFileSync(binaireAstGrep(), argumentsScan(def, cible), {
+    out = execFileSync(astGrepBinary(), scanArgs(def, target), {
       cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
     });
   } catch (e) {
@@ -155,27 +155,27 @@ function occurrences(def, cible) {
   for (const m of r) {
     let rel = String(m.file).split(SEP).join('/');
     // Explicit target (witness outside the repository): return the path as-is.
-    if (cible) { rels.push(rel); continue; }
+    if (target) { rels.push(rel); continue; }
     if (rel.startsWith(repo.split(SEP).join('/'))) rel = rel.slice(repo.length + 1);
-    if (pertinent(rel)) rels.push(rel);
+    if (relevant(rel)) rels.push(rel);
   }
   return [...new Set(rels)];
 }
 
 test('GATE: no layer exercises a capability it does not have', () => {
-  const purs = noyauPur();
-  const fautes = [];
-  for (const [cap, def] of Object.entries(manifeste.capacites)) {
+  const pure = pureCore();
+  const faults = [];
+  for (const [cap, def] of Object.entries(manifest.capabilities)) {
     for (const rel of occurrences(def)) {
-      const couche = coucheDe(rel, purs);
-      if (autorisees(couche).has(cap)) continue;
-      if (manifeste.justifications[rel + '/' + cap]) continue;
-      fautes.push(`${rel} [${couche}] cannot « ${def.libelle} » (${cap}) — ${def.pourquoi}`);
+      const layer = layerOf(rel, pure);
+      if (allowedFor(layer).has(cap)) continue;
+      if (manifest.justifications[rel + '/' + cap]) continue;
+      faults.push(`${rel} [${layer}] cannot "${def.label}" (${cap}) — ${def.why}`);
     }
   }
   assert.deepStrictEqual(
-    fautes.sort(), [],
-    'LAYER TABLE VIOLATION(S):\n  ' + fautes.sort().join('\n  ')
+    faults.sort(), [],
+    'LAYER TABLE VIOLATION(S):\n  ' + faults.sort().join('\n  ')
       + '\n\n🛑 Widening `layers.json` is ALMOST ALWAYS the wrong answer.'
       + '\n   The file is in the wrong layer, or it does work that does not'
       + '\n   belong to it. Fix the FILE, not the table.'
@@ -205,25 +205,25 @@ test('ANTI-INERT: each capability really DETECTS its witness', () => {
   //    INVISIBLE and this test accused all 5 capabilities of being inert while
   //    they worked. The OS tmpdir escapes any ignore rule — and does not
   //    pollute the working tree.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-temoins-'));
-  const aveugles = [];
-  const sansTemoin = [];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-witnesses-'));
+  const blind = [];
+  const withoutWitness = [];
   try {
-    for (const [cap, def] of Object.entries(manifeste.capacites)) {
-      if (typeof def.temoin !== 'string' || def.temoin === '') { sansTemoin.push(cap); continue; }
-      const tmp = path.join(dir, 'temoin-' + cap + '.js');
-      fs.writeFileSync(tmp, def.temoin + '\n');
-      const vu = occurrences(def, tmp).length > 0;
-      if (!vu) aveugles.push(cap + ' — witness NOT detected: ' + def.temoin);
+    for (const [cap, def] of Object.entries(manifest.capabilities)) {
+      if (typeof def.witness !== 'string' || def.witness === '') { withoutWitness.push(cap); continue; }
+      const tmp = path.join(dir, 'witness-' + cap + '.js');
+      fs.writeFileSync(tmp, def.witness + '\n');
+      const seen = occurrences(def, tmp).length > 0;
+      if (!seen) blind.push(cap + ' — witness NOT detected: ' + def.witness);
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  assert.deepStrictEqual(sansTemoin, [], 'Capability(ies) WITHOUT a witness — impossible to prove they see anything at all: ' + sansTemoin.join(', '));
+  assert.deepStrictEqual(withoutWitness, [], 'Capability(ies) WITHOUT a witness — impossible to prove they see anything at all: ' + withoutWitness.join(', '));
   assert.deepStrictEqual(
-    aveugles, [],
-    'INERT RULE(S) — they go green while seeing NOTHING:\n  ' + aveugles.join('\n  ')
-      + '\n⇒ a `pattern` is not enough for an object PROPERTY: switch to `regle` (kind: pair).'
+    blind, [],
+    'INERT RULE(S) — they go green while seeing NOTHING:\n  ' + blind.join('\n  ')
+      + '\n⇒ a `pattern` is not enough for an object PROPERTY: switch to `rule` (kind: pair).'
   );
 });
 
@@ -238,18 +238,18 @@ test('GATE (existence): the scan does see code', () => {
 test('GATE (reverse part): a stale justification goes red', () => {
   // Same doctrine as `ASYMETRIES_JUSTIFIEES`: a waiver that is no longer used
   // must DIE, otherwise the table widens forever, in silence.
-  const purs = noyauPur();
-  const mortes = [];
-  for (const cle of Object.keys(manifeste.justifications)) {
-    const i = cle.lastIndexOf('/');
-    const rel = cle.slice(0, i);
-    const cap = cle.slice(i + 1);
-    const def = manifeste.capacites[cap];
-    if (!def) { mortes.push(cle + ' (unknown capability)'); continue; }
-    if (autorisees(coucheDe(rel, purs)).has(cap)) { mortes.push(cle + ' (already allowed by its layer)'); continue; }
-    if (!occurrences(def).includes(rel)) mortes.push(cle + ' (the file no longer does that)');
+  const pure = pureCore();
+  const stale = [];
+  for (const key of Object.keys(manifest.justifications)) {
+    const i = key.lastIndexOf('/');
+    const rel = key.slice(0, i);
+    const cap = key.slice(i + 1);
+    const def = manifest.capabilities[cap];
+    if (!def) { stale.push(key + ' (unknown capability)'); continue; }
+    if (allowedFor(layerOf(rel, pure)).has(cap)) { stale.push(key + ' (already allowed by its layer)'); continue; }
+    if (!occurrences(def).includes(rel)) stale.push(key + ' (the file no longer does that)');
   }
-  assert.deepStrictEqual(mortes, [], 'STALE justification(s), to be removed:\n  ' + mortes.join('\n  '));
+  assert.deepStrictEqual(stale, [], 'STALE justification(s), to be removed:\n  ' + stale.join('\n  '));
 });
 
 // ⚠️ MANDATORY NEGATIVE-CHECK — a gate that has not been sabotaged is a gate
@@ -257,32 +257,32 @@ test('GATE (reverse part): a stale justification goes red', () => {
 //    sabotage: we NEVER write into a real file, a 1st version did and 38 tests
 //    of other suites fell.
 test('NEGATIVE: a capability exercised without the right is DETECTED', () => {
-  const purs = new Set(['src/gate.js']);
-  assert.strictEqual(coucheDe('src/gate.js', purs), 'noyau-pur');
-  assert.strictEqual(autorisees('noyau-pur').has('exit'), false,
+  const pure = new Set(['src/gate.js']);
+  assert.strictEqual(layerOf('src/gate.js', pure), 'pure-core');
+  assert.strictEqual(allowedFor('pure-core').has('exit'), false,
     'SABOTAGE NOT DETECTED: the pure core would have the right to kill the process.');
 
-  assert.strictEqual(coucheDe('pretool-core.js', purs), 'coeur-partage');
-  assert.strictEqual(autorisees('coeur-partage').has('stdout'), false,
+  assert.strictEqual(layerOf('pretool-core.js', pure), 'shared-core');
+  assert.strictEqual(allowedFor('shared-core').has('stdout'), false,
     'SABOTAGE NOT DETECTED: a shared core would have the right to write the output.');
 
   // The shell, however, MUST be able to: without that the gate would be red
   // everywhere and would end up unplugged — a gate that screams at healthy
   // code no longer protects anything.
-  assert.strictEqual(coucheDe('doc-inject.js', purs), 'coquille');
-  assert.strictEqual(autorisees('coquille').has('exit'), true);
+  assert.strictEqual(layerOf('doc-inject.js', pure), 'shell');
+  assert.strictEqual(allowedFor('shell').has('exit'), true);
 });
 
 test('NEGATIVE: ast-grep ignores a MENTION in a comment or a string', () => {
   // ⚠️ THIS is the reason for AST over regex. The 1st draft of this gate was
   //    regex-based with homemade comment-stripping — fragile and forbidden by
   //    the fleet rules.
-  const tmp = path.join(repo, 'state', '.tmp-couches-negatif.js');
+  const tmp = path.join(repo, 'state', '.tmp-layers-negative.js');
   fs.mkdirSync(path.dirname(tmp), { recursive: true });
   fs.writeFileSync(tmp, "// process.exit(0) in a comment\nconst s = 'process.exit(0)';\nmodule.exports = s;\n");
   try {
-    const trouves = occurrences({ pattern: 'process.exit($$$)' });
-    assert.ok(!trouves.some((f) => f.endsWith('.tmp-couches-negatif.js')),
+    const found = occurrences({ pattern: 'process.exit($$$)' });
+    assert.ok(!found.some((f) => f.endsWith('.tmp-layers-negative.js')),
       'ast-grep counted a MENTION as a call — the gate would produce false positives.');
   } finally {
     fs.unlinkSync(tmp);

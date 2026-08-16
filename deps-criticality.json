@@ -1,9 +1,9 @@
 {
   "_doc": "CRITICALITY CLASSIFICATION of the repo's dependencies (30/07/2026). SINGLE SOURCE, consumed by `deps-criticality-gate.test.js`. Every dependency of EVERY package.json in the repo MUST appear here — unclassified = RED.",
-  "_doc_classes": "`moteur` = the dependency DETERMINES THE DELIVERED OUTPUT (pixels, measurements, encoding) ⇒ EXACT pinning MANDATORY (no ^, no ~, no range), because its drift changes the product without anything going red. `ordinaire` = it does not change the output (tooling, transport) ⇒ caret DESIRABLE (security fixes).",
-  "_doc_zero_moteur": "⚠️ NO ENGINE HERE — and that is structural: this repo has ONLY development dependencies, its production code is JavaScript with no dependency (the hooks are spawned on every tool call, any runtime dependency would be paid for at every gesture). The gate is therefore not here to fix an existing defect: it makes it IMPOSSIBLE for an undecided dependency, runtime or engine, to enter in the future. ⚠️ A gate with an EMPTY scope is a DORMANT gate — hence the ANTI-DORMANCY test that proves the mechanism on a fake engine.",
-  "moteur": {},
-  "ordinaire": {
+  "_doc_classes": "`engine` = the dependency DETERMINES THE DELIVERED OUTPUT (pixels, measurements, encoding) ⇒ EXACT pinning MANDATORY (no ^, no ~, no range), because its drift changes the product without anything going red. `ordinary` = it does not change the output (tooling, transport) ⇒ caret DESIRABLE (security fixes).",
+  "_doc_zero_engine": "⚠️ NO ENGINE HERE — and that is structural: this repo has ONLY development dependencies, its production code is JavaScript with no dependency (the hooks are spawned on every tool call, any runtime dependency would be paid for at every gesture). The gate is therefore not here to fix an existing defect: it makes it IMPOSSIBLE for an undecided dependency, runtime or engine, to enter in the future. ⚠️ A gate with an EMPTY scope is a DORMANT gate — hence the ANTI-DORMANCY test that proves the mechanism on a fake engine.",
+  "engine": {},
+  "ordinary": {
     "vitest": "test harness. A drift changes the behaviour of the GATES, not the product's output — and a gate that breaks is LOUD (red).",
     "@stryker-mutator/core": "mutation testing (gate tooling).",
     "@stryker-mutator/vitest-runner": "Stryker runner (gate tooling).",

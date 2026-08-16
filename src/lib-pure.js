@@ -15,7 +15,7 @@
 // ctxroute-reset, canari-check) and the relic `legacy-mcp-inject`. NO
 // function here must have an observable side effect — same inputs ⇒ same
 // outputs, always.
-// 🛑 THIS LINE ONLY NAMED `legacy-mcp-inject.js`, « the only I/O point »
+// 🛑 THIS LINE ONLY NAMED `legacy-mcp-inject.js`, "the only I/O point"
 //    (fixed on 09/08/2026): that was true at the very beginning, and FALSE since
 //    the single gate of 17/07 — legacy is UNWIRED, kept as a differential
 //    oracle. A reader who came to port the framework therefore saw a single
@@ -174,9 +174,9 @@ function formatSystemMessage(server, levels) {
 // deduced from it. An entry of `filterList` therefore targets: an EXACT tool
 // name (`Bash`, `mcp__stripe__pay`) · a SERVER name (`stripe` — historical
 // semantics, UNTOUCHED) · the wildcard `*`.
-// ⚠️ Generalises the old « MCP servers only » filter: that was class
+// ⚠️ Generalises the old "MCP servers only" filter: that was class
 //    ㊴ (a dimension deprived of what its sibling had) — an adopter could
-//    not say « NEVER inject on our production tools ».
+//    not say "NEVER inject on our production tools".
 // ⚠️ The CASCADE (defaults.{source} > global) lives in gate.js, NEVER here:
 //    this function receives the ALREADY resolved pair. A resolution here = the
 //    double cascade paid for twice (㊱, ㊳).
@@ -284,8 +284,8 @@ function parseFrameArgs(argv) {
   //    a backup array only serves `indexOf`, which would return -1 anyway
   //    ⇒ the branch would be INDISTINGUISHABLE, hence an equivalent mutant.
   if (!Array.isArray(argv)) return { frame: 1, nbFrames: 1 };
-  const nombre = (nom) => {
-    const i = argv.indexOf(nom);
+  const count = (name) => {
+    const i = argv.indexOf(name);
     // ⚠️ Flag ABSENT ⇒ 1. Without this output, `argv[i + 1]` would read `argv[0]`
     //    (i = -1): a command line containing a bare number would be taken
     //    for a packet declaration. A real bug, found by mutation.
@@ -296,8 +296,8 @@ function parseFrameArgs(argv) {
     //    (equivalent mutant). The clamp expresses the same rule, testably.
     return Number.isInteger(v) ? Math.max(1, v) : 1;
   };
-  const nbFrames = nombre('--frames');
-  const frame = nombre('--frame');
+  const nbFrames = count('--frames');
+  const frame = count('--frame');
   // ⚠️ An out-of-bounds index must NEVER emit somebody else's packet:
   //    we fall back to the single frame, never to false content.
   if (frame > nbFrames) return { frame: 1, nbFrames: 1 };
@@ -310,8 +310,8 @@ function parseFrameArgs(argv) {
  * which requires the two numbers to be EQUAL.
  *
  * ⚠️ SEMANTICS TAKEN WORD FOR WORD FROM CODEX — measured in the 0.146.0 binary:
- *    *« Configured `additionalContext` spill threshold. `null` uses 2,500 tokens;
- *    `0` disables spilling. »* So **`0` = NO limit**, and that is what our
+ *    *"Configured `additionalContext` spill threshold. `null` uses 2,500 tokens;
+ *    `0` disables spilling."* So **`0` = NO limit**, and that is what our
  *    wiring declares. Taking THEIR convention rather than inventing one:
  *    two conventions for one same number is guaranteed divergence.
  *

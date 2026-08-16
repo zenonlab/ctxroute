@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // differential-normalize.js — STRIP THE ENVELOPE BEFORE COMPARING
 // ═══════════════════════════════════════════════════════════════════════
-// ⚠️ SHARED BY BOTH DIFFERENTIALS (`porte-differential`,
+// ⚠️ SHARED BY BOTH DIFFERENTIALS (`pretool-differential`,
 //    `mcp-differential`). SINGLE SOURCE, never a copy: two normalizations
 //    would diverge at the first format change, and two safety nets that no
 //    longer filter the same thing no longer prove anything together.

@@ -49,13 +49,13 @@ test('⚙️ ANTI-DORMANCY — the classification really observes, and both lane
 });
 
 test('⚙️ NO HEAVY suite in the fast lane (derived from the CONTENT, never from a list)', () => {
-  const fautes = [];
+  const faults = [];
   for (const f of parNom.unit.include) {
     const src = fs.readFileSync(path.join(RACINE, f), 'utf8');
-    if (MARKERS.SPAWN.test(src)) fautes.push(`${f} → spawns a process`);
-    if (MARKERS.GLOBAL_STATE.test(src)) fautes.push(`${f} → mutates process.env/chdir`);
+    if (MARKERS.SPAWN.test(src)) faults.push(`${f} → spawns a process`);
+    if (MARKERS.GLOBAL_STATE.test(src)) faults.push(`${f} → mutates process.env/chdir`);
   }
-  assert.deepStrictEqual(fautes, [],
+  assert.deepStrictEqual(faults, [],
     'HEAVY suite in the fast lane: it would slow it down for every session to come, AND `isolate: false` would make it unstable.');
 });
 

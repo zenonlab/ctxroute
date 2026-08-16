@@ -79,7 +79,7 @@ test('matchingSkills: perimeter touched -> skill triggered', () => {
 
 test('matchingSkills: outside the perimeter -> nothing', () => {
   const config = { skills: { 'acme-infra': { match: ['infra-mcp'] } } };
-  expect(matchingSkills(config, { toolName: 'Read', toolInput: { file_path: 'C:/autre/projet/index.js' } })).toEqual([]);
+  expect(matchingSkills(config, { toolName: 'Read', toolInput: { file_path: 'C:/other/projet/index.js' } })).toEqual([]);
 });
 
 test('matchingSkills: 2 patterns of the SAME skill match -> only 1 pointer (dedup)', () => {
@@ -265,7 +265,7 @@ test('skillRules/rules: one scope PER pattern — heterogeneous without duplicat
     { pattern: 'clients-seo' },
   ] } } };
   // deploy.sh OUTSIDE projet-a: filtered by ITS scope.
-  expect(matchingSkills(config, { toolName: 'Read', toolInput: { file_path: 'C:/autre/deploy.sh' } })).toEqual([]);
+  expect(matchingSkills(config, { toolName: 'Read', toolInput: { file_path: 'C:/other/deploy.sh' } })).toEqual([]);
   // deploy.sh INSIDE projet-a: passes.
   expect(matchingSkills(config, { toolName: 'Read', toolInput: { file_path: 'C:/projet-a/deploy.sh' } })).toEqual([{ doc: 'skill/a' }]);
   // clients-seo: NO scope, passes everywhere.
@@ -319,7 +319,7 @@ test('㊴ toolMatches: NEGATIVE — scope not satisfied ⇒ SILENCE', () => {
   // ⚠️ The part that proves that client A's skill does NOT arrive when writing to
   //    client B: that is the WHOLE point of the work, not an edge case.
   const config = { skills: { 'client-x': { tool: ['mcp__gworkspace__gworkspace_call'], scope: ['acme'] } } };
-  const payload = { toolName: 'mcp__gworkspace__gworkspace_call', toolInput: { args: { to: 'autre@example.com' } } };
+  const payload = { toolName: 'mcp__gworkspace__gworkspace_call', toolInput: { args: { to: 'other@example.com' } } };
   expect(toolMatches(config, payload)).toEqual([]);
 });
 test('㊴ toolMatches: tool not targeted ⇒ SILENCE', () => {
@@ -343,7 +343,7 @@ test('㊴ matchingSkills: the TOOL dimension enters the UNION, deduplicated', ()
 test('㊴ serverMatches: `scope` now FILTERS (before: ALL OR NOTHING)', () => {
   const config = { skills: { 'client-x': { servers: ['gworkspace'], scope: ['acme'] } } };
   const ok = { toolName: 'mcp__gworkspace__gworkspace_call', toolInput: { args: { to: 'acme@example.com' } } };
-  const ko = { toolName: 'mcp__gworkspace__gworkspace_call', toolInput: { args: { to: 'autre@example.com' } } };
+  const ko = { toolName: 'mcp__gworkspace__gworkspace_call', toolInput: { args: { to: 'other@example.com' } } };
   expect(serverMatches(config, ok)).toEqual([{ doc: 'skill/client-x' }]);
   expect(serverMatches(config, ko)).toEqual([]);
 });

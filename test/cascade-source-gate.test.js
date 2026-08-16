@@ -7,7 +7,7 @@
 //    callers forgot the third:
 //      • `pretool-core.js:143` — decides whether to READ the turn counter.
 //        Without `source`, level ② (`defaults.{source}.driftUnit`) is invisible
-//        ⇒ the gate concludes « unit = tool », does not read the counter and passes
+//        ⇒ the gate concludes "unit = tool", does not read the counter and passes
 //        `turnCount: 0` to `gate.decide`… which, for ITS part, resolves WITH the source and
 //        therefore measures the drift IN TURNS. Result: `since = 0 - entry.turn`,
 //        never ≥ threshold ⇒ **a `smart` doc degenerates into `once`, in SILENCE.**
@@ -30,7 +30,7 @@
 //    comes back); part ② seals the CLASS (no future caller will be able to reopen the
 //    hole). Part ① alone would leave `explain.js` and future callers outside;
 //    part ② alone would prove a call form without proving that it produces the right
-//    result. NEVER remove one of them « since the other covers it ».
+//    result. NEVER remove one of them "since the other covers it".
 
 'use strict';
 
@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ─────────────────────────────────────────────────────────────────────────
 // PART ① — BEHAVIOUR: a `smart` doc set to TURNS by `defaults`
@@ -59,7 +59,7 @@ test('① the TURN cadence set by defaults.{source} is HONOURED by the gate', ()
 
   // The doc declares NO driftUnit: the unit therefore comes from level ②.
   fs.writeFileSync(path.join(DOCS, 'd.md'),
-    '---\nmatch: cible.txt\nmode: smart\nthreshold: 2\n---\n\nCORPS-TEMOIN\n');
+    '---\nmatch: target.txt\nmode: smart\nthreshold: 2\n---\n\nCORPS-TEMOIN\n');
   // ⚠️ Level ② ONLY — neither `driftUnit` in the doc, nor a global `defaultDriftUnit`.
   //    It is the only path that was broken; the other two already worked.
   fs.writeFileSync(CONFIG, JSON.stringify({ defaults: { file: { driftUnit: 'turn' } } }));
@@ -77,7 +77,7 @@ test('① the TURN cadence set by defaults.{source} is HONOURED by the gate', ()
   const store = require('../src/session-store.js');
 
   const sid = 'sess-cascade';
-  const payload = { session_id: sid, tool_name: 'Read', tool_input: { file_path: 'cible.txt' } };
+  const payload = { session_id: sid, tool_name: 'Read', tool_input: { file_path: 'target.txt' } };
   const geste = () => {
     let recu = null;
     porte.run(payload, (_d, fullDoc) => { recu = fullDoc; });
@@ -87,8 +87,8 @@ test('① the TURN cadence set by defaults.{source} is HONOURED by the gate', ()
   try {
     // Turn 1: first contact — the doc is delivered and memorises its turn.
     store.saveState('turn-count-', sid, { turns: 1 });
-    const premier = geste();
-    assert.ok(premier !== null, 'witness: the doc MUST be delivered on the first gesture');
+    const first = geste();
+    assert.ok(first !== null, 'witness: the doc MUST be delivered on the first gesture');
 
     // 4 turns pass WITHOUT the doc being recalled: the drift is 4,
     // the threshold is 2 ⇒ it MUST come back.
@@ -97,7 +97,7 @@ test('① the TURN cadence set by defaults.{source} is HONOURED by the gate', ()
 
     assert.ok(second !== null,
       'REGRESSION: the `smart` doc in TURN unit (set by defaults.file) NEVER came back.\n'
-      + '  The gate resolved the cascade WITHOUT its source ⇒ it believes the unit is « tool », does not read the\n'
+      + '  The gate resolved the cascade WITHOUT its source ⇒ it believes the unit is "tool", does not read the\n'
       + '  turn counter and passes 0 ⇒ the drift is nil forever ⇒ `smart` becomes `once`.');
     assert.ok(second.includes('CORPS-TEMOIN'), 'the returned doc must carry its body');
   } finally {
@@ -117,33 +117,33 @@ test('① the TURN cadence set by defaults.{source} is HONOURED by the gate', ()
 const RESOLVEURS = ['modeForDoc', 'thresholdForDoc', 'driftUnitForDoc', 'enforceForDoc'];
 
 /**
- * Returns the calls with 2 arguments (or fewer) found in `texte`.
+ * Returns the calls with 2 arguments (or fewer) found in `text`.
  * ⚠️ Split by PARENTHESIS DEPTH, never by `split(',')`: an
  *    argument can itself contain a comma (`f(a, g(b, c))`) — a
  *    naive split would count 3 arguments where there are 2, and the gate
  *    would become a generator of false greens.
  */
-function appelsSansSource(texte) {
+function appelsSansSource(text) {
   const fautifs = [];
-  for (const nom of RESOLVEURS) {
+  for (const name of RESOLVEURS) {
     let i = 0;
     for (;;) {
-      const k = texte.indexOf(nom + '(', i);
+      const k = text.indexOf(name + '(', i);
       if (k === -1) break;
-      i = k + nom.length + 1;
+      i = k + name.length + 1;
       let prof = 1;
       let args = 1;
       let j = i;
-      for (; j < texte.length && prof > 0; j++) {
-        const c = texte[j];
+      for (; j < text.length && prof > 0; j++) {
+        const c = text[j];
         if (c === '(' || c === '[' || c === '{') prof++;
         else if (c === ')' || c === ']' || c === '}') prof--;
         else if (c === ',' && prof === 1) args++;
       }
-      const brut = texte.slice(k, j).replace(/\s+/g, ' ');
+      const brut = text.slice(k, j).replace(/\s+/g, ' ');
       // An empty call `f()` = 0 argument, not 1.
-      if (texte.slice(i, j - 1).trim() === '') args = 0;
-      if (args < 3) fautifs.push(`${nom} called with ${args} argument(s): ${brut.slice(0, 90)}`);
+      if (text.slice(i, j - 1).trim() === '') args = 0;
+      if (args < 3) fautifs.push(`${name} called with ${args} argument(s): ${brut.slice(0, 90)}`);
     }
   }
   return fautifs;
@@ -151,13 +151,13 @@ function appelsSansSource(texte) {
 
 test('② no caller resolves the cascade WITHOUT its source', () => {
   const cp = require('node:child_process');
-  const fichiers = cp.execSync('git ls-files "*.js"', { cwd: ICI, encoding: 'utf8' })
+  const files = cp.execSync('git ls-files "*.js"', { cwd: HERE, encoding: 'utf8' })
     .trim().split('\n')
     .filter((f) => !f.endsWith('.test.js') && f !== 'gate.js');
 
   const violations = [];
-  for (const f of fichiers) {
-    const t = fs.readFileSync(path.join(ICI, f), 'utf8');
+  for (const f of files) {
+    const t = fs.readFileSync(path.join(HERE, f), 'utf8');
     for (const v of appelsSansSource(t)) violations.push(`${f} — ${v}`);
   }
 
@@ -165,7 +165,7 @@ test('② no caller resolves the cascade WITHOUT its source', () => {
     'The cascade has FOUR levels; level ② (defaults.{source}) only exists if the SOURCE is\n'
     + 'passed. A call with 2 arguments therefore resolves an AMPUTATED cascade, silently\n'
     + 'different from the one gate.decide applies:\n  ' + violations.join('\n  ')
-    + '\n  ⇒ pass the source (`acc.owner[doc]`), never « simplify » this call.');
+    + '\n  ⇒ pass the source (`acc.owner[doc]`), never "simplify" this call.');
 });
 
 test('② NEGATIVE — the gate really bites, and counts correctly', () => {

@@ -60,8 +60,8 @@ const DEFAULT_LEVEL = 'warn';
 
 // ⚠️ `code` is STABLE (never translated nor reworded: a test or a filter hangs
 //    onto it). `message` = for humans, free to evolve.
-function finding(niveau, code, cible, message) {
-  return { niveau, code, cible, message };
+function finding(niveau, code, target, message) {
+  return { niveau, code, target, message };
 }
 
 // ⚠️ SINGLE SOURCE of "it's a list, or nothing" — EXPORTED ON PURPOSE.
@@ -81,7 +81,7 @@ function list(x) {
  * ⚠️ THE core of the lint. PURE: same state ⇒ same findings, zero side effects.
  *
  * @param {{ docs?: any[], docsFantomes?: any[], mcpServers?: any[], serveursDocumentes?: any[], serveursDeclares?: any[] }} etat
- *   `docs` = [{ chemin, declaration }] — `declaration` is NORMALISED by the
+ *   `docs` = [{ filePath, declaration }] — `declaration` is NORMALISED by the
  *   caller (frontmatter OR rules), never raw · `docsFantomes` = .md files
  *   targeted by a rule but MISSING · `mcpServers` = wired servers ·
  *   `serveursDocumentes` = those having a docs/mcp/{X}.md · `serveursDeclares` =
@@ -98,9 +98,9 @@ function analyze(etat) {
   //    (`mach:`), a contradictory `inject`, an unknown mode.
   //    NEVER duplicate any of those judgements here.
   for (const d of list(e.docs)) {
-    if (!d || typeof d.chemin !== 'string') continue;
+    if (!d || typeof d.filePath !== 'string') continue;
     for (const err of validate(d.declaration || {})) {
-      findings.push(finding('error', 'invalid-declaration', d.chemin, err));
+      findings.push(finding('error', 'invalid-declaration', d.filePath, err));
     }
   }
 
@@ -115,7 +115,7 @@ function analyze(etat) {
   //    rewires an EXTERNAL rule source, the class is reborn and this check is
   //    the only one that sees it. ⚠️ DO NOT remove it on the grounds that it
   //    never fires — a net silent on healthy state is doing exactly its job.
-  for (const chemin of list(e.docsFantomes)) {
+  for (const filePath of list(e.docsFantomes)) {
     // ⚠️ The WORDING is communication, not behaviour (the `code`
     //    `ghost-rule` and the `niveau`, by contrast, stay mutated AND
     //    tested). Mutating it produces an equivalent mutant that only a test
@@ -123,7 +123,7 @@ function analyze(etat) {
     // ⚠️ `next-line` covers ONLY the next line: the string MUST be on that very
     //    line. Mistake made on 15/07 (disable placed on the `push` line, string
     //    on the following line → surviving mutant in CI).
-    findings.push(finding('error', 'ghost-rule', chemin,
+    findings.push(finding('error', 'ghost-rule', filePath,
       // Stryker disable next-line StringLiteral
       'a rule targets this .md, it does not exist: rule dead in silence.'));
   }
@@ -145,8 +145,8 @@ function analyze(etat) {
   // 🛑 Detection lives in the SHELL (it alone reads the files); this core only
   //    judges a boolean — see `lint-must-stay-pure`.
   for (const d of list(e.docs)) {
-    if (!d || typeof d.chemin !== 'string' || !d.tagSourceEnDur) continue;
-    findings.push(finding('error', 'hardcoded-source-tag', d.chemin,
+    if (!d || typeof d.filePath !== 'string' || !d.tagSourceEnDur) continue;
+    findings.push(finding('error', 'hardcoded-source-tag', d.filePath,
       // Stryker disable next-line StringLiteral
       'a [source: …] tag is written INSIDE this doc: the engine already adds it, and the canary counts it as an injection that arrived.'));
   }

@@ -152,7 +152,7 @@ test('validate: UNKNOWN key rejected (typo `mach:` = a doc dead in silence)', ()
   assert.ok(validate({ match: 'a', mach: 'b' }).length > 0);
   assert.ok(validate({ match: 'a', Match: 'b' }).length > 0);
 });
-// ⚠️ NO « all the known keys together » test: that has become IMPOSSIBLE
+// ⚠️ NO "all the known keys together" test: that has become IMPOSSIBLE
 //    by design — `inject: never` EXCLUDES any trigger. Such a test
 //    would require accepting a contradiction. The 2 families are tested separately.
 test('validate: all the COMPATIBLE keys accepted together', () => {
@@ -248,7 +248,7 @@ test('validate: `inject: never` + a trigger = CONTRADICTION (never a guessed pre
 });
 // ⚠️ WEAK TEST FIXED (surviving mutant in CI, 15/07/2026): the 1st version
 //    did `validate({ inject: v })` WITHOUT a trigger — it passed thanks to
-//    the « no trigger » error, NEVER thanks to the `inject` check, which
+//    the "no trigger" error, NEVER thanks to the `inject` check, which
 //    was therefore never exercised. A valid `match` IS needed to isolate the check.
 //    Lesson: a green test that passes for the wrong reason tests nothing.
 test('validate: `inject` accepts ONLY "never" (no 2nd way of saying match:)', () => {
@@ -275,9 +275,9 @@ test('§A: `mcp:` in a FILE doc = RED (before: 0 error, a mute doc)', () => {
   assert.ok(validate({ match: 'ssh-helper.js', mcp: ['ssh'] }).length > 0);
 });
 test('§A: the message says WHERE the doc should have gone (paved road, not just a refusal)', () => {
-  const texte = validate({ mcp: 'stripe' }).join(' | ');
-  assert.ok(/PATH/.test(texte));
-  assert.ok(/docs\/mcp\//.test(texte));
+  const text = validate({ mcp: 'stripe' }).join(' | ');
+  assert.ok(/PATH/.test(text));
+  assert.ok(/docs\/mcp\//.test(text));
 });
 test('validate: a FILE doc on its own stays valid', () => {
   assert.deepStrictEqual(validate({ match: 'lock.js' }), []);
@@ -337,7 +337,7 @@ test('MUTANT L96 — match list: ALL the elements must be non-empty strings', ()
 });
 
 // ── `threshold` (17/07/2026): the smart threshold PER DOC, an integer >= 1 ──
-test('threshold an integer >= 1 = valid (a KNOWN key, never « unknown »), bound 1 INCLUDED', () => {
+test('threshold an integer >= 1 = valid (a KNOWN key, never "unknown"), bound 1 INCLUDED', () => {
   assert.deepStrictEqual(validate({ match: 'x.js', threshold: 2 }), []);
   assert.deepStrictEqual(validate({ match: 'x.js', threshold: 1 }), []);
 });
@@ -356,7 +356,7 @@ test('invalid threshold = RED: 0, float, string', () => {
   assert.ok(validate({ match: 'x.js', threshold: '3' }).length > 0);
 });
 
-// ── validateMcp — THE ONLY authority on « a healthy MCP doc? » (keys mode/threshold) ──
+// ── validateMcp — THE ONLY authority on "a healthy MCP doc?" (keys mode/threshold) ──
 test('validateMcp: an empty frontmatter or valid mode/threshold = 0 error (bound 1 included)', () => {
   assert.deepStrictEqual(validateMcp({}), []);
   assert.deepStrictEqual(validateMcp({ mode: 'dumb' }), []);
@@ -443,7 +443,7 @@ test('note: the FORM is validated, never the content (validating the meaning wou
 // ⚠️ THE CASE THAT CARRIES THE WHOLE FEATURE. If the note reached the injected body,
 //    it would become noise re-injected on every gesture — the exact opposite of the goal.
 //    It is invisible BY CONSTRUCTION (parse() removes the whole frontmatter),
-//    but « by construction » without a test is a promise. Here, it is a contract.
+//    but "by construction" without a test is a promise. Here, it is a contract.
 test('note: NEVER reaches the injected body', () => {
   const r = parse('---\nmatch: x.js\nnote: SETTING_SECRET\n---\nvisible body\n');
   assert.strictEqual(r.data.note, 'SETTING_SECRET');
@@ -453,13 +453,13 @@ test('note: NEVER reaches the injected body', () => {
 });
 
 // ⚠️ KNOWN TRAP, FROZEN BY THIS TEST — not yet sealed (04/08/2026).
-//    A YAML block `|` returns the value « | » and LOSES the following lines
+//    A YAML block `|` returns the value "|" and LOSES the following lines
 //    silently. Found by adversarial simulation.
 // 🛑 A GUARD WAS ATTEMPTED IN `validate()` THEN REMOVED THE SAME DAY — do not
 //    do it again as is. The CI (ROUND-TRIP property-test of `migrate`)
 //    turned it RED within minutes: it rejected `match: "|"`, a
 //    LEGITIMATE pattern. At this layer, `key: |` (block) and `key: "|"` (literal pipe) are
-//    INDISTINGUISHABLE — both are worth the string « | ». A guard unable to
+//    INDISTINGUISHABLE — both are worth the string "|". A guard unable to
 //    distinguish forbids the healthy, and a guard that forbids the healthy ends up
 //    unplugged. The correct fix lives in `parse()`, the only place that sees the
 //    TEXT (a `|` value AND a following indented line). Recorded in the REFACTOR-PLAN.
@@ -496,7 +496,7 @@ test('`enforce` is admitted in an MCP doc TOO (the same vocabulary everywhere)',
 // VOCABULARY PER CORPUS — SYMMETRY gate (05/08/2026).
 // ⚠️ Freezes WHICH key lives in WHICH corpus. Any future divergence becomes an
 //    explicit DECISION (this test turns red) instead of a gap that settles in.
-//    Born of a real question: « is everything symmetrical? » — the answer was
+//    Born of a real question: "is everything symmetrical?" — the answer was
 //    NO for `confirm`, and nobody had written it anywhere. Since its
 //    removal, the answer is YES, and this gate is what keeps it true.
 // ═══════════════════════════════════════════════════════════════════════
@@ -519,7 +519,7 @@ test('ANTI-RETURN: `confirm` is no longer vocabulary, in NO corpus', () => {
   //      so one same word had TWO meanings depending on the harness;
   //    · `ask` puts a HUMAN back in the loop = contrary to 0-human, which is
   //      the load-bearing wall of the framework.
-  // ⚠️ The need « stop a gesture » is covered by `enforce`: automatic,
+  // ⚠️ The need "stop a gesture" is covered by `enforce`: automatic,
   //    identical on both harnesses, and it DELIVERS the knowledge with the refusal.
   //    Two words for one need = the anti-synonym law violated.
   assert.ok(!KNOWN.includes('confirm'), 'confirm must no longer be an admitted key');
@@ -609,7 +609,7 @@ test('SYMMETRY GATE ①: a key present in one corpus and absent from another MUS
 // ═══════════════════════════════════════════════════════════════════════
 //
 // 🔴 WHY THIS PART EXISTS: part ① exempts the 8 matching operators
-//    « specific to the corpus by nature ». **That hypothesis was FALSE, and it
+//    "specific to the corpus by nature". **That hypothesis was FALSE, and it
 //    cost two jobs (㊴, 11-12/08/2026)**: a skill COULD NOT react
 //    to a parameter (`tool` refused by the schema, `scope`/`exclude` ignored on
 //    the `servers` dimension), and nobody saw it for 3 weeks because
@@ -648,9 +648,9 @@ const ASYMETRIES_MATCHING = {
     + "a `tool:` in an MCP doc could only designate what it already designates.",
   // 🛑 MAINTAINER'S DECISION, 12/08/2026 — I HAD IMPLEMENTED IT, THEN CANCELLED IT.
   //    I added `scope`/`exclude` to the MCP docs because gate ②
-  //    flagged them as absent. The maintainer asked the right question: « what would that
-  //    be for? » — and the KNOB TEST answers NO.
-  //    The need « react to an MCP call filtered by a PARAMETER » is ALREADY
+  //    flagged them as absent. The maintainer asked the right question: "what would that
+  //    be for?" — and the KNOB TEST answers NO.
+  //    The need "react to an MCP call filtered by a PARAMETER" is ALREADY
   //    entirely expressible in the FILE corpus: `tool: ["mcp__srv__tool"]`
   //    + `scope: [...]`. That is EXACTLY how the customer sheets are written,
   //    and they work (verified by spawn on 12/08/2026).
@@ -679,7 +679,7 @@ test('SYMMETRY GATE ②: an OPERATOR absent from a declarative corpus MUST be ju
     // ⚠️ PROBED by the REAL validator and the REAL schema — never a list written
     //    by hand, which would stay green on a broken engine.
     //    `scope`/`exclude` NEVER trigger on their own: we probe them accompanied
-    //    by a trigger, otherwise we would be measuring « no trigger », not the key.
+    //    by a trigger, otherwise we would be measuring "no trigger", not the key.
     const avecDeclencheur = k === 'scope' || k === 'exclude' ? { match: 'x' } : {};
     const presence = {
       'file doc': validate({ ...avecDeclencheur, [k]: v }).length === 0,
@@ -725,8 +725,8 @@ test('SYMMETRY GATE ② bis: every operator of the vocabulary is PROBED (nothing
 // 🔴 REAL DEFECT: `note: |` returned `"|"` and SWALLOWED the indented lines. Since
 //    the frontmatter is removed from the body, they disappeared from BOTH sides,
 //    with `validate` GREEN. `note` is the field that invites writing at length.
-// 🛑 NO EXCEPTION PER KEY: the rule is « `|`/`>` FOLLOWED by an INDENTED
-//    line », valid everywhere. An exception on `note` alone would have left
+// 🛑 NO EXCEPTION PER KEY: the rule is "`|`/`>` FOLLOWED by an INDENTED
+//    line", valid everywhere. An exception on `note` alone would have left
 //    the trap armed on every other key — and the next key would fall
 //    into it without anyone understanding why.
 
@@ -742,7 +742,7 @@ test('BLOCK > : the lines are FOLDED with a space (YAML semantics)', () => {
 });
 
 test('BLOCK: an internal EMPTY line is kept, the final one is cut', () => {
-  // Without the « empty + next indented » guard, a paragraph separated by a
+  // Without the "empty + next indented" guard, a paragraph separated by a
   // blank would be truncated at its first half — a silent loss again.
   const { data } = parse('---\nnote: |\n  para one\n\n  para two\n---\nbody\n');
   assert.strictEqual(data.note, 'para one\n\npara two');
@@ -765,7 +765,7 @@ test('FOUNDING CASE: `match: |` WITHOUT an indented line stays the STRING "|"', 
 });
 
 test('BLOCK on the LAST line of the frontmatter → no crash (totality)', () => {
-  // `lignes[i + 2]` is then `undefined`: without the type guard in
+  // `lines[i + 2]` is then `undefined`: without the type guard in
   // `isIndented`, the parser would throw — hence NO MORE doc injected
   // anywhere, for the whole fleet. The totality of `parse` is not negotiable.
   assert.doesNotThrow(() => parse('---\nnote: |\n  alone\n---\nbody\n'));
@@ -800,7 +800,7 @@ test('BLOCK > : each line is TRIMMED before the fold (no spurious spaces)', () =
   assert.strictEqual(data.note, 'one two');
 });
 
-test('BLOCK: the FINAL empty line is cut (YAML « clip » chomping)', () => {
+test('BLOCK: the FINAL empty line is cut (YAML "clip" chomping)', () => {
   // ⚠️ Kills the mutant that removes `.trimEnd()`: without it, the line break that
   //    precedes the closing `---` would enter the value.
   const { data } = parse('---\nnote: |\n  alone\n\nmode: dumb\n---\nbody\n');
@@ -852,7 +852,7 @@ test('㊺① scope: an EMPTY string in the flat form is REFUSED (it would match 
   assert.ok(validate({ match: 'a.js', scope: [''] }).length > 0);
 });
 test('㊺① `exclude` DOES NOT ADMIT the grouped form — it is ∀¬ over a SINGLE universe (㊼)', () => {
-  // 🛑 An « AND of ORs » makes no sense to express on a universal negation:
+  // 🛑 An "AND of ORs" makes no sense to express on a universal negation:
   //    offering it would create a form WITHOUT semantics, hence a trap.
   assert.ok(validate({ match: 'a.js', exclude: [['a']] }).length > 0, 'grouped form REFUSED on exclude, at the doc level');
   assert.ok(validate({ match: 'a.js', rules: [{ pattern: 'x', exclude: [['a']] }] }).length > 0);

@@ -22,7 +22,7 @@
 //    Each cost a session, and each was found by a HUMAN who
 //    insisted. That is what we replace here with a machine.
 //
-// 📐 METHOD: « verification-guided development » (AWS Cedar) brought down to our
+// 📐 METHOD: "verification-guided development" (AWS Cedar) brought down to our
 //    scale. On their side the domain is infinite ⇒ a model in Lean + random sampling.
 //    Here the domain is FINITE and small ⇒ **exhaustive enumeration**, that is to say
 //    a proof, not a sample. Zero dependency: the `for` loop is
@@ -43,10 +43,10 @@
 //     ② SCOPE   : ∀ group, ∃ s ∈ group, ∃ v ∈ Params : s ⊑ v
 //     ③ EXCLUDE : ∀ x ∈ exclude, ∀ u ∈ Universe : x ⋢ u
 //
-//   ⊑ = « is a substring of », after normalisation (lowercase, `\` → `/`).
+//   ⊑ = "is a substring of", after normalisation (lowercase, `\` → `/`).
 //
 //   🛑 ② AND ③ ARE DUAL, NOT SYMMETRICAL. That is the lesson of ㊼: the negation
-//      of a « there exists » is a « for all » (De Morgan: ¬∃x P ≡ ∀x ¬P).
+//      of a "there exists" is a "for all" (De Morgan: ¬∃x P ≡ ∀x ¬P).
 //      Giving `exclude` the FORM of `scope` (a `.some()`) was a category
 //      error — a half negative is bypassable by construction.
 // ═══════════════════════════════════════════════════════════════════════
@@ -58,7 +58,7 @@ const norm = (v) => String(v == null ? '' : v).toLowerCase().replace(/\\/g, '/')
 const contient = (u, motif) => norm(u).includes(norm(motif));
 
 // ── THE PROJECTIONS OF A GESTURE ────────────────────────────────────────
-// A « gesture » is a tool call. The language NEVER sees its intention,
+// A "gesture" is a tool call. The language NEVER sees its intention,
 // only these projections — that is the load-bearing wall: we only inject on
 // FACTS (§3bis of the mental model), never on a guess.
 
@@ -72,11 +72,11 @@ const contient = (u, motif) => norm(u).includes(norm(motif));
  */
 function params(toolInput, profondeurMax) {
   const out = [];
-  const visiter = (v, cle, d) => {
+  const visiter = (v, key, d) => {
     if (typeof v === 'string') {
-      if (!DEFAULT_PROFILE.contentKeys.includes(cle)) out.push(v);
+      if (!DEFAULT_PROFILE.contentKeys.includes(key)) out.push(v);
     } else if (v && typeof v === 'object' && d < profondeurMax) {
-      for (const [k, x] of Object.entries(v)) visiter(x, Array.isArray(v) ? cle : k, d + 1);
+      for (const [k, x] of Object.entries(v)) visiter(x, Array.isArray(v) ? key : k, d + 1);
     }
   };
   visiter(toolInput, null, 0);
@@ -90,12 +90,12 @@ function params(toolInput, profondeurMax) {
  *    (51). That is ㊵ uncorrected on the trigger side — the filters, for their part, already
  *    descended. An array element INHERITS the name of its parent key.
  */
-function keyValues(valeur, cles, profondeurMax, cle, out) {
+function keyValues(value, keys, profondeurMax, key, out) {
   const acc = out || [];
-  if (typeof valeur === 'string') { if (cles.includes(cle)) acc.push(valeur); }
-  else if (valeur && typeof valeur === 'object' && (profondeurMax > 0)) {
-    for (const [k, v] of Object.entries(valeur)) {
-      keyValues(v, cles, profondeurMax - 1, Array.isArray(valeur) ? cle : k, acc);
+  if (typeof value === 'string') { if (keys.includes(key)) acc.push(value); }
+  else if (value && typeof value === 'object' && (profondeurMax > 0)) {
+    for (const [k, v] of Object.entries(value)) {
+      keyValues(v, keys, profondeurMax - 1, Array.isArray(value) ? key : k, acc);
     }
   }
   return acc;
@@ -105,7 +105,7 @@ function keyValues(valeur, cles, profondeurMax, cle, out) {
  * ① THE CANDIDATES — what a TRIGGER can bite on.
  * ⚠️ DELIBERATELY NARROWER THAN `params`: a trigger designates a PLACE
  *    (a file, a shell gesture), not any value whatsoever. Otherwise the word
- *    « test » in a message would bring in the tests doc.
+ *    "test" in a message would bring in the tests doc.
  * ⚠️ The decomposition of a `cd X && cmd` is a DELIBERATE CAPABILITY (matching
  *    `project/server.js` without an absolute path), not an accident — but it
  *    fabricates fragments that exist nowhere (`project/node`). That is
@@ -131,8 +131,8 @@ function candidates(toolName, toolInput) {
     out.push(toolInput.command);
     const cd = toolInput.command.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
     if (cd) {
-      const apres = toolInput.command.split(/&&|;/).slice(1).join(' ');
-      for (const mot of apres.trim().split(/\s+/)) out.push(cd[1] + '/' + mot);
+      const after = toolInput.command.split(/&&|;/).slice(1).join(' ');
+      for (const word of after.trim().split(/\s+/)) out.push(cd[1] + '/' + word);
     }
   }
   return out;
@@ -160,31 +160,31 @@ function scopeSatisfied(scope, vals) {
  * ③ EXCLUDE = ∀¬ (㊼). The pattern must appear NOWHERE in the gesture.
  * 🛑 UNIVERSE = the params ∪ the triggering context. The context is REQUIRED:
  *    on the `tool` axis it is the TOOL NAME, which lives in no parameter.
- * 🛑 NEVER « ∃ on the current candidate »: the negation would become dependent
+ * 🛑 NEVER "∃ on the current candidate": the negation would become dependent
  *    on the way a gesture is written, hence bypassable. That was ㊼.
  */
-const exclu = (exclude, univers) =>
+const excludedNow = (exclude, univers) =>
   Array.isArray(exclude) && exclude.some((x) => univers.some((u) => contient(u, x)));
 
 /**
  * THE DECISION — does a rule inject on this gesture?
- * @param {{pattern:string, scope?:Array, exclude?:Array}} regle
+ * @param {{pattern:string, scope?:Array, exclude?:Array}} rule
  * @param {{toolName:string, toolInput:object}} geste
  * @param {{profondeurMax:number}} bornes — the admitted flattening depth.
  *   ⚠️ AN ACCEPTED BOUND, not a shameful limit: the MCP spec allows
  *   arbitrary nesting and itself recommends bounding it. An overflow
  *   must be SAID, never silent.
  */
-function injects(regle, geste, bornes) {
+function injects(rule, geste, bornes) {
   const toolInput = geste.toolInput || {};
   const cands = candidates(geste.toolName || '', toolInput);
   const vals = params(toolInput, (bornes && bornes.profondeurMax) || 20);
-  if (!declenche(regle.pattern, cands)) return false;
+  if (!declenche(rule.pattern, cands)) return false;
   // The CONTEXT = the candidate(s) through which the rule bit, plus the
   // tool name on the `tool` axis. Union with the params: that is the universe of the ∀¬.
-  const univers = vals.concat(cands.filter((c) => contient(c, regle.pattern)));
-  if (exclu(regle.exclude, univers)) return false;
-  return scopeSatisfied(regle.scope, vals);
+  const univers = vals.concat(cands.filter((c) => contient(c, rule.pattern)));
+  if (excludedNow(rule.exclude, univers)) return false;
+  return scopeSatisfied(rule.scope, vals);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -197,14 +197,14 @@ function injects(regle, geste, bornes) {
 /**
  * SOURCE `tool` — TRIGGER = the EXACT name of a tool (never a substring: a
  * substring would match `WebFetch` inside a file path).
- * The wildcard `*` = « any tool whatsoever », PROVIDED there is a tool:
+ * The wildcard `*` = "any tool whatsoever", PROVIDED there is a tool:
  * an empty/absent name NEVER matches, wildcard included (otherwise a degraded payload
  * would trigger every wildcard doc of the fleet).
  */
-function targetsTool(noms, toolName) {
-  if (!Array.isArray(noms)) return false;
-  if (noms.includes(toolName)) return true;
-  return noms.includes('*') && typeof toolName === 'string' && toolName !== '';
+function targetsTool(names, toolName) {
+  if (!Array.isArray(names)) return false;
+  if (names.includes(toolName)) return true;
+  return names.includes('*') && typeof toolName === 'string' && toolName !== '';
 }
 
 /** Reading of the `tool:` declaration — one name OR a list of names. */
@@ -219,19 +219,19 @@ const listeOutils = (decl) => {
  * exclude as ∀¬ on params ∪ context. The CONTEXT depends on the axis (candidates
  * bitten for `match`, tool name for `tool`/`servers`) — the quantifiers,
  * however, NEVER change from one source to another. That was the lesson of ㊴:
- * a dimension that « forgets » the filters is a hole in the language, not a choice.
+ * a dimension that "forgets" the filters is a hole in the language, not a choice.
  */
-function filters(regle, vals, contexte) {
-  if (exclu(regle.exclude, vals.concat(contexte))) return false;
-  return scopeSatisfied(regle.scope, vals);
+function filters(rule, vals, context) {
+  if (excludedNow(rule.exclude, vals.concat(context))) return false;
+  return scopeSatisfied(rule.scope, vals);
 }
 
 /** SOURCE `tool`, complete decision: ∃ exact name, then filters (context = the name). */
-function toolInjects(regle, geste, bornes) {
+function toolInjects(rule, geste, bornes) {
   const toolName = geste.toolName;
-  if (!targetsTool(listeOutils(regle), toolName)) return false;
+  if (!targetsTool(listeOutils(rule), toolName)) return false;
   const vals = params(geste.toolInput || {}, (bornes && bornes.profondeurMax) || 20);
-  return filters(regle, vals, [toolName]);
+  return filters(rule, vals, [toolName]);
 }
 
 /**
@@ -243,10 +243,10 @@ function toolInjects(regle, geste, bornes) {
  */
 function serverLabel(toolName) {
   if (typeof toolName !== 'string' || !toolName.startsWith('mcp__')) return null;
-  const reste = toolName.slice('mcp__'.length);
-  const coupe = reste.indexOf('__');
-  if (coupe <= 0) return null;
-  const srv = reste.slice(0, coupe);
+  const rest = toolName.slice('mcp__'.length);
+  const cut = rest.indexOf('__');
+  if (cut <= 0) return null;
+  const srv = rest.slice(0, cut);
   return /^[A-Za-z0-9-]+(?:_[A-Za-z0-9-]+)*$/.test(srv) ? srv : null;
 }
 
@@ -261,12 +261,12 @@ function segmentAt(seg) {
 }
 
 /** SCALAR value at a dotted path (`args.tool`) — an object is not a file name. */
-function pointedValue(obj, chemin) {
-  if (!obj || typeof chemin !== 'string') return null;
+function pointedValue(obj, filePath) {
+  if (!obj || typeof filePath !== 'string') return null;
   let v = obj;
-  for (const cle of chemin.split('.')) {
+  for (const key of filePath.split('.')) {
     if (v == null) return null;
-    v = v[cle];
+    v = v[key];
   }
   return typeof v === 'string' || typeof v === 'number' ? String(v) : null;
 }
@@ -295,8 +295,8 @@ function mcpCandidates(config, geste) {
  * SOURCE `skill` — UNION of 3 dimensions (file ∪ servers ∪ tool): a
  * skill enters through ANY of them, one is enough.
  * ⚠️ FILE dimension: SAME semantics as the docs (`injects`), with `cwd`
- *    added to the matchable params — specific to skills (« npm test launched INSIDE the
- *    project » carries no path). Per-entry `rules` has PRECEDENCE over
+ *    added to the matchable params — specific to skills ("npm test launched INSIDE the
+ *    project" carries no path). Per-entry `rules` has PRECEDENCE over
  *    match/scope/exclude (never both).
  * ⚠️ SERVERS and TOOL dimensions: the filters apply THERE TOO (㊴ — the
  *    all-or-nothing was the bug), context = the tool name.
@@ -340,7 +340,7 @@ function skillInjects(entry, geste, config, bornes) {
 }
 
 module.exports = {
-  norm, contient, params, candidates, declenche, scopeSatisfied, exclu, injects,
+  norm, contient, params, candidates, declenche, scopeSatisfied, excludedNow, injects,
   targetsTool, listeOutils, filters, toolInjects,
   serverLabel, segmentAt, pointedValue, mcpCandidates,
   skillInjects,

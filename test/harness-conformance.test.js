@@ -16,13 +16,13 @@ test('㊾ COMPLETE payload → supported, zero degradation', () => {
 });
 
 test('㊾ each optional absent → degrade, and the degradation is NAMED', () => {
-  for (const cle of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
+  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
     const p = { ...COMPLET };
-    delete p[cle];
+    delete p[key];
     const r = conformance(p);
-    assert.strictEqual(r.verdict, 'degraded', cle);
-    assert.strictEqual(r.degradations.length, 1, cle);
-    assert.strictEqual(r.degradations[0].capacite, cle);
+    assert.strictEqual(r.verdict, 'degraded', key);
+    assert.strictEqual(r.degradations.length, 1, key);
+    assert.strictEqual(r.degradations[0].capability, key);
     assert.ok(r.degradations[0].degradation.length > 20, 'a degradation without a written consequence is a binary yes-no');
   }
 });
@@ -69,12 +69,12 @@ test('㊾ boundaries of looksLikePath — 3 characters is a path, an array never
   assert.strictEqual(looksLikePath(['/a/b', 'c', 'd', 'e']), false);
 });
 test('㊾/51 diagnosis: depth BOUNDED at 20 — beyond that, the key is no longer seen', () => {
-  const enfouir = (n, feuille) => (n === 0 ? feuille : { w: enfouir(n - 1, feuille) });
-  assert.deepStrictEqual(candidateKeys({ ref: enfouir(5, { cible: '/a/b' }) }), ['cible']);
-  assert.deepStrictEqual(candidateKeys({ ref: enfouir(25, { cible: '/a/b' }) }), [], 'same bound as the engine: 20 levels');
+  const enfouir = (n, leaf) => (n === 0 ? leaf : { w: enfouir(n - 1, leaf) });
+  assert.deepStrictEqual(candidateKeys({ ref: enfouir(5, { target: '/a/b' }) }), ['target']);
+  assert.deepStrictEqual(candidateKeys({ ref: enfouir(25, { target: '/a/b' }) }), [], 'same bound as the engine: 20 levels');
   // the exact BOUNDARY (kills the mutant prof <= 20): last visible level vs first invisible.
-  assert.deepStrictEqual(candidateKeys({ ref: enfouir(18, { cible: '/a/b' }) }), ['cible']);
-  assert.deepStrictEqual(candidateKeys({ ref: enfouir(19, { cible: '/a/b' }) }), []);
+  assert.deepStrictEqual(candidateKeys({ ref: enfouir(18, { target: '/a/b' }) }), ['target']);
+  assert.deepStrictEqual(candidateKeys({ ref: enfouir(19, { target: '/a/b' }) }), []);
 });
 test('㊾/51 diagnosis: a null/non-object value NEVER crashes the traversal', () => {
   assert.deepStrictEqual(candidateKeys({ x: null, y: 42, z: true, w: undefined }), []);
@@ -84,13 +84,13 @@ test('㊾/51 diagnosis: `cwd` is a KNOWN key even with a path-shaped value', () 
 });
 test('㊾ the report CARRIES the names and the roles — an anonymous report is a binary yes-no', () => {
   const r = conformance(COMPLET);
-  assert.deepStrictEqual(r.requis.map((x) => x.capacite), ['tool_name', 'tool_input']);
-  for (const x of r.requis) assert.ok(x.role.length > 20, x.capacite + ': a required item without a written role explains nothing');
+  assert.deepStrictEqual(r.requis.map((x) => x.capability), ['tool_name', 'tool_input']);
+  for (const x of r.requis) assert.ok(x.role.length > 20, x.capability + ': a required item without a written role explains nothing');
 });
-test('㊾ an optional capability as an EMPTY STRING = absent (not « present but empty »)', () => {
-  for (const cle of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
-    const r = conformance({ ...COMPLET, [cle]: '' });
-    assert.strictEqual(r.verdict, 'degraded', cle);
-    assert.strictEqual(r.degradations[0].capacite, cle);
+test('㊾ an optional capability as an EMPTY STRING = absent (not "present but empty")', () => {
+  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
+    const r = conformance({ ...COMPLET, [key]: '' });
+    assert.strictEqual(r.verdict, 'degraded', key);
+    assert.strictEqual(r.degradations[0].capability, key);
   }
 });

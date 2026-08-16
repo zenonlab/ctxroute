@@ -311,16 +311,16 @@ function run(data, emit, options) {
     //    announcement. In single-frame mode this case is impossible as soon as
     //    `inject` is non-empty — parity is therefore intact.
     const plan = res.frames[indice - 1];
-    if (!plan || plan.texte === '') return;
+    if (!plan || plan.text === '') return;
 
-    const fullDoc = plan.texte;
+    const fullDoc = plan.text;
 
     // systemMessage: each source composes ITS OWN on ITS injected docs
     // (message() contract), joined by ' · ' — before the merge, two hooks
     // emitted two messages; we keep them all.
     const msgs = [];
     for (const a of ADAPTERS) {
-      // ⚠️ `plan.emis`, NOT `r.inject`: the marker ("🧩 skill: …") announces what
+      // ⚠️ `plan.emitted`, NOT `r.inject`: the marker ("🧩 skill: …") announces what
       //    is REALLY in the context. Announcing a deferred doc
       //    would make the agent believe it has received it — the "green that lies".
       //    ⚠️ In multi-frame mode, it is the content of THIS frame — each frame
@@ -331,7 +331,7 @@ function run(data, emit, options) {
       //    document would count twice. A chunk inherited from the queue whose doc
       //    no longer matches has no owner: it is not announced, which
       //    is honest — it is delivered, not attributed.
-      const injected = [...new Set(plan.emis.map(baseId))].filter((d) => acc.owner[d] === a.id);
+      const injected = [...new Set(plan.emitted.map(baseId))].filter((d) => acc.owner[d] === a.id);
       if (injected.length === 0) continue;
       const m = a.message(injected, { fullDoc, config, acc });
       if (m) msgs.push(m);
@@ -403,7 +403,7 @@ function run(data, emit, options) {
     const filtre = filteredOut.length > 0 && indice === 1
       ? ` · 🚫 ${filteredOut.length} doc(s) excluded by filterMode/filterList`
       : '';
-    emit(res.decision, fullDoc, badge === '' ? '' : badge + budget.chunkSuffix(plan.emis) + alarme + filtre);
+    emit(res.decision, fullDoc, badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarme + filtre);
   } catch {
     // fail-open: we ANSWER "nothing to inject", we do not kill the process.
   }

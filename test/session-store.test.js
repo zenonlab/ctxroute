@@ -32,7 +32,7 @@ afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
 // EXTERNAL probe: parent = reader, child = writer. Two real PROCESSES —
 // an in-process test would prove nothing (no concurrency of disk writes).
-const SONDE = path.join(TMP, 'sonde.cjs');
+const SONDE = path.join(TMP, 'probe.cjs');
 fs.writeFileSync(SONDE, `
 'use strict';
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
@@ -41,7 +41,7 @@ process.env.CTXROUTE_STATE_DIR = DIR;
 const store = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'session-store.js').replace(/\\/g, '/'))});
 // REALISTIC-sized state (measured on the corpus: median 63 B, max 268 B).
 const etat = {};
-for (let i = 0; i < 4; i++) etat['docs/fichier-' + i + '.md'] = { seen: true, sinceLastCall: i };
+for (let i = 0; i < 4; i++) etat['docs/file-' + i + '.md'] = { seen: true, sinceLastCall: i };
 const ECRIVAIN = path.join(DIR, 'ecrivain.cjs');
 fs.writeFileSync(ECRIVAIN, [
   "process.env.CTXROUTE_STATE_DIR = " + JSON.stringify(DIR) + ";",
@@ -65,13 +65,13 @@ const enfant = spawn(process.execPath, [ECRIVAIN], { stdio: 'ignore' });
 const DEST = path.join(DIR, 'doc-seen-course.json');
 const limite = Date.now() + 10000;
 while (!fs.existsSync(DEST) && Date.now() < limite) { /* waiting for the 1st state */ }
-if (!fs.existsSync(DEST)) { console.log(JSON.stringify({ lectures: 0, vides: 0, restes: 0 })); process.exit(0); }
-let lectures = 0, vides = 0;
+if (!fs.existsSync(DEST)) { console.log(JSON.stringify({ lectures: 0, emptyOnes: 0, restes: 0 })); process.exit(0); }
+let lectures = 0, emptyOnes = 0;
 const fin = Date.now() + 1500;
 while (Date.now() < fin) {
   const s = store.loadState('doc-seen-', 'course');
   lectures++;
-  if (Object.keys(s).length === 0) vides++;
+  if (Object.keys(s).length === 0) emptyOnes++;
 }
 // 🛑 NEVER KILL THE WRITER BEFORE COUNTING THE .tmp — RED CI on macOS
 //    on 08/08/2026. A process KILLED between the \`writeFileSync(tmp)\` and the
@@ -97,7 +97,7 @@ const limiteFin = Date.now() + 10000;
 while (!fs.existsSync(FINI) && Date.now() < limiteFin) dors(20);
 enfant.kill(); // safety net only: normally already finished
 const restes = fs.readdirSync(DIR).filter((f) => f.endsWith('.tmp'));
-console.log(JSON.stringify({ lectures, vides, restes: restes.length }));
+console.log(JSON.stringify({ lectures, emptyOnes, restes: restes.length }));
 `);
 
 function courir() {
@@ -112,8 +112,8 @@ test('ATOMICITY: a lock-less reader NEVER sees an empty state during a write', {
   // ⚠️ ANTI-MUTE-PROBE WITNESS: without any read, "0 empty" would be a false green.
   //    That is the trap that cost 5 false probes on this repo.
   assert.ok(r.lectures > 100, `mute probe: only ${r.lectures} reads`);
-  assert.strictEqual(r.vides, 0,
-    `${r.vides} read(s) out of ${r.lectures} returned {} while the state EXISTS — `
+  assert.strictEqual(r.emptyOnes, 0,
+    `${r.emptyOnes} read(s) out of ${r.lectures} returned {} while the state EXISTS — `
     + 'NON-atomic write: the reader sees a truncated file. '
     + 'Measured BEFORE the fix: 9,596 / 24,147.');
 });
@@ -126,11 +126,11 @@ test('ATOMICITY: no temporary file survives the writes', { timeout: 30000 }, () 
 // COUNTER-PROOF — without it, a `loadState` that ALWAYS returned a non-empty
 // object (bug) would pass the test above. The fail-open must stay intact.
 test('FAIL-OPEN INTACT: an ABSENT state does return {} (and that {} is TRUE)', () => {
-  const dir = fs.mkdtempSync(path.join(TMP, 'vide-'));
+  const dir = fs.mkdtempSync(path.join(TMP, 'empty-'));
   const r = spawnSync(process.execPath, ['-e', `
     process.env.CTXROUTE_STATE_DIR = ${JSON.stringify(dir.replace(/\\/g, '/'))};
     const s = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'session-store.js').replace(/\\/g, '/'))});
-    console.log(JSON.stringify(s.loadState('doc-seen-', 'jamais-vu')));
+    console.log(JSON.stringify(s.loadState('doc-seen-', 'never-seen')));
   `], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.deepStrictEqual(JSON.parse(r.stdout.trim()), {});
@@ -140,7 +140,7 @@ test('FAIL-OPEN INTACT: an ABSENT state does return {} (and that {} is TRUE)', (
 // `rename` can fail (Windows lock); if the catch swallowed it, the state would
 // never be saved and the `once` cadence would no longer hold.
 test('NO LOST WRITE: after saving, the state is read back identically', () => {
-  const dir = fs.mkdtempSync(path.join(TMP, 'ecrit-'));
+  const dir = fs.mkdtempSync(path.join(TMP, 'written-'));
   const r = spawnSync(process.execPath, ['-e', `
     process.env.CTXROUTE_STATE_DIR = ${JSON.stringify(dir.replace(/\\/g, '/'))};
     const s = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'session-store.js').replace(/\\/g, '/'))});

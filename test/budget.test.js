@@ -24,22 +24,22 @@ import { plan, planFrames, frameCapacity, fragment, baseId, chunkPart, chunkSuff
 
 // Fixtures = THUNKS (cf. perTest above).
 const seg = (id, n, label) => ({ id, text: 'x'.repeat(n), label: label || id + '.md' });
-const segs = (n, taille) => Array.from({ length: n }, (_, k) => seg('d' + k, taille));
+const segs = (n, size) => Array.from({ length: n }, (_, k) => seg('d' + k, size));
 
 test('empty list → empty rendering, no emission, no deferral', () => {
   const r = plan([], 5000);
-  assert.strictEqual(r.texte, '');
-  assert.deepStrictEqual(r.emis, []);
+  assert.strictEqual(r.text, '');
+  assert.deepStrictEqual(r.emitted, []);
   assert.deepStrictEqual(r.deferred, []);
   assert.strictEqual(r.marker, '');
 });
 
 test('non-array input → treated as empty (fail-soft, never a throw)', () => {
   // The gate is fail-open: a budget that threw would silence the injection.
-  for (const mauvais of [undefined, null, 'texte', 42, {}]) {
+  for (const mauvais of [undefined, null, 'text', 42, {}]) {
     const r = plan(mauvais, 5000);
-    assert.strictEqual(r.texte, '');
-    assert.deepStrictEqual(r.emis, []);
+    assert.strictEqual(r.text, '');
+    assert.deepStrictEqual(r.emitted, []);
   }
 });
 
@@ -48,74 +48,74 @@ test('NOMINAL PATH: under 50 % of the budget → HISTORICAL format, zero envelop
   //    EXACTLY the concatenation from before, to the byte.
   const list = [seg('a', 100), seg('b', 100)];
   const r = plan(list, 5000);
-  assert.strictEqual(r.texte, list[0].text + '\n\n---\n\n' + list[1].text);
-  assert.deepStrictEqual(r.emis, ['a', 'b']);
+  assert.strictEqual(r.text, list[0].text + '\n\n---\n\n' + list[1].text);
+  assert.deepStrictEqual(r.emitted, ['a', 'b']);
   assert.deepStrictEqual(r.deferred, []);
   assert.strictEqual(r.marker, '');
-  assert.ok(!r.texte.includes('###END:'));
-  assert.ok(!r.texte.includes('SEALED INJECTION'));
+  assert.ok(!r.text.includes('###END:'));
+  assert.ok(!r.text.includes('SEALED INJECTION'));
 });
 
 test('a single segment under the threshold → rendering = its BARE text (no stray separator)', () => {
   const r = plan([seg('solo', 50)], 5000);
-  assert.strictEqual(r.texte, 'x'.repeat(50));
+  assert.strictEqual(r.text, 'x'.repeat(50));
 });
 
 test('BEYOND 50 % of the budget → SEALED (header + matching end marker)', () => {
   const r = plan([seg('a', 600)], 1000);
-  assert.ok(r.texte.startsWith('⚠️ SEALED INJECTION'));
+  assert.ok(r.text.startsWith('⚠️ SEALED INJECTION'));
   assert.strictEqual(r.marker.length, MARKER_SIZE);
-  assert.ok(r.texte.includes('###END:' + r.marker + '###'));
-  assert.ok(r.texte.endsWith('###END:' + r.marker + '###'));
-  assert.deepStrictEqual(r.emis, ['a']);
+  assert.ok(r.text.includes('###END:' + r.marker + '###'));
+  assert.ok(r.text.endsWith('###END:' + r.marker + '###'));
+  assert.deepStrictEqual(r.emitted, ['a']);
 });
 
 test('the header ANNOUNCES the marker BEFORE the content (survives a truncation)', () => {
   // ⚠️ A truncation keeps the BEGINNING: if the warning were at the foot, it
   //    would be cut precisely in the case it is supposed to cover.
   const r = plan([seg('a', 600)], 1000);
-  const posAnnonce = r.texte.indexOf('###END:' + r.marker + '###');
-  const posContenu = r.texte.indexOf('xxx');
+  const posAnnonce = r.text.indexOf('###END:' + r.marker + '###');
+  const posContenu = r.text.indexOf('xxx');
   assert.ok(posAnnonce < posContenu, 'the marker must be announced before the content');
 });
 
 test('MIXED: what does not fit is DEFERRED, counted and NAMED', () => {
   const list = segs(6, 300);
   const r = plan(list, 1200);
-  assert.ok(r.emis.length > 0, 'at least one emitted');
+  assert.ok(r.emitted.length > 0, 'at least one emitted');
   assert.ok(r.deferred.length > 0, 'at least one deferred');
-  assert.strictEqual(r.emis.length + r.deferred.length, 6); // CONSERVATION
-  assert.ok(r.texte.includes(r.deferred.length + ' doc(s) DEFERRED'));
-  for (const d of r.deferred) assert.ok(r.texte.includes(d.label), 'label cited: ' + d.label);
+  assert.strictEqual(r.emitted.length + r.deferred.length, 6); // CONSERVATION
+  assert.ok(r.text.includes(r.deferred.length + ' doc(s) DEFERRED'));
+  for (const d of r.deferred) assert.ok(r.text.includes(d.label), 'label cited: ' + d.label);
 });
 
 test('the emitted ones are a PREFIX of the input (`rank` priority honoured)', () => {
   const list = segs(6, 300);
   const r = plan(list, 1200);
-  assert.deepStrictEqual(r.emis, list.slice(0, r.emis.length).map((s) => s.id));
+  assert.deepStrictEqual(r.emitted, list.slice(0, r.emitted.length).map((s) => s.id));
 });
 
 test('NOTHING fits → BARE announcement, content never truncated, nothing lost', () => {
   // ⚠️ We NEVER emit the cut segment: that would be handing the harness back the
   //    block it truncates silently, that is to say the original defect.
   const r = plan([seg('enorme', 50000)], 400);
-  assert.deepStrictEqual(r.emis, []);
+  assert.deepStrictEqual(r.emitted, []);
   assert.deepStrictEqual(r.deferred.map((d) => d.id), ['enorme']);
-  assert.ok(r.texte.includes('enorme.md'));
-  assert.ok(!r.texte.includes('x'.repeat(1000)), 'the content must NOT be emitted');
+  assert.ok(r.text.includes('enorme.md'));
+  assert.ok(!r.text.includes('x'.repeat(1000)), 'the content must NOT be emitted');
 });
 
 test('the rendering fits in the budget as soon as it carries content', () => {
   for (const b of [900, 1500, 3000, 7000]) {
     const r = plan(segs(8, 400), b);
-    if (r.emis.length > 0) assert.ok(r.texte.length <= b, 'budget ' + b + ' exceeded: ' + r.texte.length);
+    if (r.emitted.length > 0) assert.ok(r.text.length <= b, 'budget ' + b + ' exceeded: ' + r.text.length);
   }
 });
 
 test('invalid budget → FRAMEWORK default (cascade authority ①, never a blockage)', () => {
   for (const mauvais of [undefined, null, 0, -1, NaN, Infinity, 'x']) {
     const r = plan([seg('a', 100)], mauvais);
-    assert.deepStrictEqual(r.emis, ['a'], 'budget ' + String(mauvais));
+    assert.deepStrictEqual(r.emitted, ['a'], 'budget ' + String(mauvais));
   }
   assert.ok(DEFAULT_BUDGET > 0);
   assert.ok(Number.isInteger(DEFAULT_BUDGET));
@@ -155,7 +155,7 @@ test('envelopeSize: it really is the OVERHEAD of a sealed rendering', () => {
   // without any deferral weighs exactly content + envelope.
   const r = plan([seg('a', 600)], 1000);
   assert.deepStrictEqual(r.deferred, []);
-  assert.strictEqual(r.texte.length, 600 + envelopeSize());
+  assert.strictEqual(r.text.length, 600 + envelopeSize());
 });
 
 test('INCLUSIVE BOUND: a rendering that weighs EXACTLY the budget is accepted', () => {
@@ -168,9 +168,9 @@ test('INCLUSIVE BOUND: a rendering that weighs EXACTLY the budget is accepted', 
   const large = plan(list, 2000);
   assert.notStrictEqual(large.marker, '', 'unsealed reference case: the test would prove nothing');
   assert.deepStrictEqual(large.deferred, []);
-  const exact = plan(list, large.texte.length);
-  assert.deepStrictEqual(exact.emis, large.emis);
-  assert.strictEqual(exact.texte.length, large.texte.length);
+  const exact = plan(list, large.text.length);
+  assert.deepStrictEqual(exact.emitted, large.emitted);
+  assert.strictEqual(exact.text.length, large.text.length);
 });
 
 test('DETERMINISM: two identical calls return the same byte', () => {
@@ -179,13 +179,13 @@ test('DETERMINISM: two identical calls return the same byte', () => {
 });
 
 test('segment with empty text: kept, never silently discarded', () => {
-  const r = plan([seg('vide', 0), seg('plein', 100)], 5000);
-  assert.deepStrictEqual(r.emis, ['vide', 'plein']);
+  const r = plan([seg('empty', 0), seg('plein', 100)], 5000);
+  assert.deepStrictEqual(r.emitted, ['empty', 'plein']);
 });
 
 test('fingerprint: REFERENCE values (anchors the loop and the padding)', () => {
   // ⚠️ Values deliberately frozen: they anchor the BOUNDS of the loop
-  //    (an `i <= texte.length` would read a charCodeAt outside the string = NaN) and the
+  //    (an `i <= text.length` would read a charCodeAt outside the string = NaN) and the
   //    zero-padding. Without them, these mutants survive (measured 31/07/2026).
   assert.strictEqual(fingerprint('abc'), '0b873285');
   assert.strictEqual(fingerprint(''), '00001505'); // left padding visible
@@ -196,19 +196,19 @@ test('HEADER: EXACT text — it is the contract read by the agent, not an orname
   //    the agent what to do if it does not see the marker). A rewording must
   //    be a conscious choice, not a silent drift.
   const r = plan([seg('a', 600)], 1000);
-  assert.ok(r.texte.includes('⚠️ SEALED INJECTION — this block ends with ###END:' + r.marker + '###\n'));
-  assert.ok(r.texte.includes('   Marker missing at the end of the block = content TRUNCATED by the harness:\n'));
-  assert.ok(r.texte.includes('   then read the files cited below yourself. Do not guess.\n\n'));
+  assert.ok(r.text.includes('⚠️ SEALED INJECTION — this block ends with ###END:' + r.marker + '###\n'));
+  assert.ok(r.text.includes('   Marker missing at the end of the block = content TRUNCATED by the harness:\n'));
+  assert.ok(r.text.includes('   then read the files cited below yourself. Do not guess.\n\n'));
 });
 
 test('ANNOUNCEMENT: EXACT text, list prefix and line separator', () => {
   const r = plan(segs(6, 300), 1200);
   assert.ok(r.deferred.length >= 2, 'we need ≥ 2 deferrals to observe the joint');
-  assert.ok(r.texte.includes('\n\n⚠️ ' + r.deferred.length + ' doc(s) DEFERRED — the frame is full, they follow on the next tool call(s).\n'));
-  assert.ok(r.texte.includes('   Nothing is lost: they are queued, in order. If your action touches them NOW, read them:\n'));
-  assert.ok(r.texte.includes('   - ' + r.deferred[0].label));
+  assert.ok(r.text.includes('\n\n⚠️ ' + r.deferred.length + ' doc(s) DEFERRED — the frame is full, they follow on the next tool call(s).\n'));
+  assert.ok(r.text.includes('   Nothing is lost: they are queued, in order. If your action touches them NOW, read them:\n'));
+  assert.ok(r.text.includes('   - ' + r.deferred[0].label));
   // The joint between two deferrals MUST be a line break (otherwise unreadable list).
-  assert.ok(r.texte.includes('   - ' + r.deferred[0].label + '\n   - ' + r.deferred[1].label));
+  assert.ok(r.text.includes('   - ' + r.deferred[0].label + '\n   - ' + r.deferred[1].label));
 });
 
 test('SEALED WITHOUT deferral: no stray announcement', () => {
@@ -216,8 +216,8 @@ test('SEALED WITHOUT deferral: no stray announcement', () => {
   //    we would announce "0 doc(s) DEFERRED" on a complete block.
   const r = plan([seg('a', 600)], 1000);
   assert.deepStrictEqual(r.deferred, []);
-  assert.ok(!r.texte.includes('DEFERRED'));
-  assert.ok(!r.texte.includes('Stryker'));
+  assert.ok(!r.text.includes('DEFERRED'));
+  assert.ok(!r.text.includes('Stryker'));
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -237,34 +237,34 @@ test('PARITY: everything fits in one frame → frame 1 identical to plan, the ot
   const p = planFrames(s(), 1000, 4);
   assert.strictEqual(p.length, 4);
   assert.deepStrictEqual(p[0], plan(s(), 1000));
-  for (let i = 1; i < 4; i++) assert.deepStrictEqual(p[i], { texte: '', emis: [], deferred: [], marker: '' });
+  for (let i = 1; i < 4; i++) assert.deepStrictEqual(p[i], { text: '', emitted: [], deferred: [], marker: '' });
 });
 
 test('CONSERVATION: each segment is in EXACTLY one frame, or announced', () => {
   const list = segs(8, 400);
   const p = planFrames(list, 1200, 4);
-  const emis = p.flatMap((x) => x.emis);
+  const emitted = p.flatMap((x) => x.emitted);
   const deferred = p.flatMap((x) => x.deferred.map((d) => d.id));
-  assert.strictEqual(new Set(emis).size, emis.length, 'no DUPLICATE between frames');
-  assert.deepStrictEqual([...emis, ...deferred].sort(), list.map((s) => s.id).sort());
+  assert.strictEqual(new Set(emitted).size, emitted.length, 'no DUPLICATE between frames');
+  assert.deepStrictEqual([...emitted, ...deferred].sort(), list.map((s) => s.id).sort());
 });
 
 test('SEQUENCE: each non-empty frame carries its number k/N and the COMMON marker', () => {
   // ⚠️ Without a number, a missing frame is undetectable (parallel hooks,
   //    order not guaranteed) — that is the silent loss we make impossible.
-  const p = planFrames(segs(8, 400), 1200, 4).filter((x) => x.texte !== '');
+  const p = planFrames(segs(8, 400), 1200, 4).filter((x) => x.text !== '');
   assert.ok(p.length >= 2, 'the case must indeed engage several frames');
   const markers = new Set(p.map((x) => x.marker));
   assert.strictEqual(markers.size, 1, 'ONE single marker for the whole emission');
   p.forEach((x, i) => {
-    assert.ok(x.texte.includes('FRAME ' + (i + 1) + '/4'), 'sequence number present');
-    assert.ok(x.texte.includes('###END:' + x.marker + '###'), 'seal closed');
+    assert.ok(x.text.includes('FRAME ' + (i + 1) + '/4'), 'sequence number present');
+    assert.ok(x.text.includes('###END:' + x.marker + '###'), 'seal closed');
   });
 });
 
 test('BOUND: no frame exceeds the budget', () => {
   for (const p of planFrames(segs(10, 500), 1500, 5)) {
-    assert.ok(p.texte.length <= 1500, 'frame of ' + p.texte.length + ' > 1500');
+    assert.ok(p.text.length <= 1500, 'frame of ' + p.text.length + ' > 1500');
   }
 });
 
@@ -275,18 +275,18 @@ test('GIANT SEGMENT: CHUNKED and DELIVERED — undeliverability is impossible', 
   //    delivering", that is making the author carry a defect of the transport.
   // ⚠️ DISTINCT contents ('x' vs 'y'): without that, counting the reassembled
   //    characters would mix the two docs and the test would certify falsely.
-  const p = planFrames([seg('enorme', 5000), { id: 'petit', text: 'y'.repeat(100), label: 'petit.md' }], 1200, 9);
-  const emis = p.flatMap((x) => x.emis);
-  assert.deepStrictEqual(emis.filter((id) => id.startsWith('enorme')),
+  const p = planFrames([seg('enorme', 5000), { id: 'smallOne', text: 'y'.repeat(100), label: 'smallOne.md' }], 1200, 9);
+  const emitted = p.flatMap((x) => x.emitted);
+  assert.deepStrictEqual(emitted.filter((id) => id.startsWith('enorme')),
     // ⚠️ `#j/m` and not `#j` (06/08/2026): the id carries the TOTAL, the only place where
     //    it exists outside the text of the header. That is what allows the badge to
     //    say "chunk 3/7" instead of 7 identical lines.
     ['enorme#1/7', 'enorme#2/7', 'enorme#3/7', 'enorme#4/7', 'enorme#5/7', 'enorme#6/7', 'enorme#7/7'],
     'the giant is split into 7 chunks, ALL delivered');
-  assert.ok(emis.includes('petit'), 'and it sterilizes no frame');
+  assert.ok(emitted.includes('smallOne'), 'and it sterilizes no frame');
   assert.deepStrictEqual(p.flatMap((x) => x.deferred.map((d) => d.id)), [], 'NOTHING deferred: everything went through');
   // CONTENT CONSERVATION: reassembling the chunks gives back the original text.
-  const recolle = p.flatMap((x) => x.texte.split('⟦').slice(1))
+  const recolle = p.flatMap((x) => x.text.split('⟦').slice(1))
     .map((m) => m.slice(m.indexOf('⟧\n') + 2))
     .join('')
     .replace(/\n\n---\n\n|\n\n###END:[0-9a-f]{8}###/g, '');
@@ -296,8 +296,8 @@ test('GIANT SEGMENT: CHUNKED and DELIVERED — undeliverability is impossible', 
 test('CHUNKS: each one ANNOUNCES itself as a fragment (never an excerpt that looks complete)', () => {
   // ⚠️ It is THIS header that authorizes the split: without it we would deliver a
   //    fragment disguised as a whole doc — the lie the module fights.
-  const p = planFrames([seg('gros', 5000)], 1200, 8);
-  const chunks = p.filter((x) => x.texte).map((x) => /CHUNK (\d+)\/(\d+)/.exec(x.texte));
+  const p = planFrames([seg('big', 5000)], 1200, 8);
+  const chunks = p.filter((x) => x.text).map((x) => /CHUNK (\d+)\/(\d+)/.exec(x.text));
   assert.ok(chunks.length >= 2 && chunks.every(Boolean), 'each frame carries its chunk number');
   const total = Number(chunks[0][2]);
   assert.deepStrictEqual(chunks.map((m) => Number(m[1])), Array.from({ length: total }, (_, i) => i + 1),
@@ -314,11 +314,11 @@ test('DETERMINISM: two independent computations return the SAME split', () => {
 
 test('PRIORITY ORDER preserved: the best ranked is in the first frame', () => {
   const p = planFrames(segs(8, 400), 1200, 4);
-  assert.strictEqual(p[0].emis[0], 'd0');
+  assert.strictEqual(p[0].emitted[0], 'd0');
 });
 
 // ── FRAME fixtures, calibrated to the character (measured 03/08/2026) ──
-// Envelope of a frame (k/n header with 1 digit + foot) = 316 · SEPARATEUR = 7.
+// Envelope of a frame (k/n header with 1 digit + foot) = 316 · SEPARATOR = 7.
 // ⚠️ These numbers are WRITTEN HARDCODED, never derived from the module at runtime:
 //    an expected value computed by the mutated code mutates WITH it and proves nothing.
 const trois400 = () => [seg('a', 400), seg('b', 400), seg('c', 400)];
@@ -330,41 +330,41 @@ test('FRAME HEADER: EXACT text, anchored to the character', () => {
   //    turning red. The sequence number is the guarantee against silent loss.
   const p = planFrames(trois400(), 716, 3);
   const m = p[0].marker;
-  const attendu =
+  const expected =
     '⚠️ SEALED INJECTION — FRAME 1/3, end marked ###END:' + m + '###\n' +
     '   The 3 frames carry the SAME marker and arrive OUT OF ORDER: reassemble them by their number.\n' +
     '   A missing number, or a missing marker = content truncated by the harness:\n' +
     '   then read the files cited below yourself. Do not guess.\n\n';
-  assert.strictEqual(p[0].texte, attendu + 'x'.repeat(400) + '\n\n###END:' + m + '###');
-  assert.strictEqual(p[0].texte.length, 716);
+  assert.strictEqual(p[0].text, expected + 'x'.repeat(400) + '\n\n###END:' + m + '###');
+  assert.strictEqual(p[0].text.length, 716);
 });
 
 test('EXACT DISTRIBUTION: a given budget produces ONE precise split', () => {
   // Three measured cases — they anchor the bounds of BOTH filling loops.
-  assert.deepStrictEqual(planFrames(trois400(), 716, 3).map((p) => p.emis), [['a'], ['b'], ['c']]);
-  assert.deepStrictEqual(planFrames(trois400(), 1200, 3).map((p) => p.emis), [['a', 'b'], ['c'], []]);
-  assert.deepStrictEqual(planFrames(quatre400(), 1123, 2).map((p) => p.emis), [['a', 'b'], ['c', 'd']]);
+  assert.deepStrictEqual(planFrames(trois400(), 716, 3).map((p) => p.emitted), [['a'], ['b'], ['c']]);
+  assert.deepStrictEqual(planFrames(trois400(), 1200, 3).map((p) => p.emitted), [['a', 'b'], ['c'], []]);
+  assert.deepStrictEqual(planFrames(quatre400(), 1123, 2).map((p) => p.emitted), [['a', 'b'], ['c', 'd']]);
 });
 
 test('CHUNKING BOUNDARY: at the EXACT size the doc stays WHOLE, beyond it it is split', () => {
   // 316 (envelope) + 400 (segment) = 716. At 716 each doc fits as it is…
-  assert.deepStrictEqual(planFrames(trois400(), 716, 3).map((p) => p.emis), [['a'], ['b'], ['c']]);
+  assert.deepStrictEqual(planFrames(trois400(), 716, 3).map((p) => p.emitted), [['a'], ['b'], ['c']]);
   // …at 715 it no longer fits: it is CHUNKED, never abandoned.
   // ⚠️ A chunk carries an id suffixed with `#j` — that is the trace of the split.
   const serre = planFrames(trois400(), 715, 6);
-  const emis = serre.flatMap((p) => p.emis);
-  assert.ok(emis.every((id) => id.includes('#')), 'all the docs are split');
-  assert.ok(['a', 'b', 'c'].every((d) => emis.some((id) => id.startsWith(d + '#'))), 'the 3 docs are delivered');
+  const emitted = serre.flatMap((p) => p.emitted);
+  assert.ok(emitted.every((id) => id.includes('#')), 'all the docs are split');
+  assert.ok(['a', 'b', 'c'].every((d) => emitted.some((id) => id.startsWith(d + '#'))), 'the 3 docs are delivered');
 });
 
 test('FILLING BOUNDARY: a frame FILLED TO THE BRIM is valid', () => {
   // 316 + 400 + 7 (separator) + 400 = 1123. At 1123 both fit.
   const pile = planFrames(quatre400(), 1123, 2);
-  assert.deepStrictEqual(pile.map((p) => p.emis), [['a', 'b'], ['c', 'd']]);
-  assert.deepStrictEqual(pile.map((p) => p.texte.length), [1123, 1123]);
+  assert.deepStrictEqual(pile.map((p) => p.emitted), [['a', 'b'], ['c', 'd']]);
+  assert.deepStrictEqual(pile.map((p) => p.text.length), [1123, 1123]);
   // One character less: the 2nd segment no longer fits, the rest is announced.
   const serre = planFrames(quatre400(), 1122, 2);
-  assert.deepStrictEqual(serre.map((p) => p.emis), [['a'], ['b']]);
+  assert.deepStrictEqual(serre.map((p) => p.emitted), [['a'], ['b']]);
   assert.deepStrictEqual(serre[1].deferred.map((d) => d.id), ['c', 'd']);
 });
 
@@ -379,13 +379,13 @@ test('REMAINDER = a DELAY, never "too big" NOR a CONFIG error', () => {
   //    a human back in the loop for a normal phenomenon — the toil this
   //    framework exists to eliminate.
   const p = planFrames(quatre400(), 1122, 2);
-  const dernier = p[p.length - 1];
-  assert.ok(dernier.deferred.length > 0, 'with 2 frames for 4 docs, chunks necessarily remain');
-  assert.ok(dernier.texte.includes('DEFERRED'), 'deferred, not lost');
-  assert.ok(!dernier.texte.includes('TOO SMALL'), 'no accusation made against the configuration');
-  assert.ok(!dernier.texte.includes('not emitted'), 'never announce a loss where there is a wait');
-  for (const d of dernier.deferred) {
-    assert.ok(dernier.texte.includes(d.label), 'every deferral stays NAMED: ' + d.label);
+  const last = p[p.length - 1];
+  assert.ok(last.deferred.length > 0, 'with 2 frames for 4 docs, chunks necessarily remain');
+  assert.ok(last.text.includes('DEFERRED'), 'deferred, not lost');
+  assert.ok(!last.text.includes('TOO SMALL'), 'no accusation made against the configuration');
+  assert.ok(!last.text.includes('not emitted'), 'never announce a loss where there is a wait');
+  for (const d of last.deferred) {
+    assert.ok(last.text.includes(d.label), 'every deferral stays NAMED: ' + d.label);
   }
   // …and with enough frames, the remainder disappears: nothing was too big.
   const assez = planFrames(quatre400(), 1122, 8);
@@ -397,10 +397,10 @@ test('TINY FRAME: we split more finely, we NEVER give up', () => {
   //    the frame, the smaller the chunks. It is the replacement
   //    of the old "nothing fits, we announce" — which no longer has a reason to exist.
   const p = planFrames(trois400(), 500, 24); // tiny frame ⇒ many chunks ⇒ many frames
-  const emis = p.flatMap((x) => x.emis);
-  assert.ok(emis.length > 3, 'the frame is small ⇒ many chunks');
+  const emitted = p.flatMap((x) => x.emitted);
+  assert.ok(emitted.length > 3, 'the frame is small ⇒ many chunks');
   for (const d of ['a', 'b', 'c']) {
-    assert.ok(emis.some((id) => id === d || id.startsWith(d + '#')), 'doc ' + d + ' delivered');
+    assert.ok(emitted.some((id) => id === d || id.startsWith(d + '#')), 'doc ' + d + ' delivered');
   }
 });
 
@@ -412,9 +412,9 @@ test('TINY FRAME: we split more finely, we NEVER give up', () => {
 //    while ALL the rest of the module was at 100 %.
 // ⚠️ The expected values below are MEASURED on the real code, never guessed.
 const H_MORCEAU = '⟦ A — CHUNK 999/999 : reassemble the 999 chunks in order before reading ⟧\n'.length;
-const CAP5 = H_MORCEAU + 5; // ⇒ `utile` = 5 characters of content per slice
-const tranchesDe = (texte, capacite = CAP5) =>
-  fragment([{ id: 'a', label: 'A', text: texte }], capacite).map((m) => m.text.replace(/^⟦[^⟧]*⟧\n/, ''));
+const CAP5 = H_MORCEAU + 5; // ⇒ `usable` = 5 characters of content per slice
+const tranchesDe = (text, capability = CAP5) =>
+  fragment([{ id: 'a', label: 'A', text: text }], capability).map((m) => m.text.replace(/^⟦[^⟧]*⟧\n/, ''));
 
 test('SCANNER: short lines are GROUPED as long as they fit, separator PRESERVED', () => {
   const src = 'ab\ncd\nef\ngh\nij\nkl\nmn\nop\nqr\nst\nuv\nwx\nyz\nAB\nCD\nEF\nGH\nIJ\nKL\nMN\nOP\nQR\nST\nUV\nWX\nYZ\n01\n23\n45';
@@ -434,15 +434,15 @@ test('SCANNER: a MONSTER LINE is chopped up, and the current buffer is flushed B
 });
 
 test('SCANNER: EMPTY buffer at the end of the text ⇒ NO empty slice added', () => {
-  // ⚠️ PRECISE case, measured: a monster line of an EXACT multiple of `utile`
+  // ⚠️ PRECISE case, measured: a monster line of an EXACT multiple of `usable`
   //    FOLLOWED by an empty line (text ending with a line break) really leaves the
   //    buffer empty. Pushing anyway would produce an empty slice — a chunk
   //    that announces NOTHING, and a falsified `j/m` total for ALL the others.
   //    ⚠️ Without the final line break, the buffer is NOT empty (it carries the last
   //    slice): the variant below would prove nothing.
-  const vide = tranchesDe('x'.repeat(100) + '\n');
-  assert.strictEqual(vide.length, 20, '100 / 5 = 20 slices, not 21');
-  assert.ok(vide.every((x) => x.length > 0), 'no empty slice');
+  const empty = tranchesDe('x'.repeat(100) + '\n');
+  assert.strictEqual(empty.length, 20, '100 / 5 = 20 slices, not 21');
+  assert.ok(empty.every((x) => x.length > 0), 'no empty slice');
   // Variant without a final line break: same count, but via the "full buffer" path.
   assert.strictEqual(tranchesDe('x'.repeat(100)).length, 20);
 });
@@ -473,35 +473,35 @@ test('BUDGET UNDER THE ENVELOPE: it is the ENVELOPE that gives way, never the co
   //    DELIVERING is the contract. When both do not fit, we deliver.
   assert.ok(frameCapacity(300, 12) < 0, 'premise: at this budget the envelope does not fit');
   const p = planFrames([{ id: 'a', label: 'A', text: 'x'.repeat(400) }], 300, 12);
-  const emis = p.flatMap((x) => x.emis);
-  assert.ok(emis.length > 0, 'UNDELIVERABILITY FORBIDDEN: at least one chunk goes out');
+  const emitted = p.flatMap((x) => x.emitted);
+  assert.ok(emitted.length > 0, 'UNDELIVERABILITY FORBIDDEN: at least one chunk goes out');
   // ⚠️ Remove the chunk headers BEFORE counting: they contain the word
   //    "chunks", hence an "x"… — counting naively inflates the total and
   //    gives a false RED (measured while writing this test).
-  const livre = p.map((x) => x.texte).join('').replace(/⟦[^⟧]*⟧\n/g, '').replace(/[^x]/g, '').length;
+  const livre = p.map((x) => x.text).join('').replace(/⟦[^⟧]*⟧\n/g, '').replace(/[^x]/g, '').length;
   assert.strictEqual(livre, 400, 'all the content is delivered, down to the letter');
   // Unsealed ⇒ we do not ANNOUNCE a seal that does not exist ("green that lies").
   for (const x of p) {
     assert.strictEqual(x.marker, '', 'no marker announced when nothing is sealed');
-    assert.ok(!x.texte.includes('###END:'), 'no seal in the text');
+    assert.ok(!x.text.includes('###END:'), 'no seal in the text');
   }
   // …and the BOUND still holds on every frame carrying content.
   for (const x of p) {
-    if (x.emis.length > 0) assert.ok(x.texte.length <= 300, 'content frame bounded');
+    if (x.emitted.length > 0) assert.ok(x.text.length <= 300, 'content frame bounded');
   }
 });
 
 test('UNSEALING BOUNDARY: capacity EXACTLY zero ⇒ unsealed (there is no room left)', () => {
-  // ⚠️ `capacite > 0` and not `>= 0`: at zero, the envelope occupies the WHOLE
+  // ⚠️ `capability > 0` and not `>= 0`: at zero, the envelope occupies the WHOLE
   //    frame — sealing it would not leave ONE character of content. Delivering
   //    comes before sealing, so we unseal. MEASURED budget, not guessed.
   assert.strictEqual(frameCapacity(319, 12), 0, 'premise: this budget gives a capacity of zero');
   const p = planFrames([{ id: 'a', label: 'A', text: 'x'.repeat(400) }], 319, 12);
-  assert.ok(p.flatMap((x) => x.emis).length > 0, 'content goes out anyway');
-  assert.ok(!p.some((x) => x.texte.includes('###END:')), 'no seal: there was no room');
+  assert.ok(p.flatMap((x) => x.emitted).length > 0, 'content goes out anyway');
+  assert.ok(!p.some((x) => x.text.includes('###END:')), 'no seal: there was no room');
   // One more character of budget and the seal becomes possible again.
   const q = planFrames([{ id: 'a', label: 'A', text: 'x'.repeat(400) }], 320, 12);
-  assert.ok(q.some((x) => x.texte.includes('###END:')), 'at capacity 1, we seal');
+  assert.ok(q.some((x) => x.text.includes('###END:')), 'at capacity 1, we seal');
 });
 
 test('DEFERRALS: only the LAST frame carries them (the others have an empty list)', () => {
@@ -517,8 +517,8 @@ test('DEFERRALS: only the LAST frame carries them (the others have an empty list
 test('EMPTY FRAME: neither content nor announcement ⇒ EMPTY rendering (never a hollow envelope)', () => {
   // Emitting an envelope to announce nothingness would cost tokens on every action.
   const p = planFrames(trois400(), 1200, 3);
-  assert.deepStrictEqual(p[2], { texte: '', emis: [], deferred: [], marker: '' });
-  assert.notStrictEqual(p[1].texte, '', 'the frame that carries content, itself, is indeed rendered');
+  assert.deepStrictEqual(p[2], { text: '', emitted: [], deferred: [], marker: '' });
+  assert.notStrictEqual(p[1].text, '', 'the frame that carries content, itself, is indeed rendered');
 });
 
 test('MARKER: sensitive to the CONTENT and to the NUMBER of frames', () => {
@@ -558,36 +558,36 @@ test('FRAMES — n=1: PERFECT parity if everything fits, CHUNKING as soon as the
   const deborde = () => segs(6, 300);
   const p = planFrames(deborde(), 1200, 1);
   assert.strictEqual(p.length, 1, 'still ONE single frame');
-  assert.ok(p[0].emis.length > 0, 'content GOES OUT, unlike the behaviour from before');
+  assert.ok(p[0].emitted.length > 0, 'content GOES OUT, unlike the behaviour from before');
   assert.ok(p[0].deferred.length > 0, 'the rest is returned to the caller, who queues it');
   // ⚠️ A lone frame must NEVER carry the "FRAME k/N" header: it
   //    would say "reassemble the 1 frames", a false instruction.
-  assert.ok(!p[0].texte.includes('FRAME '), 'simple header, never a frame header');
+  assert.ok(!p[0].text.includes('FRAME '), 'simple header, never a frame header');
 });
 
 test('FRAMES — absurd budget ⇒ FRAMEWORK default (cascade authority ①)', () => {
   for (const mauvais of [undefined, null, 0, -1, NaN, Infinity, 'x']) {
     const p = planFrames(trois400(), mauvais, 3);
-    assert.deepStrictEqual(p[0].emis, ['a', 'b', 'c'], 'budget ' + String(mauvais));
-    assert.deepStrictEqual(p[1], { texte: '', emis: [], deferred: [], marker: '' });
+    assert.deepStrictEqual(p[0].emitted, ['a', 'b', 'c'], 'budget ' + String(mauvais));
+    assert.deepStrictEqual(p[1], { text: '', emitted: [], deferred: [], marker: '' });
   }
 });
 
 test('FRAMES — non-array input ⇒ treated as empty (fail-soft, never a throw)', () => {
   // The gate is fail-open: a budget that threw would SILENCE the injection.
-  for (const mauvais of [undefined, null, 'texte', 42, {}]) {
+  for (const mauvais of [undefined, null, 'text', 42, {}]) {
     const p = planFrames(mauvais, 1000, 3);
     assert.strictEqual(p.length, 3);
-    for (const x of p) assert.deepStrictEqual(x, { texte: '', emis: [], deferred: [], marker: '' });
+    for (const x of p) assert.deepStrictEqual(x, { text: '', emitted: [], deferred: [], marker: '' });
   }
 });
 
 test('SEAL BOUNDARY: at exactly 50 % → nominal; just above → sealed', () => {
-  // Anchors the constant SEUIL_SCEAU_RATIO: a mutant that moves it is killed.
+  // Anchors the constant SEAL_THRESHOLD_RATIO: a mutant that moves it is killed.
   const nu = plan([seg('a', 500)], 1000);   // 500 = 50 % of 1000 → nominal
   assert.strictEqual(nu.marker, '');
-  const scelle = plan([seg('a', 501)], 1000); // 501 > 50 % → sealed
-  assert.notStrictEqual(scelle.marker, '');
+  const sealed = plan([seg('a', 501)], 1000); // 501 > 50 % → sealed
+  assert.notStrictEqual(sealed.marker, '');
 });
 
 test('frameCapacity: PHYSICAL bound derived from the real header, never a constant', () => {
@@ -612,9 +612,9 @@ test('frameCapacity: at the EXACT capacity the doc stays whole, one character mo
   // constant could drift from the engine without anything turning red.
   const cap = frameCapacity(8000, 3);
   const pile = planFrames([seg('a', cap), seg('b', 5000)], 8000, 3);
-  assert.ok(pile.some((p) => p.emis.includes('a')), 'at the exact capacity: delivered WHOLE, without a split');
+  assert.ok(pile.some((p) => p.emitted.includes('a')), 'at the exact capacity: delivered WHOLE, without a split');
   const trop = planFrames([seg('a', cap + 1), seg('b', 5000)], 8000, 3);
-  const emisA = trop.flatMap((p) => p.emis).filter((id) => id.startsWith('a'));
+  const emisA = trop.flatMap((p) => p.emitted).filter((id) => id.startsWith('a'));
   assert.deepStrictEqual(emisA, ['a#1/2', 'a#2/2'], 'one character more ⇒ split into 2, and DELIVERED');
 });
 
@@ -624,28 +624,28 @@ test('MONSTER LINE: a single line longer than a frame is chopped up', () => {
   //    a 20 000-character line has no boundary at which to cut cleanly.
   const uneLigne = { id: 'mono', text: 'z'.repeat(9000), label: 'mono.md' };
   const p = planFrames([uneLigne], 1200, 24);
-  const emis = p.flatMap((x) => x.emis);
-  assert.ok(emis.length > 5, 'the monster line is chopped into chunks');
-  assert.ok(emis.every((id) => id.startsWith('mono#')));
-  const z = p.map((x) => x.texte).join('').split('').filter((c) => c === 'z').length;
+  const emitted = p.flatMap((x) => x.emitted);
+  assert.ok(emitted.length > 5, 'the monster line is chopped into chunks');
+  assert.ok(emitted.every((id) => id.startsWith('mono#')));
+  const z = p.map((x) => x.text).join('').split('').filter((c) => c === 'z').length;
   assert.strictEqual(z, 9000, 'ALL 9000 characters arrived');
 });
 
 test('MONSTER LINE mixed with normal lines: the current buffer is flushed first', () => {
   // Guarantees the ORDER: what precedes the monster line goes out BEFORE it.
-  const mixte = { id: 'mix', text: 'debut\n' + 'z'.repeat(3000) + '\nfin', label: 'mix.md' };
+  const mixte = { id: 'mix', text: 'start\n' + 'z'.repeat(3000) + '\nfin', label: 'mix.md' };
   const p = planFrames([mixte], 1200, 24);
-  const textes = p.map((x) => x.texte).join('');
-  assert.ok(textes.indexOf('debut') < textes.indexOf('zzz'), 'the beginning goes out before the monster line');
-  assert.ok(textes.includes('fin'), 'and the rest still arrives');
+  const texts = p.map((x) => x.text).join('');
+  assert.ok(texts.indexOf('start') < texts.indexOf('zzz'), 'the beginning goes out before the monster line');
+  assert.ok(texts.includes('fin'), 'and the rest still arrives');
 });
 
 test('CHUNK HEADER: EXACT text (the 3 fields of the RFC 2046 pattern)', () => {
   // ⚠️ `id` (common marker), `number` starting at 1, `total` — removing one
   //    removes a reassembly guarantee. Anchored to the character.
   const p = planFrames([seg('doc', 3000)], 1200, 24);
-  const premier = p.find((x) => x.texte.includes('CHUNK 1/'));
-  const m = /⟦ (.+?) — CHUNK (\d+)\/(\d+) : reassemble the (\d+) chunks in order before reading ⟧\n/.exec(premier.texte);
+  const first = p.find((x) => x.text.includes('CHUNK 1/'));
+  const m = /⟦ (.+?) — CHUNK (\d+)\/(\d+) : reassemble the (\d+) chunks in order before reading ⟧\n/.exec(first.text);
   assert.ok(m, 'header in the exact format');
   assert.strictEqual(m[1], 'doc.md', 'the LABEL identifies the doc');
   assert.strictEqual(m[2], '1', 'the numbering starts at 1 (RFC 2046)');
@@ -659,14 +659,14 @@ test('REMAINDER: EXACT message — ONE single announcement for BOTH paths', () =
   //    that diverge at the first change. Here we verify that the last
   //    frame returns EXACTLY the same sentence as the single frame.
   const p = planFrames(quatre400(), 1122, 2);
-  const t = p[1].texte;
+  const t = p[1].text;
   const n = p[1].deferred.length;
   assert.ok(t.includes('\n\n⚠️ ' + n + ' doc(s) DEFERRED — the frame is full, they follow on the next tool call(s).\n'));
   assert.ok(t.includes('   Nothing is lost: they are queued, in order. If your action touches them NOW, read them:\n'));
   // SAME sentence as the single-frame path — otherwise the merge would be cosmetic.
   const solo = plan(segs(6, 300), 1200);
-  const ligne = (x) => x.split('\n').find((l) => l.includes('DEFERRED')).replace(/\d+/, 'N');
-  assert.strictEqual(ligne(t), ligne(solo.texte), 'one single wording, shared');
+  const line = (x) => x.split('\n').find((l) => l.includes('DEFERRED')).replace(/\d+/, 'N');
+  assert.strictEqual(line(t), line(solo.text), 'one single wording, shared');
 });
 
 // ⚠️ THIS TEST LIVES HERE, NOT IN THE PROPERTY FILE — AND IT IS A RULE, NOT
@@ -694,9 +694,9 @@ test('FOUNDING CASE (queue): single frame + giant doc => STRICT progress, never 
   while (file.length > 0) {
     assert.ok(tours++ < 200, 'strict progress required: beyond that, there is a loop');
     const frames = planFrames(file, 600, 1);
-    const emis = frames.flatMap((p) => p.emis);
-    assert.ok(emis.length > 0, 'each action advances by at least one chunk');
-    for (const id of emis) livres.add(id);
+    const emitted = frames.flatMap((p) => p.emitted);
+    assert.ok(emitted.length > 0, 'each action advances by at least one chunk');
+    for (const id of emitted) livres.add(id);
     file = frames[frames.length - 1].deferred;
   }
   assert.ok(tours > 1, 'the doc was indeed delivered over SEVERAL actions');
@@ -710,11 +710,11 @@ test('FORCED PROGRESS: the frame SACRIFICES the announcement, but ALWAYS returns
   //    "for symmetry" would either suffocate the frame, or LOSE the remainder.
   const p = planFrames([{ id: 'g', text: 'x'.repeat(5000), label: 'geante.md' }], 600, 1);
   const seule = p[0];
-  assert.ok(seule.emis.length > 0, 'content GOES OUT anyway (progress guarantee)');
+  assert.ok(seule.emitted.length > 0, 'content GOES OUT anyway (progress guarantee)');
   assert.ok(seule.deferred.length > 0, 'and the remainder is RETURNED to the caller');
   // The text, itself, carries NO announcement: there was no room.
-  assert.ok(!seule.texte.includes('DEFERRED'), 'announcement sacrificed: delivering comes before describing');
-  assert.ok(!seule.texte.includes('Stryker'), 'no stray label in the frame');
+  assert.ok(!seule.text.includes('DEFERRED'), 'announcement sacrificed: delivering comes before describing');
+  assert.ok(!seule.text.includes('Stryker'), 'no stray label in the frame');
 });
 
 test('ANNOUNCEMENT: ONLY the last frame carries it — never the previous ones', () => {
@@ -725,9 +725,9 @@ test('ANNOUNCEMENT: ONLY the last frame carries it — never the previous ones',
     id: 'e' + k, text: 'w'.repeat(900), label: 'e' + k + '.md',
   }));
   const p = planFrames(docs, 3000, 3);
-  assert.ok(p[p.length - 1].texte.includes('DEFERRED'), 'the LAST one announces');
+  assert.ok(p[p.length - 1].text.includes('DEFERRED'), 'the LAST one announces');
   for (let i = 0; i < p.length - 1; i++) {
-    assert.ok(!p[i].texte.includes('DEFERRED'), 'frame ' + (i + 1) + ' keeps silent');
+    assert.ok(!p[i].text.includes('DEFERRED'), 'frame ' + (i + 1) + ' keeps silent');
     assert.deepStrictEqual(p[i].deferred, [], 'and reports no remainder');
   }
 });
@@ -737,7 +737,7 @@ test('CHUNKING: the chunk NEVER exceeds its capacity, over the WHOLE range', () 
   //    header is worth EXACTLY the capacity. A `>` turned into `>=` would give a
   //    NULL useful part there — hence an infinite loop and a chunk out of bounds.
   //    Testing a single capacity leaves this tipping point invisible.
-  const doc = () => [{ id: 'd', text: Array.from({ length: 40 }, (_, i) => 'ligne' + i).join('\n'), label: 'd.md' }];
+  const doc = () => [{ id: 'd', text: Array.from({ length: 40 }, (_, i) => 'line' + i).join('\n'), label: 'd.md' }];
   for (let cap = 20; cap <= 120; cap++) {
     const m = fragment(doc(), cap);
     assert.ok(m.length > 0, 'capacity ' + cap + ': at least one chunk');
@@ -752,10 +752,10 @@ test('EMPTY FRAME: neither content nor remainder ⇒ STRICTLY empty rendering (s
   // ⚠️ Emitting an envelope to announce nothingness would cost tokens on
   //    EVERY action of EVERY agent. The shell exits silently on empty text.
   const p = planFrames(segs(6, 300), 1200, 4);
-  const vides = p.filter((x) => x.emis.length === 0 && x.deferred.length === 0);
-  assert.ok(vides.length > 0, 'with 4 frames for a small corpus, empty ones remain');
-  for (const v of vides) {
-    assert.deepStrictEqual(v, { texte: '', emis: [], deferred: [], marker: '' });
+  const emptyOnes = p.filter((x) => x.emitted.length === 0 && x.deferred.length === 0);
+  assert.ok(emptyOnes.length > 0, 'with 4 frames for a small corpus, empty ones remain');
+  for (const v of emptyOnes) {
+    assert.deepStrictEqual(v, { text: '', emitted: [], deferred: [], marker: '' });
   }
 });
 
@@ -764,26 +764,26 @@ test('BOUNDED ANNOUNCEMENT: it counts DOCUMENTS and cannot eat the frame', () =>
     id: 'd' + k, text: 'y'.repeat(900), label: 'doc' + k + '.md',
   }));
   const p = planFrames(docs, 3000, 2);
-  const dernier = p[p.length - 1];
-  const t = dernier.texte;
-  assert.ok(dernier.deferred.length > 5, 'the case is indeed reached');
+  const last = p[p.length - 1];
+  const t = last.text;
+  assert.ok(last.deferred.length > 5, 'the case is indeed reached');
 
   // ① DEDUP: the announced count is that of the distinct DOCUMENTS.
-  const attendus = new Set(dernier.deferred.map((d) => d.label)).size;
-  assert.ok(t.includes(attendus + ' doc(s) DEFERRED'), 'counts in DOCUMENTS');
+  const expectedOnes = new Set(last.deferred.map((d) => d.label)).size;
+  assert.ok(t.includes(expectedOnes + ' doc(s) DEFERRED'), 'counts in DOCUMENTS');
 
   // ② CEILING: the list is truncated, with the remainder in FIGURES.
-  assert.ok(t.includes('… and ' + (attendus - 5) + ' other(s)'), 'list truncated and quantified');
-  const lignes = t.split('\n').filter((l) => l.startsWith('   - '));
-  assert.strictEqual(lignes.length, 6, '5 citations + the remainder line, never more');
+  assert.ok(t.includes('… and ' + (expectedOnes - 5) + ' other(s)'), 'list truncated and quantified');
+  const lines = t.split('\n').filter((l) => l.startsWith('   - '));
+  assert.strictEqual(lines.length, 6, '5 citations + the remainder line, never more');
 
   // ③ EXACT BOUNDARY of the ceiling: at 5 docs we cite EVERYTHING, at 6 we truncate.
   //    ⚠️ Without these two cases, `>` and `>=` are indistinguishable (surviving mutant).
   const nDocs = (n) => Array.from({ length: n }, (_, k) => ({ id: 'x' + k, text: 'z'.repeat(700), label: 'x' + k + '.md' }));
   const cinq = planFrames(nDocs(6), 1500, 1);
-  assert.ok(!cinq[0].texte.includes('other(s)'), '5 deferrals ⇒ all cited, no truncation');
+  assert.ok(!cinq[0].text.includes('other(s)'), '5 deferrals ⇒ all cited, no truncation');
   const six = planFrames(nDocs(7), 1500, 1);
-  assert.ok(six[0].texte.includes('… and 1 other(s)'), '6 deferrals ⇒ we truncate at 5 + 1 remaining');
+  assert.ok(six[0].text.includes('… and 1 other(s)'), '6 deferrals ⇒ we truncate at 5 + 1 remaining');
 });
 
 test('frameCapacity: non-integer nbFrames falls back on the minimal width', () => {
@@ -848,19 +848,19 @@ test('ORDER: absent/invalid inputs = degradation, never a crash', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 test('INFINITE BUDGET: everything leaves in ONE frame, zero deferral, content INTACT', () => {
-  const gros = 'X'.repeat(76000);
-  const p = planFrames([{ id: 'gros', text: gros, label: 'skill' }], Infinity, 1);
+  const big = 'X'.repeat(76000);
+  const p = planFrames([{ id: 'big', text: big, label: 'skill' }], Infinity, 1);
   assert.strictEqual(p.length, 1);
   assert.strictEqual(p[0].deferred.length, 0, 'an infinite budget defers NOTHING');
-  assert.ok(p[0].texte.includes(gros), 'full content, never truncated');
+  assert.ok(p[0].text.includes(big), 'full content, never truncated');
 });
 
 test('INFINITE BUDGET: neither seal nor header (HISTORICAL rendering, hence parity)', () => {
   // The seal only serves to make a TRUNCATION noisy. Without a bound, there is
   // nothing to report: announcing an end marker would be pure noise.
   const p = planFrames([{ id: 'a', text: 'A'.repeat(50000), label: 'a' }], Infinity, 1);
-  assert.ok(!/###END:/.test(p[0].texte), 'no seal when nothing can be truncated');
-  assert.ok(!/CHUNK/.test(p[0].texte), 'no chunking');
+  assert.ok(!/###END:/.test(p[0].text), 'no seal when nothing can be truncated');
+  assert.ok(!/CHUNK/.test(p[0].text), 'no chunking');
 });
 
 test('INFINITE BUDGET vs FLOOR: the same corpus defers at 8000 and NOT at infinity', () => {

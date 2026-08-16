@@ -9,7 +9,7 @@
 //    that is to say exactly where the framework's FOUNDING incident lives (the
 //    Stripe payment click). Discovered on 06/08 by arming it FOR REAL:
 //    `create_refund` returned `allow`. Without a REAL spawn verification,
-//    I would have announced « it is armed » and shipped a safety catch that never
+//    I would have announced "it is armed" and shipped a safety catch that never
 //    catches — worse than no safety catch, because you trust it.
 //
 // ⚠️ WHY THE VOCABULARY SYMMETRY GATE DID NOT SEE IT: it checks that
@@ -54,9 +54,9 @@ function clesDeDecision() {
 }
 
 test('DECLFOR ①: every DECISION key is propagated by the MCP source', () => {
-  const manquantes = clesDeDecision().filter((cle) => {
-    const decl = declForMcp({ [cle]: ECHANTILLON[cle] });
-    return decl[cle] !== ECHANTILLON[cle];
+  const manquantes = clesDeDecision().filter((key) => {
+    const decl = declForMcp({ [key]: ECHANTILLON[key] });
+    return decl[key] !== ECHANTILLON[key];
   });
   assert.deepStrictEqual(manquantes, [],
     'FILTERED IN SILENCE by sources/mcp.js#declFor: ' + manquantes.join(', ')
@@ -65,9 +65,9 @@ test('DECLFOR ①: every DECISION key is propagated by the MCP source', () => {
 });
 
 test('DECLFOR ②: every DECISION key is propagated by the SKILL source', () => {
-  const manquantes = clesDeDecision().filter((cle) => {
-    const decl = declForSkill({ [cle]: ECHANTILLON[cle] });
-    return decl[cle] !== ECHANTILLON[cle];
+  const manquantes = clesDeDecision().filter((key) => {
+    const decl = declForSkill({ [key]: ECHANTILLON[key] });
+    return decl[key] !== ECHANTILLON[key];
   });
   assert.deepStrictEqual(manquantes, [],
     'FILTERED IN SILENCE by sources/skill.js#declFor: ' + manquantes.join(', '));
@@ -85,7 +85,7 @@ test('DECLFOR ③: the SAMPLE covers every key (anti-blind-spot)', () => {
 });
 
 test('DECLFOR ④: an EXPLICIT `false` survives — opting out must remain possible', () => {
-  // ⚠️ An « empty value » filter on the booleans would make `enforce: false`
+  // ⚠️ An "empty value" filter on the booleans would make `enforce: false`
   //    indistinguishable from absent, so a category moved to
   //    `defaults.{source}.enforce` would become UN-OPT-OUT-ABLE: the dead end
   //    of any cascade. The case holds for BOTH sources.
@@ -128,7 +128,7 @@ function sourcesAvecDeclFor() {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'sources');
   return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.js'))
-    .map((f) => ({ nom: 'sources/' + f, mod: require_(path.join(dir, f)) }))
+    .map((f) => ({ name: 'sources/' + f, mod: require_(path.join(dir, f)) }))
     .filter((s) => typeof s.mod.declFor === 'function');
 }
 
@@ -136,7 +136,7 @@ test('DECLFOR ⑤: a source POSES, it never RESOLVES — empty input ⇒ EMPTY d
   const fautives = sourcesAvecDeclFor()
     .filter(({ mod }) => Object.keys(mod.declFor({})).length > 0
       || Object.keys(mod.declFor(undefined)).length > 0)
-    .map(({ nom }) => nom);
+    .map(({ name }) => name);
 
   assert.deepStrictEqual(fautives, [],
     'THESE SOURCES RESOLVE INSTEAD OF POSING: ' + fautives.join(', ')

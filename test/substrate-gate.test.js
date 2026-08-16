@@ -40,7 +40,7 @@ import { ADAPTERS } from '../src/source-adapters.js';
 
 // Witness: a string existing nowhere else, so that a match is necessarily DUE
 // to the projection under test (never to a corpus residue).
-const T = 'temoin-substrat-9f3a';
+const T = 'witness-substrat-9f3a';
 
 // THE PROJECTIONS OF THE EVENT — that is all the harness gives.
 // ⚠️ `cwd` lives at the ROOT of the payload (set by porte-core), not inside
@@ -119,13 +119,13 @@ const CECITES_JUSTIFIEES = {
 
 test('SUBSTRATE ①: every BLINDNESS of a source on a projection MUST be justified', () => {
   const manquantes = [];
-  for (const [nomSource, sonde] of Object.entries(SOURCES)) {
-    for (const [nomProj, payload] of Object.entries(PROJECTIONS)) {
+  for (const [sourceName, probe] of Object.entries(SOURCES)) {
+    for (const [projName, payload] of Object.entries(PROJECTIONS)) {
       // ⚠️ The payload is a THUNK evaluated INSIDE the test (Stryker perTest contract).
-      if (sonde(payload())) continue;
-      const cle = `${nomSource}/${nomProj}`;
-      const justif = CECITES_JUSTIFIEES[cle];
-      if (typeof justif !== 'string' || justif.trim().length <= 40) manquantes.push(cle);
+      if (probe(payload())) continue;
+      const key = `${sourceName}/${projName}`;
+      const justif = CECITES_JUSTIFIEES[key];
+      if (typeof justif !== 'string' || justif.trim().length <= 40) manquantes.push(key);
     }
   }
   assert.deepEqual(manquantes, [],
@@ -139,17 +139,17 @@ test('SUBSTRATE ②: a STALE justification must disappear (reverse part)', () =>
   // ⚠️ Without this part, the excuses pile up: we would keep the reason for a
   //    blindness ALREADY filled, and the table would stop describing the real
   //    engine.
-  const perimees = [];
-  for (const cle of Object.keys(CECITES_JUSTIFIEES)) {
-    const [nomSource, ...reste] = cle.split('/');
-    const nomProj = reste.join('/');
-    const sonde = SOURCES[nomSource];
-    const payload = PROJECTIONS[nomProj];
+  const staleOnes = [];
+  for (const key of Object.keys(CECITES_JUSTIFIEES)) {
+    const [sourceName, ...rest] = key.split('/');
+    const projName = rest.join('/');
+    const probe = SOURCES[sourceName];
+    const payload = PROJECTIONS[projName];
     // A key designating nothing any more is itself stale (source/projection renamed).
-    if (!sonde || !payload) { perimees.push(cle + ' (non-existent target)'); continue; }
-    if (sonde(payload())) perimees.push(cle + ' (the source now SEES this projection)');
+    if (!probe || !payload) { staleOnes.push(key + ' (non-existent target)'); continue; }
+    if (probe(payload())) staleOnes.push(key + ' (the source now SEES this projection)');
   }
-  assert.deepEqual(perimees, [],
+  assert.deepEqual(staleOnes, [],
     'STALE JUSTIFICATION — remove these entries from CECITES_JUSTIFIEES.');
 });
 
@@ -176,8 +176,8 @@ test('SUBSTRATE ④: the WITNESS really discriminates (anti-lying-probe)', () =>
   //    the table would certify instead of protecting. We therefore require
   //    that a payload WITHOUT the witness NEVER matches, for each source.
   const sansTemoin = () => ({ toolName: 'Read', toolInput: { file_path: '/rien/du/tout.js' }, cwd: '/ailleurs' });
-  for (const [nomSource, sonde] of Object.entries(SOURCES)) {
-    assert.equal(sonde(sansTemoin()), false,
-      `the \`${nomSource}\` probe matches a payload WITHOUT the witness: it proves nothing.`);
+  for (const [sourceName, probe] of Object.entries(SOURCES)) {
+    assert.equal(probe(sansTemoin()), false,
+      `the \`${sourceName}\` probe matches a payload WITHOUT the witness: it proves nothing.`);
   }
 });

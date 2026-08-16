@@ -65,7 +65,7 @@ function readJSON(p) {
 //    (grep over the whole repo).
 //    ⚠️ The liveness probe further down, however, remains INDISPENSABLE: it
 //    is what prevents a hollow harness from announcing "0 problem".
-function listMdFiles(racine) {
+function listMdFiles(root) {
   const out = [];
   const marcher = (d) => {
     let entrees;
@@ -77,10 +77,10 @@ function listMdFiles(racine) {
     for (const e of entrees) {
       const f = path.join(d, e.name);
       if (e.isDirectory()) marcher(f);
-      else if (e.name.endsWith('.md')) out.push(path.relative(racine, f).split(path.sep).join('/'));
+      else if (e.name.endsWith('.md')) out.push(path.relative(root, f).split(path.sep).join('/'));
     }
   };
-  marcher(racine);
+  marcher(root);
   return out;
 }
 
@@ -94,22 +94,22 @@ function listMdFiles(racine) {
  *    a single authority on "is this declaration sound?".
  */
 function declarationOf(cheminAbs, cheminRel, reglesParDoc) {
-  let texte = '';
+  let text = '';
   try {
-    texte = fs.readFileSync(cheminAbs, 'utf8');
+    text = fs.readFileSync(cheminAbs, 'utf8');
   } catch {
     return {};
   }
-  const fm = frontmatter.parse(texte);
+  const fm = frontmatter.parse(text);
   if (fm.hasFrontmatter) return fm.data;
 
-  const regles = reglesParDoc.get(cheminRel);
-  if (!regles || !regles.length) return {}; // no trigger → validate() will say so
-  const patterns = regles.map((r) => r.pattern).filter((p) => typeof p === 'string');
+  const rules = reglesParDoc.get(cheminRel);
+  if (!rules || !rules.length) return {}; // no trigger → validate() will say so
+  const patterns = rules.map((r) => r.pattern).filter((p) => typeof p === 'string');
   const decl = { match: patterns.length === 1 ? patterns[0] : patterns };
-  const premiere = regles[0];
-  if (Array.isArray(premiere.scope) && premiere.scope.length) decl.scope = premiere.scope;
-  if (Array.isArray(premiere.exclude) && premiere.exclude.length) decl.exclude = premiere.exclude;
+  const firstOne = rules[0];
+  if (Array.isArray(firstOne.scope) && firstOne.scope.length) decl.scope = firstOne.scope;
+  if (Array.isArray(firstOne.exclude) && firstOne.exclude.length) decl.exclude = firstOne.exclude;
   return decl;
 }
 
@@ -143,25 +143,25 @@ function declarationOf(cheminAbs, cheminRel, reglesParDoc) {
  *    those two shapes no false green is possible, hence no defect to report.
  */
 function hasSourceTag(cheminAbs) {
-  let texte = '';
+  let text = '';
   try {
-    texte = fs.readFileSync(cheminAbs, 'utf8');
+    text = fs.readFileSync(cheminAbs, 'utf8');
   } catch {
     return false; // unreadable: the rest of the lint will say so, not this check
   }
-  return texte.split(/\r?\n/).some((l) => /^\[source:\s*[^\]]+(\.md|skill\/[^\]]*)\]$/.test(l.trim()));
+  return text.split(/\r?\n/).some((l) => /^\[source:\s*[^\]]+(\.md|skill\/[^\]]*)\]$/.test(l.trim()));
 }
 
 // ⚠️ The wired MCP servers live in SEVERAL files (.claude.json AND .mcp.json
 //    — 16 unique ones measured on 15/07, 8 + 14 with overlap). Reading only
 //    one = under-counting in silence, hence missing servers without a doc.
 function mcpServers(home) {
-  const noms = new Set();
+  const names = new Set();
   for (const f of ['.claude.json', '.mcp.json', path.join('.claude', 'settings.json')]) {
     const j = readJSON(path.join(home, f));
-    for (const n of Object.keys((j && j.mcpServers) || {})) noms.add(n);
+    for (const n of Object.keys((j && j.mcpServers) || {})) names.add(n);
   }
-  return [...noms];
+  return [...names];
 }
 
 function collectDocs() {
@@ -185,20 +185,20 @@ function collectDocs() {
   try {
     corpus = readCorpus(DOCS, 'docs/');
   } catch { /* left empty: the liveness probe takes care of it */ }
-  const regles = rulesFromCorpus(corpus);
+  const rules = rulesFromCorpus(corpus);
 
   // ⚠️ LIVENESS PROBE — a hollow harness triumphantly announces "0 problem".
   //    Mistake made twice on 15/07 (audit script filtering on `scope`, then
   //    `Array.isArray` on an object root). Without proof of having loaded
   //    something, a green result is worth NOTHING.
-  if (!regles.length) {
+  if (!rules.length) {
     console.error(`🚨 lint-corpus: NO rule loaded from the frontmatters of ${DOCS}`);
     console.error('   The lint can prove NOTHING in this state (hollow harness). Check CTXROUTE_HOOKS_DIR.');
     process.exit(2);
   }
 
   const reglesParDoc = new Map();
-  for (const r of regles) {
+  for (const r of rules) {
     if (!r || typeof r.doc !== 'string' || typeof r.pattern !== 'string') continue;
     if (!reglesParDoc.has(r.doc)) reglesParDoc.set(r.doc, []);
     reglesParDoc.get(r.doc).push(r);
@@ -206,7 +206,7 @@ function collectDocs() {
 
   const onDisk = listMdFiles(DOCS).map((rel) => `docs/${rel}`);
   const docs = onDisk.map((rel) => ({
-    chemin: rel,
+    filePath: rel,
     declaration: declarationOf(path.join(HOOKS, rel), rel, reglesParDoc),
     tagSourceEnDur: hasSourceTag(path.join(HOOKS, rel)),
   }));
@@ -238,7 +238,7 @@ function collectDocs() {
       serveursDeclares: Array.isArray(config.filterList) ? config.filterList : [],
     },
     niveau: (config.lint && config.lint.level) || DEFAULT_LEVEL,
-    stats: { docs: docs.length, regles: regles.length },
+    stats: { docs: docs.length, rules: rules.length },
   };
 }
 
@@ -247,20 +247,20 @@ const QUIET = process.argv.includes('--quiet');
 const iLevel = process.argv.indexOf('--level');
 const { etat, niveau, stats } = collectDocs();
 const findings = applyFilter(analyze(etat), iLevel !== -1 ? process.argv[iLevel + 1] : niveau);
-const erreurs = findings.filter((c) => c.niveau === 'error').length;
+const errors = findings.filter((c) => c.niveau === 'error').length;
 
 if (!QUIET) {
-  console.log(`fleet lint — ${stats.docs} docs, ${stats.regles} rules, ${etat.mcpServers.length} MCP servers\n`);
+  console.log(`fleet lint — ${stats.docs} docs, ${stats.rules} rules, ${etat.mcpServers.length} MCP servers\n`);
 }
 for (const c of findings) {
-  const ligne = `  ${c.niveau === 'error' ? '✗' : '⚠'} [${c.code}] ${c.cible}\n      ${c.message}`;
-  if (c.niveau === 'error') console.error(ligne);
-  else if (!QUIET) console.log(ligne);
+  const line = `  ${c.niveau === 'error' ? '✗' : '⚠'} [${c.code}] ${c.target}\n      ${c.message}`;
+  if (c.niveau === 'error') console.error(line);
+  else if (!QUIET) console.log(line);
 }
 
 if (shouldScream(findings)) {
   // ⚠️ DELIBERATELY LOUD: the silence IS the bug we are hunting.
-  console.error(`\n🚨 ${erreurs} DEAD doc(s) — they will NEVER be injected, and nobody would see it.`);
+  console.error(`\n🚨 ${errors} DEAD doc(s) — they will NEVER be injected, and nobody would see it.`);
   process.exit(1);
 }
 if (!QUIET) console.log(findings.length ? `\n${findings.length} warning(s), 0 error` : '\n✅ healthy fleet');

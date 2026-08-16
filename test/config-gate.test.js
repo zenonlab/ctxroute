@@ -227,25 +227,25 @@ if (config) {
 
   // ```json blocks of the README that look like a config (known top-level key).
   const blocs = [...readme.matchAll(/```json\s*\n([\s\S]*?)```/g)].map((m) => m[1]);
-  const connues = Object.keys(schema.properties);
+  const known = Object.keys(schema.properties);
   const configs = [];
   for (const b of blocs) {
     let o = null;
     try { o = JSON.parse(b); } catch { continue; }   // non-JSON doc excerpt: ignored
     if (o && typeof o === 'object' && !Array.isArray(o)
-      && Object.keys(o).some((k) => connues.includes(k))) configs.push(o);
+      && Object.keys(o).some((k) => known.includes(k))) configs.push(o);
   }
   ok(`README: at least one config example detected (${configs.length})`, configs.length >= 1);
 
   for (const [i, cfg] of configs.entries()) {
     for (const k of Object.keys(cfg)) {
-      ok(`README ex.${i}: key \`${k}\` exists in the schema`, connues.includes(k));
+      ok(`README ex.${i}: key \`${k}\` exists in the schema`, known.includes(k));
     }
     // `servers.{name}`: STRUCTURAL settings only — that is where the bug was.
-    for (const [nom, v] of Object.entries(cfg.servers || {})) {
+    for (const [name, v] of Object.entries(cfg.servers || {})) {
       const admises = Object.keys(schema.properties.servers.additionalProperties.properties);
       for (const k of Object.keys(v || {})) {
-        ok(`README ex.${i}: servers.${nom}.${k} allowed (${admises.join(',')})`, admises.includes(k));
+        ok(`README ex.${i}: servers.${name}.${k} allowed (${admises.join(',')})`, admises.includes(k));
       }
     }
     // `defaults.{source}`: only the registry sources.
@@ -260,7 +260,7 @@ if (config) {
   ok('README: NEGATIVE-CHECK — the old example (servers.stripe.mode) would be REJECTED',
     !admisesSrv.includes('mode') && !admisesSrv.includes('threshold'));
   ok('README: NEGATIVE-CHECK — an invented top-level key would be REJECTED',
-    !connues.includes('cadenceGlobale'));
+    !known.includes('cadenceGlobale'));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

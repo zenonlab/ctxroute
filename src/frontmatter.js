@@ -8,13 +8,13 @@
 // and its content in a .md — 2 things to keep in sync, hence 2 ways to drift
 // SILENTLY: doc without a rule = never injected; rule without a doc = dead.
 // With the frontmatter there are no longer two things. Those bugs no longer exist,
-// they are not « caught ».
+// they are not "caught".
 //
 // ⚠️ DELIBERATE SUBSET OF YAML — NOT a YAML parser, and it will NEVER become one.
 //    Supported: `key: value`, `key: [a, b]`, `key: true|false|number`.
 //    Full YAML = anchors, refs, implicit types, the `norway problem` (`no` → false),
 //    an attack surface and an external dependency. We read 5 known fields, not a language.
-//    Wanting to « just add multi-line » = the first step towards a YAML parser.
+//    Wanting to "just add multi-line" = the first step towards a YAML parser.
 //
 // ⚠️ TOTALITY MANDATORY: it must NEVER throw, whatever byte it receives.
 //    A parser that throws on a malformed doc crashes the hook → NO doc
@@ -46,13 +46,13 @@ function parseScalar(raw) {
  *    a block on the LAST line would crash the parser, and therefore ALL the
  *    injection of the fleet (`parse` must NEVER throw, cf the module header).
  */
-function isIndented(ligne) {
+function isIndented(line) {
   // ⚠️ NO `typeof === 'string'` guard: `RegExp.test` COERCES its argument
   //    (`test(undefined)` reads "undefined", does not throw) and "undefined" does
   //    not start with any whitespace ⇒ `false`, the desired result. The guard would
   //    therefore be UNOBSERVABLE = an EQUIVALENT mutant, an eternal survivor. Doctrine of
   //    the fleet: we ELIMINATE equivalence by construction, we do not test it.
-  return /^[ \t]+\S/.test(ligne);
+  return /^[ \t]+\S/.test(line);
 }
 
 /**
@@ -60,8 +60,8 @@ function isIndented(ligne) {
  * ⚠️ Same deliberate coercion as `isIndented`: `undefined` gives "undefined",
  *    which does not match `^[ \t]*$` ⇒ `false`. End of frontmatter handled without a guard.
  */
-function isEmpty(ligne) {
-  return /^[ \t]*$/.test(ligne);
+function isEmpty(line) {
+  return /^[ \t]*$/.test(line);
 }
 
 /**
@@ -71,20 +71,20 @@ function isEmpty(ligne) {
  *    would eat the first character of a block indented by 1.
  * ⚠️ `|` = LITERAL (line breaks kept) · `>` = FOLDED (lines joined
  *    by a space) — standard YAML semantics, not a home-made invention.
- * ⚠️ We `trimEnd()` the result (YAML « clip » chomping): without it, the empty
+ * ⚠️ We `trimEnd()` the result (YAML "clip" chomping): without it, the empty
  *    line preceding the closing `---` would enter the value.
  */
-function assembleBlock(corps, marker) {
+function assembleBlock(body, marker) {
   // ⚠️ `trim() !== ''` and not `l !== ''`: a line of SPACES ONLY is empty in the
   //    YAML sense. Counting it would give a spurious indentation that would crush
   //    the real minimum and leave the whole block indented.
-  const indents = corps.filter((l) => l.trim() !== '').map((l) => /^[ \t]*/.exec(l)[0].length);
+  const indents = body.filter((l) => l.trim() !== '').map((l) => /^[ \t]*/.exec(l)[0].length);
   // ⚠️ NO `indents.length === 0` guard: we only enter a block IF the
   //    following line is indented AND non-empty (`isIndented`), so `indents`
   //    ALWAYS carries at least one element. The guard would be unreachable = one more
   //    EQUIVALENT mutant. The invariant is guaranteed by the CALLER.
   const base = Math.min(...indents);
-  const nues = corps.map((l) => l.slice(base));
+  const nues = body.map((l) => l.slice(base));
   return (marker === '>' ? nues.map((l) => l.trim()).join(' ') : nues.join('\n')).trimEnd();
 }
 
@@ -116,11 +116,11 @@ function parse(text) {
   //    The original `for (let i…; i < n; i++)` left the mutant
   //    `i <= n` alive: the extra iteration reads `undefined`, which matches no
   //    key, hence UNOBSERVABLE = an eternal survivor. Consuming removes the
-  //    index comparison and the `lignes[i+1]`/`[i+2]` accesses in a single move.
+  //    index comparison and the `lines[i+1]`/`[i+2]` accesses in a single move.
   const restantes = m[1].split(/\r?\n/);
   while (restantes.length > 0) {
     const line = restantes.shift();
-    // ⚠️ NO « ignore comments/empty lines » guard: it would be REDUNDANT.
+    // ⚠️ NO "ignore comments/empty lines" guard: it would be REDUNDANT.
     //    The regex below requires `[A-Za-z0-9_-]+` at the head — a `#` or an empty line
     //    NEVER match, so they are already ignored. Adding the guard = 3 EQUIVALENT
     //    mutants, undetectable (doctrine: avoid by construction, do not test).
@@ -149,12 +149,12 @@ function parse(text) {
     //    FOLLOWED by an INDENTED line. Without an indented line, `|` stays the string.
     // ⚠️ WE SUPPORT instead of REJECTING: this is standard YAML, and the author who
     //    writes it is right. Rejecting would leave the need (writing at length) with no way out.
-    const bloc = /^([|>])[-+]?$/.exec(raw.trim());
-    if (bloc && isIndented(restantes[0])) {
-      const corps = [];
+    const block = /^([|>])[-+]?$/.exec(raw.trim());
+    if (block && isIndented(restantes[0])) {
+      const body = [];
       // ⚠️ An EMPTY line belongs to the block — otherwise a paragraph separated by a
       //    blank would be truncated at its half (silent loss, again).
-      // ⚠️ NO « … AND an indented line follows »: that guard existed, and
+      // ⚠️ NO "… AND an indented line follows": that guard existed, and
       //    it was UNOBSERVABLE — the FINAL empty lines thus absorbed
       //    are removed anyway by the `trimEnd()` of `assembleBlock`.
       //    It therefore only produced one more equivalent mutant. The useful
@@ -163,9 +163,9 @@ function parse(text) {
       //    `restantes[0] === undefined` yields `false` without throwing. A guard
       //    `restantes.length > 0` would be UNOBSERVABLE here = equivalent mutant.
       while (isIndented(restantes[0]) || isEmpty(restantes[0])) {
-        corps.push(restantes.shift());
+        body.push(restantes.shift());
       }
-      data[key] = assembleBlock(corps, bloc[1]);
+      data[key] = assembleBlock(body, block[1]);
       continue;
     }
     if (key === 'rules') {
@@ -221,7 +221,7 @@ const MODES = ['dumb', 'once', 'smart'];
 //    once=∞: the unit of a tick changes nothing there). Cascade of 4 LEVELS identical to
 //    mode/threshold, resolved ONLY in gate.js: entry > `defaults.{source}`
 //    > global (`defaultDriftUnit`) > framework default 'tool'.
-// 🛑 THIS LINE ANNOUNCED « 3 levels » AND cited `skillDefaults` (fixed on
+// 🛑 THIS LINE ANNOUNCED "3 levels" AND cited `skillDefaults` (fixed on
 //    09/08/2026): level ② was added on 04/08 and `skillDefaults` DELETED the
 //    same day, generalised into `defaults.skill`. Describing the CURRENT behaviour
 //    with a dead key is teaching the opposite of the code — and here it touched
@@ -233,8 +233,8 @@ const DRIFT_UNITS = ['tool', 'turn'];
 //    re-injection in disguise (that is the role of `mode: dumb`, not of a threshold).
 // ⚠️ `note` (04/08/2026) — THE ONLY FIELD THE ENGINE NEVER READS.
 //    Addressee = the agent (or the human) who comes to MODIFY this doc, not
-//    the one who acts: « why this `mode`, why this `scope`, to be re-checked
-//    after such-and-such version ». It is invisible to the injection BY CONSTRUCTION —
+//    the one who acts: "why this `mode`, why this `scope`, to be re-checked
+//    after such-and-such version". It is invisible to the injection BY CONSTRUCTION —
 //    the whole frontmatter is removed from the emitted body (sealed by a dedicated test,
 //    never by goodwill alone).
 //
@@ -243,7 +243,7 @@ const DRIFT_UNITS = ['tool', 'turn'];
 //    visible to the agent who acts: an invariant deprived of its reason DRIFTS (the
 //    next person does not see what they are breaking and works around it). The risk is not
 //    technical, it is GRAVITATIONAL: as soon as an invisible zone exists, the
-//    « why » migrates there because it is long and « in the way ». Maintainer
+//    "why" migrates there because it is long and "in the way". Maintainer
 //    decision of 03/08/2026, kept as is.
 //
 // ⚠️ The engine must NEVER depend on it: no decision, no matching,
@@ -344,7 +344,7 @@ const RULE_KEYS = ['pattern', 'scope', 'exclude', 'rank'];
 //    its MIRROR: two shape declarations that diverge = class ㊴, and
 //    it goes UNNOTICED (a gate that probes the PRESENCE of a key does not see its
 //    SHAPE). The symmetry gate ③ of frontmatter.test.js confronts the two.
-// 🛑 **MIXED FORBIDDEN**: `["a", ["b"]]` is REFUSED, not « interpreted ». The danger
+// 🛑 **MIXED FORBIDDEN**: `["a", ["b"]]` is REFUSED, not "interpreted". The danger
 //    of this extension is not the limit but the AMBIGUITY — accepting both
 //    forms in one same list would make the author's intent undecidable.
 const usefulString = (s) => typeof s === 'string' && s.trim() !== '';
@@ -379,7 +379,7 @@ function isRulesDecl(rules) {
       errs.push(`\`rules[${i}].pattern\` missing or empty — the rule would NEVER match`);
     }
     // ⚠️ `scope` admits the GROUPED form (㊺①); `exclude` does NOT — it is ∀¬ over a
-    //    SINGLE universe (㊼), an « AND of ORs » would make no sense to express there.
+    //    SINGLE universe (㊼), an "AND of ORs" would make no sense to express there.
     if ('scope' in r) {
       const e = scopeFormError(r.scope, `rules[${i}].scope`);
       if (e) errs.push(e);
@@ -400,7 +400,7 @@ function isRulesDecl(rules) {
 function validate(data) {
   const errs = [];
 
-  // ⚠️ « AT LEAST ONE trigger », NEVER « `match` mandatory »: an MCP doc
+  // ⚠️ "AT LEAST ONE trigger", NEVER "`match` mandatory": an MCP doc
   //    (docs/mcp/stripe.md) has NO file to match — requiring `match` would
   //    reject it. Symmetrically a file doc has no `mcp`.
   //    ⚠️ BUT zero triggers MUST stay RED: it is THE whole point of the
@@ -408,15 +408,15 @@ function validate(data) {
   const declares = TRIGGERS.filter((k) => k in data);
   const silenceDeclare = data.inject === 'never';
   // ⚠️ `mcp:` in a doc of the FILE corpus = an INERT TRIGGER (§A): a DEDICATED
-  //    message that says WHERE the doc should have gone, never a dry « unknown key ».
+  //    message that says WHERE the doc should have gone, never a dry "unknown key".
   //    A validator that refuses must make the author autonomous (paved road) —
   //    otherwise it moves the wasted time instead of removing it.
   const mcpInerte = 'mcp' in data;
   if (mcpInerte) {
     errs.push('`mcp:` triggers NOTHING here: an MCP doc is triggered by its PATH (`docs/mcp/{server}.md`), never by a frontmatter key. Move the file, and keep only mode/threshold/driftUnit inside it.');
   }
-  // ⚠️ `!mcpInerte`: the dedicated message above is enough — stacking « no
-  //    trigger » on top would drown the only useful line.
+  // ⚠️ `!mcpInerte`: the dedicated message above is enough — stacking "no
+  //    trigger" on top would drown the only useful line.
   if (declares.length === 0 && !silenceDeclare && !mcpInerte) {
     // ⚠️ This message must NO LONGER advise `mcp` (fixed 31/07/2026): the key
     //    is now REJECTED (§A). Advising a forbidden key sends the author
@@ -433,7 +433,7 @@ function validate(data) {
   // ⚠️ BARE WILDCARD = REFUSED (31/07/2026, §B). `tool: ["*"]` WITHOUT `scope` or
   //    `exclude` would inject the doc on EVERY tool call of EVERY agent —
   //    permanent noise, and a system that injects wrongly ends up ignored.
-  //    The wildcard exists to say « whatever the tool, WHEN this »: the
+  //    The wildcard exists to say "whatever the tool, WHEN this": the
   //    filter is not a comfort, it is half of the expression.
   //    ⚠️ A doc to be injected truly everywhere already has its channel: `docs/session/`.
   if ('tool' in data && toolList(data).includes(WILDCARD)) {
@@ -468,9 +468,9 @@ function validate(data) {
     if (e) errs.push(e);
   }
   // ⚠️ `exclude` = a list of STRINGS, strictly — NO grouped form (㊼: it is
-  //    ∀¬ over a SINGLE universe, an « AND of ORs » would have no semantics there).
+  //    ∀¬ over a SINGLE universe, an "AND of ORs" would have no semantics there).
   // 🛑 The check was `Array.isArray` ALONE until 14/08/2026: `exclude: [["a"]]`
-  //    got through and « worked » BY ACCIDENT (`norm(["a"])` returns `"a"`). A form that
+  //    got through and "worked" BY ACCIDENT (`norm(["a"])` returns `"a"`). A form that
   //    works by accident is a form we will one day find broken, with no test.
   if ('exclude' in data && !(Array.isArray(data.exclude) && data.exclude.every(usefulString))) {
     errs.push('`exclude` must be a list of non-empty strings [a, b]');
@@ -487,7 +487,7 @@ function validate(data) {
 }
 // Stryker restore StringLiteral
 
-// ⚠️ THE ONLY authority on « healthy MCP doc frontmatter? » (docs/mcp/*.md) —
+// ⚠️ THE ONLY authority on "healthy MCP doc frontmatter?" (docs/mcp/*.md) —
 //    shared by config-gate.test.js (repo gate) AND doc-write-guard.js
 //    (real-time feedback). Two copies of this judgement = guaranteed divergence.
 //    An MCP doc is triggered by its PATH: only mode/threshold make sense.
@@ -515,9 +515,9 @@ function validateMcp(data) {
 // only (text, or a list of texts for several remarks): validating its
 // CONTENT would amount to giving it a meaning, hence turning it into config.
 // ✅ MULTI-LINE YAML BLOCKS (`|`, `>`) — TRAP CLOSED on 06/08/2026, in `parse()`.
-//    It already was when this paragraph still announced « KNOWN TRAP, NOT
-//    SEALED » and « as long as it is not done, the safe form remains the INLINE
-//    LIST » (fixed on 09/08/2026). The defect: `note: |` followed by indented
+//    It already was when this paragraph still announced "KNOWN TRAP, NOT
+//    SEALED" and "as long as it is not done, the safe form remains the INLINE
+//    LIST" (fixed on 09/08/2026). The defect: `note: |` followed by indented
 //    lines returned `note === "|"` and LOST those lines silently.
 // 🛑 A COMMENT DESCRIBING AN ALREADY-DONE JOB COSTS TWICE: it pushes you
 //    to work around a trap that no longer exists (hence to write worse code), and it

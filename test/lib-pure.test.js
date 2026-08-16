@@ -13,7 +13,7 @@ import lib from '../src/lib-pure.js';
 // cond is evaluated sequentially at module level (original order preserved).
 // ⚠️ cond is a THUNK evaluated INSIDE the test callback — NEVER at module
 // level: under Stryker perTest, an expression evaluated when the file is
-// loaded is covered by NO individual test (a « static » mutant) and
+// loaded is covered by NO individual test (a "static" mutant) and
 // its mutants SURVIVE (measured 16/07/2026: 42 survivors, score 76.67%).
 function ok(name, cond) {
   test(name, () => { assert.ok(cond(), name); });
@@ -264,7 +264,7 @@ test('parseFrameArgs: a missing value after the flag → a single frame', () => 
 });
 
 test('parseFrameArgs: a BARE NUMBER in the command line is NOT a declaration', () => {
-  // ⚠️ Found by mutation on 03/08/2026: without the « flag absent » output,
+  // ⚠️ Found by mutation on 03/08/2026: without the "flag absent" output,
   //    `argv[i + 1]` with i = -1 reads `argv[0]` — any numeric
   //    argument would then be taken for a packet count, and the gate
   //    would split an injection nobody asked to fragment.
@@ -286,11 +286,11 @@ test('parseFrameArgs: an OUT-OF-BOUNDS index → a safe fallback, never somebody
 
 // ═══════════════════════════════════════════════════════════════════════
 // declaredBudget — the budget the WIRING passes to the engine (05/08/2026)
-// ⚠️ Closes a GREEN THAT LIES: the Codex wiring declared « no limit »
+// ⚠️ Closes a GREEN THAT LIES: the Codex wiring declared "no limit"
 //    since 04/08, the engine assumed 8000, and a 76,000 c skill
 //    went out in 11 gestures instead of 1. No test, no gate saw it.
-// ⚠️ Semantics taken WORD FOR WORD from Codex (0.146.0 binary: « `0`
-//    disables spilling ») — never a home-made convention in parallel.
+// ⚠️ Semantics taken WORD FOR WORD from Codex (0.146.0 binary: "`0`
+//    disables spilling") — never a home-made convention in parallel.
 // ═══════════════════════════════════════════════════════════════════════
 
 test('declaredBudget: 0 = NO limit (Codex\'s convention, not ours)', () => {
@@ -325,7 +325,7 @@ test('declaredBudget: without --budget, a NUMERIC 1st argument is NOT taken for 
   //    With a real argv (argv[0] = node's path) the defect is UNOBSERVABLE:
   //    `Number('C:/.../node.exe')` is NaN, so the bug hides. Here argv[0]
   //    is numeric: removing the guard would make `argv[0]` be read as a budget.
-  //    NEVER delete this case on the grounds that it is « unrealistic ».
+  //    NEVER delete this case on the grounds that it is "unrealistic".
   assert.strictEqual(lib.declaredBudget(['5000', 'x.js']), undefined);
   assert.strictEqual(lib.declaredBudget(['0', 'x.js']), undefined, 'nor a false Infinity');
 });

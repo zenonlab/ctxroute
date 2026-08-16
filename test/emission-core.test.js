@@ -31,16 +31,16 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 const SID = 'emission-test';
-let racine;
+let root;
 
 beforeEach(() => {
-  racine = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-emission-'));
-  process.env.CTXROUTE_STATE_DIR = racine;
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-emission-'));
+  process.env.CTXROUTE_STATE_DIR = root;
 });
 
 afterEach(() => {
   delete process.env.CTXROUTE_STATE_DIR;
-  fs.rmSync(racine, { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 /** ⚠️ FRESH import on every test: `paths.js` may freeze the root at import time. */
@@ -92,7 +92,7 @@ test('BACKWARD COMPAT: a store written BEFORE the `emissions` key is worth 0, ne
   //    already existed. Raising an error here would kill the canary on all the
   //    sessions in progress — a net that breaks at deployment protects nobody.
   const em = couche();
-  fs.writeFileSync(path.join(racine, `remainder-${SID}.json`), JSON.stringify({ segments: [] }));
+  fs.writeFileSync(path.join(root, `remainder-${SID}.json`), JSON.stringify({ segments: [] }));
   assert.equal(em.emissionCount(SID), 0);
   emit(em, [seg('a')]);
   assert.equal(em.emissionCount(SID), 1, 'and it starts again normally');
@@ -102,9 +102,9 @@ test('TOTAL: store absent, unreadable or with an absurd value ⇒ 0, never a thr
   // ⚠️ A canary that crashes is a SILENT canary — worse than no canary, since we
   //    would believe we were being watched. Every input must be absorbed.
   const em = couche();
-  assert.equal(em.emissionCount('jamais-vu'), 0);
+  assert.equal(em.emissionCount('never-seen'), 0);
   for (const absurde of [{ emissions: -5 }, { emissions: 1.5 }, { emissions: '30' }, { emissions: null }, {}]) {
-    fs.writeFileSync(path.join(racine, `remainder-${SID}.json`), JSON.stringify({ segments: [], ...absurde }));
+    fs.writeFileSync(path.join(root, `remainder-${SID}.json`), JSON.stringify({ segments: [], ...absurde }));
     assert.equal(em.emissionCount(SID), 0, 'value=' + JSON.stringify(absurde));
   }
 });
@@ -119,8 +119,8 @@ test('THE QUEUE SURVIVES THE COUNTER: both live in the SAME store without steppi
   //    came out whole — first version of this test falsely red, the mistake
   //    was in the test). We therefore need content clearly bigger than
   //    the capacity of the frame for a remainder to exist.
-  const gros = Array.from({ length: 40 }, (_, i) => ({ id: 'g' + i, text: 'x'.repeat(500) }));
-  em.emit({ frais: gros, budgetMax: 900, nbFrames: 1, indice: 1, scopeId: SID });
+  const big = Array.from({ length: 40 }, (_, i) => ({ id: 'g' + i, text: 'x'.repeat(500) }));
+  em.emit({ frais: big, budgetMax: 900, nbFrames: 1, indice: 1, scopeId: SID });
   assert.ok(em.loadQueue(SID).length > 0, 'premise: content remains in the queue');
   assert.equal(em.emissionCount(SID), 1, 'the counter did not overwrite the queue, nor the reverse');
 });

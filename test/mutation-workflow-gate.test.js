@@ -43,9 +43,9 @@ const vitestStryker = fs.readFileSync(VITEST_STRYKER, 'utf8');
 
 // Extracts the `- 'x'` entries of the `paths:` block (up to the next key).
 function pathsDuWorkflow() {
-  const bloc = /\n\s*paths:\s*\n([\s\S]*?)\n\s{2}\w+:/.exec(yml);
-  assert.ok(bloc, '`paths:` block not found in mutation.yml — has the filter disappeared?');
-  return [...bloc[1].matchAll(/^\s*-\s*'([^']+)'/gm)].map((m) => m[1]);
+  const block = /\n\s*paths:\s*\n([\s\S]*?)\n\s{2}\w+:/.exec(yml);
+  assert.ok(block, '`paths:` block not found in mutation.yml — has the filter disappeared?');
+  return [...block[1].matchAll(/^\s*-\s*'([^']+)'/gm)].map((m) => m[1]);
 }
 
 // The suites really launched by Stryker = the `include` of the DEDICATED
@@ -126,9 +126,9 @@ test('GATE: the mutation config and the deps re-trigger the job', () => {
 //    prove that the detection BITES, without ever touching the real files.
 test('NEGATIVE-CHECK: the gate really DETECTS a module missing from the paths', () => {
   const paths = pathsDuWorkflow();
-  const faux = [...conf.mutate, 'module-jamais-filtre.js'];
-  const manquants = faux.filter((f) => !paths.includes(f));
-  assert.deepStrictEqual(manquants, ['module-jamais-filtre.js'],
+  const fakeOnes = [...conf.mutate, 'module-never-filtered.js'];
+  const missingOnes = fakeOnes.filter((f) => !paths.includes(f));
+  assert.deepStrictEqual(missingOnes, ['module-never-filtered.js'],
     'the gate does not detect a missing module: it proves NOTHING.');
 });
 

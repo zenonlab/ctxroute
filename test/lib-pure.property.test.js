@@ -122,13 +122,13 @@ prop('FAIL-OPEN: an unknown filterMode → the server is covered (never a silent
 // `targetExcluded` is a pure function with a strong invariant (signals ⇒
 // stack doctrine): for ANY list and ANY target, discarded-by-whitelist ⟺
 // kept-by-blacklist. A divergence = one of the two modes has its own logic,
-// that is to say two truths for one same « targeted » — the class we forbid.
+// that is to say two truths for one same "targeted" — the class we forbid.
 test('LAW 52: targetExcluded(whitelist) === !targetExcluded(blacklist), always', () => {
   fc.assert(fc.property(
     fc.array(fc.oneof(fc.constantFrom('*', 'Bash', 'stripe', ''), fc.string({ maxLength: 12 }))),
     fc.oneof(fc.constantFrom('Bash', 'mcp__stripe__pay', ''), fc.string({ maxLength: 20 })),
-    (list, cible) => {
-      return lib.targetExcluded('whitelist', list, cible) === !lib.targetExcluded('blacklist', list, cible);
+    (list, target) => {
+      return lib.targetExcluded('whitelist', list, target) === !lib.targetExcluded('blacklist', list, target);
     }
   ));
 });

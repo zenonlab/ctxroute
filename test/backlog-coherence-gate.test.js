@@ -5,22 +5,22 @@
 // 🔴 A RECURRING ERROR CLASS, NOT AN INCIDENT: **three** headings of
 //    `REFACTOR-PLAN.md` announced an OPEN piece of work while all of their
 //    content was CLOSED — found by hand on 05 and 06/08/2026:
-//      · « 🔴 3 OPEN out of 4 … ①②④ remain » while ① had been closed the day before;
-//      · « 🔴 INJECTION SILENTLY TRUNCATED (priority) » left red for TWO
+//      · "🔴 3 OPEN out of 4 … ①②④ remain" while ① had been closed the day before;
+//      · "🔴 INJECTION SILENTLY TRUNCATED (priority)" left red for TWO
 //        WEEKS after the multi-frame transport had removed its cause;
-//      · « 🔴 TWO ENGINE DEFECTS » of which ① was marked ✅ RESOLVED right below.
+//      · "🔴 TWO ENGINE DEFECTS" of which ① was marked ✅ RESOLVED right below.
 //
 // ⚠️ WHY THIS IS SERIOUS AND NOT COSMETIC: the backlog is the ONLY memory of
 //    the project between two sessions. A false heading makes a closed piece
 //    of work be reopened, or makes people believe a real one is handled.
-//    `steering.md` already writes it — « a REVERSED judgement is rewritten,
-//    it does not pile up » — but a PROSE instruction failed three times in a
+//    `steering.md` already writes it — "a REVERSED judgement is rewritten,
+//    it does not pile up" — but a PROSE instruction failed three times in a
 //    row. Repo doctrine: an instruction that does not hold must become a
 //    MECHANICAL TRIGGER.
 //
 // ⚠️ WHAT THIS GATE PROVES, AND NOTHING MORE: the INTERNAL COHERENCE of a
-//    section — « a section announced open whose sub-sections are ALL closed
-//    is lying ». 🛑 It NEVER proves that an open piece of work still exists
+//    section — "a section announced open whose sub-sections are ALL closed
+//    is lying". 🛑 It NEVER proves that an open piece of work still exists
 //    in the reality of the code: that is undecidable here. Do not sell it for
 //    what it is not (same lesson as `doc-drift-gate`, which proves the
 //    EXISTENCE of a cited file, never the TRUTH of the doc).
@@ -35,7 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ⚠️ Deliberately BROAD markers: the backlog is written by hand, in French,
 //    by successive agents. A narrow vocabulary would make the gate inert at
@@ -73,7 +73,7 @@ function menteuses(texte) {
 
 // ⚠️ The work journal is PRIVATE (untracked since 2026-08-16): a public clone
 //    does not have it. Clean skip — the gate only guards the maintainer's copy.
-const PLAN = path.join(ICI, '..', 'REFACTOR-PLAN.md');
+const PLAN = path.join(HERE, '..', 'REFACTOR-PLAN.md');
 const planPresent = fs.existsSync(PLAN);
 
 test.skipIf(!planPresent)('no REFACTOR-PLAN heading announces as open what is entirely closed', () => {
@@ -117,7 +117,7 @@ function sectionCommits(texte) {
   if (debut === -1) return null;
   const reste = lignes.slice(debut + 1);
   const fin = reste.findIndex((l) => /^##\s/.test(l));
-  return { titre: lignes[debut], corps: (fin === -1 ? reste : reste.slice(0, fin)).join('\n') };
+  return { titre: lignes[debut], body: (fin === -1 ? reste : reste.slice(0, fin)).join('\n') };
 }
 
 /** `null` if everything is fine, otherwise the incoherence message. */
@@ -128,7 +128,7 @@ function decompteFaux(texte) {
   // ⚠️ 7 to 40 hex chars between backticks: the shape under which the backlog
   //    cites a fingerprint. A `Set` because the same one may serve as proof
   //    further down.
-  const citees = new Set((s.corps.match(/`[0-9a-f]{7,40}`/g) || []));
+  const citees = new Set((s.body.match(/`[0-9a-f]{7,40}`/g) || []));
   if (citees.size !== announcement) {
     return `the header announces ${announcement} commits but cites ${citees.size}: ` +
       [...citees].join(' ');
@@ -225,7 +225,7 @@ test('㉜ — the header, when modified, cites every commit since its last updat
   const { execFileSync } = await import('node:child_process');
   const texte = fs.readFileSync(PLAN, 'utf8');
   const tete = texte.split('## 📋 CE QUI RESTE')[0];
-  const oublies = commitsOublies(execFileSync, ICI, tete);
+  const oublies = commitsOublies(execFileSync, HERE, tete);
   if (oublies === null) return; // out of scope — cf the comment above
   assert.deepStrictEqual(oublies, [],
     'The backlog header is STALE — these commits are cited nowhere:\n  '

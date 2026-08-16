@@ -20,7 +20,7 @@ const HOOK = path.join(__dirname, '..', 'src', 'hooks', 'shadow-inject.js');
 
 function faussesDocs() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadow-docs-'));
-  fs.writeFileSync(path.join(dir, 'piege.md'), '---\nmatch: fichier-piege.js\nmode: dumb\nrank: 0\n---\n⚠️ invariant\n');
+  fs.writeFileSync(path.join(dir, 'piege.md'), '---\nmatch: file-piege.js\nmode: dumb\nrank: 0\n---\n⚠️ invariant\n');
   return dir;
 }
 
@@ -40,7 +40,7 @@ test('THE SHADOW NEVER INJECTS — stdout EMPTY even on a full match', async () 
   const docs = faussesDocs();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'shadow-state-'));
   const r = await spawnShadow(
-    JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'C:/x/fichier-piege.js' } }),
+    JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'C:/x/file-piege.js' } }),
     { CTXROUTE_FILEDOCS_DIR: docs, CTXROUTE_STATE_DIR: state }
   );
   assert.strictEqual(r.code, 0);
@@ -51,15 +51,15 @@ test('THE SHADOW LOGS — computed docs written as JSONL, non-match logged too',
   const docs = faussesDocs();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'shadow-state-'));
   const env = { CTXROUTE_FILEDOCS_DIR: docs, CTXROUTE_STATE_DIR: state };
-  await spawnShadow(JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'C:/x/fichier-piege.js' } }), env);
+  await spawnShadow(JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'C:/x/file-piege.js' } }), env);
   await spawnShadow(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'C:/x/anodin.txt' } }), env);
 
-  const fichiers = fs.readdirSync(state).filter((f) => f.startsWith('shadow-'));
-  assert.strictEqual(fichiers.length, 1, 'one log per day');
-  const lignes = fs.readFileSync(path.join(state, fichiers[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.strictEqual(lignes.length, 2, 'the NON-matches must be logged too (divergence "the new one is mute")');
-  assert.deepStrictEqual(lignes[0].docs, ['docs/piege.md']);
-  assert.deepStrictEqual(lignes[1].docs, []);
+  const files = fs.readdirSync(state).filter((f) => f.startsWith('shadow-'));
+  assert.strictEqual(files.length, 1, 'one log per day');
+  const lines = fs.readFileSync(path.join(state, files[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.strictEqual(lines.length, 2, 'the NON-matches must be logged too (divergence "the new one is mute")');
+  assert.deepStrictEqual(lines[0].docs, ['docs/piege.md']);
+  assert.deepStrictEqual(lines[1].docs, []);
 });
 
 test('FAIL-OPEN — garbage stdin, nonexistent corpus: exit 0, empty stdout, zero throw', async () => {

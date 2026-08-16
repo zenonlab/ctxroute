@@ -118,31 +118,31 @@ function diagnose(docId, text, payload) {
   // ── FILE axis ──
   const rules = rulesFromCorpus([{ doc: docId, text }]);
   if (fileSource.matchingDocs(rules, payload).length > 0) {
-    return { ...base, injects: true, motif: 'MATCH through the path/the command (`match`/`rules`)', axe: 'fichier' };
+    return { ...base, injects: true, motif: 'MATCH through the path/the command (`match`/`rules`)', axe: 'file' };
   }
   // ── TOOL axis ──
   if ('tool' in fm) {
     if (toolSource.matchingDocs([{ doc: docId, fm }], payload).length > 0) {
       return { ...base, injects: true, motif: 'MATCH through the TOOL NAME (`tool`)', axe: 'outil' };
     }
-    const noms = toolSource.toolList(fm);
+    const names = toolSource.toolList(fm);
     // ⚠️ `targets()` = THE function of the source, never an `includes`
     //    rewritten here: with the wildcard, a bare `includes` would report
     //    "tool not listed" while the real reason is the scope — a FALSE
     //    REASON, i.e. exactly the mistake this tool exists to make
     //    impossible. Any question about matching is asked OF THE SOURCES,
     //    never of a local copy.
-    if (!toolSource.targets(noms, payload.toolName)) {
+    if (!toolSource.targets(names, payload.toolName)) {
       // ⚠️ `piege?` annotation (㉑): the key is set AFTER creation — without
       //    it, tsc freezes the literal and refuses the assignment. Zero
       //    runtime effect.
-      const d = /** @type {typeof base & { injects: boolean, axe: string, motif: string, piege?: string }} */ ({ ...base, injects: false, axe: 'outil', motif: `\`tool\` declared but the received tool is NOT in it — declared: ${JSON.stringify(noms)}, received: ${JSON.stringify(payload.toolName)}` });
+      const d = /** @type {typeof base & { injects: boolean, axe: string, motif: string, piege?: string }} */ ({ ...base, injects: false, axe: 'outil', motif: `\`tool\` declared but the received tool is NOT in it — declared: ${JSON.stringify(names)}, received: ${JSON.stringify(payload.toolName)}` });
       // ⚠️ Since 31/07/2026, `*` IS a wildcard (§B). If it is declared and we
       //    land here, it means the payload has NO tool name: the wildcard
       //    requires that there BE a tool (deliberate negative case). Say it,
       //    otherwise the author believes their wildcard is broken and blames
       //    the engine.
-      if (noms.includes(WILDCARD)) d.piege = '⚠️ `*` IS a wildcard, but it requires a NON-EMPTY tool name — here the payload carries none. Check your `--tool`.';
+      if (names.includes(WILDCARD)) d.piege = '⚠️ `*` IS a wildcard, but it requires a NON-EMPTY tool name — here the payload carries none. Check your `--tool`.';
       return d;
     }
     // The tool is targeted: so it is scope or exclude that rejected (tool
@@ -179,13 +179,13 @@ function diagnose(docId, text, payload) {
     return { ...base, injects: false, motif: 'GIT COMMAND IGNORED BY CONSTRUCTION (sources/file.js) — a file name inside a commit message would produce a false positive', piege: 'Test with a NON-git command: the silence here says nothing about your rule.' };
   }
   if (!matchesWith(sansFiltres(rules), payload)) {
-    return { ...base, injects: false, axe: 'fichier', motif: 'NO PATTERN matches', detail: { patterns: rules.map((r) => r.pattern), testedContexts: testedContexts(payload) },
+    return { ...base, injects: false, axe: 'file', motif: 'NO PATTERN matches', detail: { patterns: rules.map((r) => r.pattern), testedContexts: testedContexts(payload) },
       piege: '⚠️ `match` looks at PATHS (+ the POSIX shell command), NEVER at every parameter. To react to a GESTURE: `tool` + `scope`.' };
   }
   if (!matchesWith(sansScope(rules), payload)) {
-    return { ...base, injects: false, axe: 'fichier', motif: `\`exclude\` REJECTED the path — excluded: ${JSON.stringify(rules.map((r) => r.exclude).filter(Boolean))}` };
+    return { ...base, injects: false, axe: 'file', motif: `\`exclude\` REJECTED the path — excluded: ${JSON.stringify(rules.map((r) => r.exclude).filter(Boolean))}` };
   }
-  return { ...base, injects: false, axe: 'fichier', motif: `\`scope\` NOT SATISFIED — expects one of ${JSON.stringify(rules.map((r) => r.scope).filter(Boolean))} in the tool parameters` };
+  return { ...base, injects: false, axe: 'file', motif: `\`scope\` NOT SATISFIED — expects one of ${JSON.stringify(rules.map((r) => r.scope).filter(Boolean))} in the tool parameters` };
 }
 
 // ── CORPUS: find a doc by name fragment ─────────────────────────────────

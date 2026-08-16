@@ -45,9 +45,9 @@ const PARC = path.join(os.homedir(), '.claude', 'hooks');
 // ⚠️ UNIQUE SOURCE of the rule "is this literal a .js file?".
 //    De facto exported for the negative-check: sabotage the SAME function,
 //    never a copy — a copy would stay green while the real rule breaks.
-function fichiersCites(texte) {
+function citedFiles(text) {
   const out = new Set();
-  for (const m of texte.matchAll(/`([^`\n]{3,60})`/g)) {
+  for (const m of text.matchAll(/`([^`\n]{3,60})`/g)) {
     const s = m[1].trim();
     // BARE file name (`budget.js`) or with a folder (`sources/file.js`).
     // ⚠️ No absolute path and no `..`: those are examples, not targets.
@@ -76,8 +76,8 @@ test('DOC-DRIFT ①: every .js file cited by a framework doc EXISTS', () => {
   const morts = [];
   let verifies = 0;
   for (const doc of docsDuMiroir()) {
-    const texte = fs.readFileSync(path.join(MIROIR, doc), 'utf8');
-    for (const rel of fichiersCites(texte)) {
+    const text = fs.readFileSync(path.join(MIROIR, doc), 'utf8');
+    for (const rel of citedFiles(text)) {
       const base = localise(rel);
       if (base === null) {
         // ⚠️ ON A FRESH CLONE the fleet is absent: we cannot JUDGE a file that
@@ -105,20 +105,20 @@ test('DOC-DRIFT ②: NEGATIVE-CHECK — a doc citing a dead file GOES RED', () =
   // ⚠️ IN MEMORY, never on a real file: a sabotage on disk once brought down
   //    38 tests of other suites reading the same file IN PARALLEL
   //    (03/08/2026). We sabotage the DATA, not the repository.
-  const faux = 'See `module-qui-nexiste-pas-du-tout.js` for the details.';
-  const cites = fichiersCites(faux);
-  assert.deepStrictEqual(cites, ['module-qui-nexiste-pas-du-tout.js'], 'the rule MUST see the citation');
-  assert.strictEqual(localise(cites[0]), null, 'and MUST declare it not found');
+  const fakeOnes = 'See `module-that-does-not-exist.js` for the details.';
+  const citedNames = citedFiles(fakeOnes);
+  assert.deepStrictEqual(citedNames, ['module-that-does-not-exist.js'], 'the rule MUST see the citation');
+  assert.strictEqual(localise(citedNames[0]), null, 'and MUST declare it not found');
 });
 
 test('DOC-DRIFT ③: the rule does NOT fire on what is not a file', () => {
   // ⚠️ THIS PART PROTECTS THE GATE'S VALUE, not its correctness: a noisy gate
   //    is a gate people stop reading, then work around. Each shape below is
   //    present in the REAL docs of the fleet.
-  const texte = [
+  const text = [
     '`mode: dumb`', '`match`', '`--budget 0`', '`node doctor.js --quiet`',
     '`process.exit(0)`', '`{ shell: true }`', '`additionalContext`', '`0.146.0`',
   ].join(' ');
-  assert.deepStrictEqual(fichiersCites(texte), [],
+  assert.deepStrictEqual(citedFiles(text), [],
     'false positive: the gate would accuse a healthy doc');
 });

@@ -41,8 +41,8 @@ const { readStdinJson } = require('../stdin-json');
 //    guessing the equivalent in the other product.
 // 🛑 THAT PLAN WAS ABANDONED ON DOCUMENTARY PROOF, not by taste.
 //    Official Codex hooks doc (learn.chatgpt.com/docs/hooks, read on
-//    07/08/2026): « the transcript format isn't a stable interface for hooks
-//    and may change over time ». The backlog planned to look for
+//    07/08/2026): "the transcript format isn't a stable interface for hooks
+//    and may change over time". The backlog planned to look for
 //    `response_item`/`custom_tool_call`: that was reverse-engineering a format
 //    the vendor reserves the right to break — hence a canary that would have
 //    died silently at the first update. A dead-man switch that dies without
@@ -53,16 +53,16 @@ const { readStdinJson } = require('../stdin-json');
 // ⚠️ WHAT MAKES THE SHARING LEGITIMATE — VERIFIED IN BOTH OFFICIAL DOCS, not
 //    deduced (07/08/2026). Claude Code (`code.claude.com/docs/en/hooks`) AND
 //    Codex (`learn.chatgpt.com/docs/hooks`) both document, as COMMON input
-//    fields: `transcript_path` (« Path to conversation JSON ») and
+//    fields: `transcript_path` ("Path to conversation JSON") and
 //    `session_id`. And on the Claude side the output contract explicitly allows
-//    silence: « Exit 0 means success […] For most events, stdout is written to
-//    the debug log but not shown ». A harness differing on any of these three
+//    silence: "Exit 0 means success […] For most events, stdout is written to
+//    the debug log but not shown". A harness differing on any of these three
 //    points would require a shell — never an `if` here.
 //
 // ⚠️ FACT DISCOVERED WHILE VERIFYING, AND IT MATTERS: the transcript is written
-//    ASYNCHRONOUSLY. Claude doc, verbatim: « The transcript file is written
+//    ASYNCHRONOUSLY. Claude doc, verbatim: "The transcript file is written
 //    asynchronously and may lag the in-memory conversation, so it may not yet
-//    include the current turn's most recent messages when a hook fires ».
+//    include the current turn's most recent messages when a hook fires".
 //    ⇒ an injection that just landed may NOT be in the file yet. That is
 //    HARMLESS HERE, and one must understand why before touching the threshold:
 //    the lag concerns the LAST messages of a turn, whereas we require 25
@@ -82,14 +82,14 @@ function healthPath() {
 
 // BOUNDED read of the transcript's tail. ⚠️ Never `readFileSync` on the whole
 // file: 104 MB measured in this fleet (see canary.js).
-function readQueue(fichier) {
-  const st = fs.statSync(fichier);
-  const taille = Math.min(canari.BYTE_WINDOW, st.size);
-  if (taille === 0) return '';
-  const fd = fs.openSync(fichier, 'r');
+function readQueue(file) {
+  const st = fs.statSync(file);
+  const size = Math.min(canari.BYTE_WINDOW, st.size);
+  if (size === 0) return '';
+  const fd = fs.openSync(file, 'r');
   try {
-    const buf = Buffer.alloc(taille);
-    fs.readSync(fd, buf, 0, taille, st.size - taille);
+    const buf = Buffer.alloc(size);
+    fs.readSync(fd, buf, 0, size, st.size - size);
     return buf.toString('utf8');
   } finally {
     fs.closeSync(fd);
@@ -137,8 +137,8 @@ function run(data) {
   let tailleTranscript = -1;
   try { tailleTranscript = fs.statSync(transcript).size; } catch { /* -1 = not measurable, never 0 (0 is a REAL size) */ }
 
-  const dossier = paths.stateDir();
-  fs.mkdirSync(dossier, { recursive: true });
+  const folder = paths.stateDir();
+  fs.mkdirSync(folder, { recursive: true });
   // ATOMIC write (tmp + rename): the statusline reads this file continuously;
   // a half-written JSON would make it display anything.
   const tmp = healthPath() + '.tmp';

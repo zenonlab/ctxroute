@@ -17,13 +17,13 @@
 // ⚠️ WHAT IT PROVES: the engine is COMPLIANT with the spec over the whole domain.
 // ⚠️ WHAT IT WILL NEVER PROVE: that the SPEC is what we want. That remains a
 //    human judgement — but it bears on 40 lines of quantifiers instead of
-//    200 lines of engine. That is the whole gap between « we hope » and « we verify ».
+//    200 lines of engine. That is the whole gap between "we hope" and "we verify".
 // ⚠️ SMALL SCOPE HYPOTHESIS (Alloy, *small scope hypothesis*): a semantics
 //    defect shows up on small cases. Assumed and written down, not hidden.
 //
 // 🛑 A DIVERGENCE IS NOT NECESSARILY AN ENGINE BUG: it says that the two
 //    do not agree. You must DECIDE which one is right, and write down why.
-//    NEVER « align the spec on the engine » to silence a red: that
+//    NEVER "align the spec on the engine" to silence a red: that
 //    would turn the judge into a twin, and lose the only net that watches
 //    the semantics.
 // ═══════════════════════════════════════════════════════════════════════
@@ -31,8 +31,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 import { matchingDocs } from '../src/sources/file.js';
-import { matchingDocs as moteurTool } from '../src/sources/tool.js';
-import { matchingDocs as moteurMcp } from '../src/sources/mcp.js';
+import { matchingDocs as engineTool } from '../src/sources/tool.js';
+import { matchingDocs as engineMcp } from '../src/sources/mcp.js';
 import { matchingSkills } from '../src/sources/skill.js';
 import { injects, toolInjects, skillInjects, mcpCandidates } from '../src/language-spec.js';
 
@@ -53,7 +53,7 @@ function gestes() {
   for (const a of A) {
     for (const b of A) {
       out.push({ toolName: 'Read', toolInput: { file_path: `/x/${a}/f.js` } });
-      out.push({ toolName: 'Read', toolInput: { file_path: `/x/${a}/f.js`, autre: b } });
+      out.push({ toolName: 'Read', toolInput: { file_path: `/x/${a}/f.js`, other: b } });
       out.push({ toolName: 'Read', toolInput: { args: { nested: { deep: `${a}/${b}` } } } });
       // ⚠️ REAL DEPTH — a hole REVEALED by mutating the model on 14/08/2026:
       //    the domain only went down 3 levels, so the recursive flattening
@@ -68,7 +68,7 @@ function gestes() {
       out.push({ toolName: 'Bash', toolInput: { command: `${a} --exclude ${b}`, cwd: `/w/${b}` } });
       out.push({ toolName: 'apply_patch', toolInput: { input: `*** Update File: ${a}/${b}.js` } });
       out.push({ toolName: 'Read', toolInput: { remotePath: `/srv/${a}`, path: `/opt/${b}` } });
-      out.push({ toolName: 'mcp__srv__outil', toolInput: { args: { chemin: `/x/${a}`, mode: b } } });
+      out.push({ toolName: 'mcp__srv__outil', toolInput: { args: { filePath: `/x/${a}`, mode: b } } });
       // ⚠️ BOUNDARY BETWEEN TWO PARAMS (53bis, 15/08/2026): a pattern WITH A SPACE must
       //    only match INSIDE a value, never straddling two adjacent
       //    values. Without these two forms (one straddling, the other contained),
@@ -82,11 +82,11 @@ function gestes() {
 }
 
 // ── THE DOMAIN OF THE RULES — everything that can be written on these atoms.
-function regles() {
+function rules() {
   const out = [];
   const groupesPossibles = sousEnsembles(A).filter((g) => g.length > 0);
   // 53bis — patterns WITH A SPACE: that is the only writing that can straddle a
-  // value boundary. Without them, the « inside ONE value » semantics is
+  // value boundary. Without them, the "inside ONE value" semantics is
   // confronted nowhere.
   for (const pattern of A) {
     out.push({ pattern, doc: 'd.md', scope: ['aaa bbb'] });
@@ -115,14 +115,14 @@ function regles() {
 
 test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', () => {
   const G = gestes();
-  const R = regles();
+  const R = rules();
   const divergences = [];
-  for (const regle of R) {
+  for (const rule of R) {
     for (const geste of G) {
-      const moteur = matchingDocs([regle], geste).length > 0;
-      const spec = injects(regle, geste, { profondeurMax: 20 });
+      const moteur = matchingDocs([rule], geste).length > 0;
+      const spec = injects(rule, geste, { profondeurMax: 20 });
       if (moteur !== spec) {
-        divergences.push(`rule=${JSON.stringify(regle)} gesture=${JSON.stringify(geste)} engine=${moteur} spec=${spec}`);
+        divergences.push(`rule=${JSON.stringify(rule)} gesture=${JSON.stringify(geste)} engine=${moteur} spec=${spec}`);
       }
     }
   }
@@ -175,7 +175,7 @@ test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', () => {
     for (const toolName of NOMS_OUTIL) {
       for (const toolInput of corpsDeGeste()) {
         cas++;
-        const moteur = moteurTool([{ doc: 'd.md', fm }], { toolName, toolInput }).length > 0;
+        const moteur = engineTool([{ doc: 'd.md', fm }], { toolName, toolInput }).length > 0;
         const spec = toolInjects(fm, { toolName, toolInput }, { profondeurMax: 20 });
         if (moteur !== spec) divergences.push(`fm=${JSON.stringify(fm)} tool=${toolName} input=${JSON.stringify(toolInput)} engine=${moteur} spec=${spec}`);
       }
@@ -189,10 +189,10 @@ test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', () => {
 test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', () => {
   // ⚠️ The order IS PART of the semantics (global → specific = the hierarchy
   //    lives in the path): we compare LISTS, never sets.
-  const noms = ['mcp__srv__outil', 'mcp__srv__', 'mcp__srv', 'mcp__a_b__c', 'mcp__a.b__c', 'Read', '', 'mcp____x'];
+  const names = ['mcp__srv__outil', 'mcp__srv__', 'mcp__srv', 'mcp__a_b__c', 'mcp__a.b__c', 'Read', '', 'mcp____x'];
   const sousOutils = ['sub', 'outil', '../evil', 'a/b', '.', 7, { obj: 1 }, null, undefined];
   const configs = [];
-  for (const filterMode of [undefined, 'whitelist', 'blacklist', 'autre']) {
+  for (const filterMode of [undefined, 'whitelist', 'blacklist', 'other']) {
     for (const filterList of [undefined, [], ['srv'], ['srv', 'a_b'], ['x']]) {
       for (const servers of [undefined, { srv: { subToolParam: 'args.tool' } }, { srv: { subToolParam: 'args.deep.tool' } }, { 'a_b': { subToolParam: 'args.tool' } }]) {
         const c = {};
@@ -206,11 +206,11 @@ test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', (
   const divergences = [];
   let cas = 0;
   for (const config of configs) {
-    for (const toolName of noms) {
+    for (const toolName of names) {
       for (const sub of sousOutils) {
         for (const toolInput of [{ args: { tool: sub } }, { args: { deep: { tool: sub } } }, {}]) {
           cas++;
-          const moteur = moteurMcp(config, { toolName, toolInput }).map((c) => c.doc);
+          const moteur = engineMcp(config, { toolName, toolInput }).map((c) => c.doc);
           const spec = mcpCandidates(config, { toolName, toolInput });
           if (JSON.stringify(moteur) !== JSON.stringify(spec)) {
             divergences.push(`cfg=${JSON.stringify(config)} tool=${toolName} input=${JSON.stringify(toolInput)} engine=${JSON.stringify(moteur)} spec=${JSON.stringify(spec)}`);
@@ -290,13 +290,13 @@ test('NEGATIVE-CHECK: the differential DETECTS a false semantics', () => {
   //    REQUIRE it to be rejected by the spec. If this test turns green on its own,
   //    it means the domain no longer produces the case — not that the bug has disappeared.
   const norm = (s) => String(s).toLowerCase().replace(/\\/g, '/');
-  const ancienExclu = (regle, candidat) =>
-    Array.isArray(regle.exclude) && regle.exclude.some((x) => norm(candidat).includes(norm(x)));
+  const ancienExclu = (rule, candidat) =>
+    Array.isArray(rule.exclude) && rule.exclude.some((x) => norm(candidat).includes(norm(x)));
 
-  const regle = { pattern: 'aaa', doc: 'd.md', exclude: ['bbb'] };
+  const rule = { pattern: 'aaa', doc: 'd.md', exclude: ['bbb'] };
   const geste = { toolName: 'Bash', toolInput: { command: 'cd ~/w/aaa && node bbb' } };
   // The fabricated fragment `~/w/aaa/node` does NOT contain `bbb`: the old
   // semantics therefore allowed through IT, even though the gesture contains `bbb`.
-  assert.strictEqual(ancienExclu(regle, '~/w/aaa/node'), false, 'the invented fragment did allow it through');
-  assert.strictEqual(injects(regle, geste, { profondeurMax: 20 }), false, 'the spec, for its part, refuses the whole gesture');
+  assert.strictEqual(ancienExclu(rule, '~/w/aaa/node'), false, 'the invented fragment did allow it through');
+  assert.strictEqual(injects(rule, geste, { profondeurMax: 20 }), false, 'the spec, for its part, refuses the whole gesture');
 });

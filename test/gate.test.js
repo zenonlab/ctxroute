@@ -12,7 +12,7 @@ const DUMB = { mode: 'dumb' };
 // ⚠️ `WRITE_TOOLS` was REMOVED along with `confirm`/`ask` on 05/08/2026: its only
 //    reason to exist was to know on which tools to ask for confirmation.
 //    No decision of the gate depends on the tool NAME any more — do not
-//    reintroduce it « just in case »: it would be a list to maintain for nothing.
+//    reintroduce it "just in case": it would be a list to maintain for nothing.
 
 // ── modeForDoc: precedence frontmatter > global config > smart ──
 test('modeForDoc: decl.mode wins over config.mode', () => {
@@ -32,7 +32,7 @@ test('dumb: injects on every call, state intact, changed=false', () => {
   assert.strictEqual(r1.changed, false);
   assert.deepStrictEqual(r1.state, {});
   const r2 = decide({}, decls, ['docs/a.md'], r1.state);
-  assert.deepStrictEqual(r2.inject, ['docs/a.md']); // always, not « once »
+  assert.deepStrictEqual(r2.inject, ['docs/a.md']); // always, not "once"
 });
 
 // ── injection order = matched order ──
@@ -45,10 +45,10 @@ test('inject preserves the order of matched (parent→child)', () => {
 // ═══════════════════════════════════════════════════════════════════════
 // ANTI-RETURN GATE: `ask` NO LONGER EXISTS (removed on 05/08/2026)
 // ═══════════════════════════════════════════════════════════════════════
-// ⚠️ Replaces the 5 `confirm` tests. NEVER delete it « because it
-//    tests nothing »: that is precisely its role — to prove an ABSENCE.
+// ⚠️ Replaces the 5 `confirm` tests. NEVER delete it "because it
+//    tests nothing": that is precisely its role — to prove an ABSENCE.
 //    `ask` escalated to the human (anti 0-human), did not exist on Codex,
-//    and `enforce` already covers « stop a gesture » automatically. The day
+//    and `enforce` already covers "stop a gesture" automatically. The day
 //    someone reintroduces it by reflex, this test falls BEFORE production.
 test('ANTI-RETURN: no input can produce `ask`, whatever the tool', () => {
   const cas = [
@@ -63,12 +63,12 @@ test('ANTI-RETURN: no input can produce `ask`, whatever the tool', () => {
 });
 
 test('the possible decisions are EXACTLY none | allow | deny', () => {
-  const vues = new Set([
+  const seen = new Set([
     decide({}, {}, [], {}).decision,
     decide({}, { 'd/x': { mode: 'dumb' } }, ['d/x'], {}).decision,
     decide({}, { 'd/x': { mode: 'once', enforce: true } }, ['d/x'], {}, 0, { 'd/x': 'file' }).decision,
   ]);
-  assert.deepStrictEqual([...vues].sort(), ['allow', 'deny', 'none']);
+  assert.deepStrictEqual([...seen].sort(), ['allow', 'deny', 'none']);
 });
 
 // ── decl missing for a matched doc: never a throw, never an invented ask ──
@@ -320,7 +320,7 @@ test('cascade: UNKNOWN/absent source -> generic rules (never a crash)', () => {
 });
 
 // ⚠️ DELIBERATE ASYMMETRY — a skill does NOT consult the global mode. Without this case,
-//    « uniformising the sources » would pass green and would flip ALL the skills
+//    "uniformising the sources" would pass green and would flip ALL the skills
 //    at the first global config posted (silent regression).
 test('cascade: the GLOBAL NEVER touches the skills (asymmetry sealed)', () => {
   eq(modeForDoc({ mode: 'dumb' }, {}, 'skill'), 'once');
@@ -365,7 +365,7 @@ test('cascade: decide() consumes owners — defaults.{source} has a real EFFECT'
 // ═══════════════════════════════════════════════════════════════════════
 // `enforce` (05/08/2026) — STOP the gesture, not merely inform it.
 // ⚠️ Why this word exists: official Claude Code doc (re-read 05/08/2026),
-//    the additionalContext of a PreToolUse arrives « next to the tool result ».
+//    the additionalContext of a PreToolUse arrives "next to the tool result".
 //    An injection therefore CANNOT prevent the gesture it targets. Only a
 //    refusal does — and it is autonomous (no user interaction).
 // ═══════════════════════════════════════════════════════════════════════
@@ -439,7 +439,7 @@ test('enforce + smart: blocks → passes again → RE-BLOCKS after N (the cadenc
 
   // 4 calls of OTHER tools: the doc's counter goes up.
   let etat = t2.state;
-  for (let i = 0; i < 4; i++) etat = decide({}, decls, ['autre'], etat, 0, { autre: 'file' }).state;
+  for (let i = 0; i < 4; i++) etat = decide({}, decls, ['other'], etat, 0, { other: 'file' }).state;
 
   const t3 = decide({}, decls, ['d/x'], etat, 0, own);
   assert.strictEqual(t3.decision, 'deny', 'the doc comes back => it re-blocks, once');
@@ -454,7 +454,7 @@ test('enforce inherits from defaults.{source} — and `false` CANCELS that inher
 });
 
 test('`deny` does NOT depend on the tool: it bites on a read as on a write', () => {
-  // ⚠️ Former test « deny prevails over ask ». Since the removal of `ask`, the invariant
+  // ⚠️ Former test "deny prevails over ask". Since the removal of `ask`, the invariant
   //    that matters is this one: a gesture to be stopped is stopped whatever the tool.
   const decls = { 'd/x': { mode: 'once', enforce: true } };
   assert.strictEqual(decide({}, decls, ['d/x'], {}, 0, { 'd/x': 'file' }).decision, 'deny');
@@ -473,13 +473,13 @@ test('an enforce doc that is NOT matched NEVER contaminates another call', () =>
   const decls = declEnf({ enforce: true });
   const un = decide({}, decls, ['d/x'], {}, 0, { 'd/x': 'file' });
   assert.strictEqual(un.decision, 'deny');
-  const deux = decide({}, decls, ['autre'], un.state, 0, { autre: 'file' });
-  assert.deepStrictEqual(deux.inject, ['autre'], 'the other doc is indeed delivered');
+  const deux = decide({}, decls, ['other'], un.state, 0, { other: 'file' });
+  assert.deepStrictEqual(deux.inject, ['other'], 'the other doc is indeed delivered');
   assert.strictEqual(deux.decision, 'allow', 'and the gesture PASSES — no inherited deny');
 });
 
 test('INVALID defaults.{source}.enforce => we GO DOWN (total fallback, never a guessed block)', () => {
-  // ⚠️ A non-boolean value must NEVER be taken for a « yes ».
+  // ⚠️ A non-boolean value must NEVER be taken for a "yes".
   //    Without this case, a truthy string would block the tool — a refusal born of a
   //    typo is the worst of false positives.
   const config = { defaults: { mcp: { enforce: 'yes', mode: 'once' } } };
@@ -509,7 +509,7 @@ test('a doc WITHOUT enforce never writes `denied` (state shape unchanged, parity
 // ⚠️ SYMMETRY OF THE SOURCES — a gate DERIVED from the registry, never a written list.
 //    A future source will therefore be born WITH `enforce`, or this test will turn red. Without it,
 //    the 5th source would be mute at blocking and nobody would see it: that is the
-//    « inert declaration » class this repo has been killing since 31/07/2026.
+//    "inert declaration" class this repo has been killing since 31/07/2026.
 test('enforce works on ALL the sources of the registry (derived from ADAPTERS)', async () => {
   const { ADAPTERS } = await import('../src/source-adapters.js');
   const ids = ADAPTERS.map((a) => a.id);
@@ -568,9 +568,9 @@ test('filter 52: PARITY — without filterMode, and without toolName, nothing ch
   const filtreSansCible = decide({ filterMode: 'blacklist', filterList: ['Bash'] }, { d: DUMB }, ['d'], {}, 0, { d: 'file' });
   assert.deepStrictEqual(filtreSansCible.inject, ['d'], 'toolName absent = no target, the filter cannot bite');
 });
-test('filter 52: a discarded doc is NOT « recalled » — its smart counter keeps advancing', () => {
+test('filter 52: a discarded doc is NOT "recalled" — its smart counter keeps advancing', () => {
   // ⚠️ Historical contract of the server filter: a discarded gesture counts as
-  //    FOREIGN. If the discarded one were « recalled », its counter would restart at 0.
+  //    FOREIGN. If the discarded one were "recalled", its counter would restart at 0.
   const cfg = { filterMode: 'blacklist', filterList: ['Bash'] };
   const decls = { d: { mode: 'smart' } };
   const state = { d: { seen: true, sinceLastCall: 2 } };

@@ -9,7 +9,7 @@ import {
   EXACT_VERSION, isExactPin, pinningFaults, unclassifiedDeps, ghostEntries,
 } from "../src/deps-criticality-pure.js";
 
-const d = (nom, plage, ou = ".") => ({ nom, plage, ou });
+const d = (name, range, where = ".") => ({ name, range, where });
 
 describe("deps-criticality-pure", () => {
   test("isExactPin: ACCEPTS the forms designating ONE version (including pre-release and build)", () => {
@@ -38,7 +38,7 @@ describe("deps-criticality-pure", () => {
     expect(isExactPin(new String("1.2.3"))).toBe(false);
   });
 
-  test("EXACT_VERSION is ANCHORED on both sides (otherwise « not-1.2.3-at-all » would pass)", () => {
+  test("EXACT_VERSION is ANCHORED on both sides (otherwise 'not-1.2.3-at-all' would pass)", () => {
     expect(EXACT_VERSION.source.startsWith("^")).toBe(true);
     expect(EXACT_VERSION.source.endsWith("$")).toBe(true);
     expect(isExactPin("prefixe1.2.3")).toBe(false);
@@ -46,21 +46,21 @@ describe("deps-criticality-pure", () => {
   });
 
   test("pinningFaults: reports ONLY badly pinned engines", () => {
-    const deps = [d("sharp", "^1.0.0"), d("vitest", "^3.0.0"), d("autre", "2.0.0")];
-    const f = pinningFaults(deps, { sharp: "raison", autre: "raison" });
-    expect(f.map((x) => x.nom)).toEqual(["sharp"]);
+    const deps = [d("sharp", "^1.0.0"), d("vitest", "^3.0.0"), d("other", "2.0.0")];
+    const f = pinningFaults(deps, { sharp: "raison", other: "raison" });
+    expect(f.map((x) => x.name)).toEqual(["sharp"]);
   });
 
   test("pinningFaults: the SAME dependency in 2 package.json files produces 2 faults", () => {
     const f = pinningFaults([d("m", "^1.0.0", "."), d("m", "^1.0.0", "dispatcher")], { m: "r" });
     expect(f.length).toBe(2);
-    expect(f.map((x) => x.ou)).toEqual([".", "dispatcher"]);
+    expect(f.map((x) => x.where)).toEqual([".", "dispatcher"]);
   });
 
   test("pinningFaults: ADVERSARIAL — a key inherited from the prototype is NOT an engine", () => {
-    // ⚠️ Without `hasOwnProperty`, `moteurs['toString']` would be "true" (inherited from Object).
-    for (const nom of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
-      expect(pinningFaults([d(nom, "^1.0.0")], {}), `"${nom}" taken for a classified engine`).toEqual([]);
+    // ⚠️ Without `hasOwnProperty`, `engines['toString']` would be "true" (inherited from Object).
+    for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(pinningFaults([d(name, "^1.0.0")], {}), `"${name}" taken for a classified engine`).toEqual([]);
     }
   });
 
@@ -73,7 +73,7 @@ describe("deps-criticality-pure", () => {
 
   test("unclassifiedDeps: reports the unknown one ONLY ONCE even if declared several times", () => {
     const deps = [d("connue", "^1.0.0"), d("inconnue", "^2.0.0", "a"), d("inconnue", "^2.0.0", "b")];
-    expect(unclassifiedDeps(deps, {}, { connue: "r" }).map((x) => x.nom)).toEqual(["inconnue"]);
+    expect(unclassifiedDeps(deps, {}, { connue: "r" }).map((x) => x.name)).toEqual(["inconnue"]);
   });
 
   test("unclassifiedDeps: BOTH classes count as a classification; neither ⇒ RED", () => {
@@ -92,7 +92,7 @@ describe("deps-criticality-pure", () => {
   });
 
   test("ghostEntries: detects a classification nobody installs any more", () => {
-    expect(ghostEntries([d("vivante", "1.0.0")], { vivante: "r" }, { morte: "r" })).toEqual(["morte"]);
+    expect(ghostEntries([d("vivante", "1.0.0")], { vivante: "r" }, { stale: "r" })).toEqual(["stale"]);
     expect(ghostEntries([d("vivante", "1.0.0")], { vivante: "r" }, {})).toEqual([]);
     expect(ghostEntries([], {}, {})).toEqual([]);
     expect(ghostEntries(null, { a: "r" }, null)).toEqual(["a"]);
@@ -100,15 +100,15 @@ describe("deps-criticality-pure", () => {
 
   test("NULL entry in the list: the gate does not DIE (both functions, same input)", () => {
     // ⚠️ Kills the LAST surviving mutant of the repo (`.filter(Boolean)` removed).
-    //    Without that guard, a `null` makes `.nom` throw — and a gate that DIES on a malformed
+    //    Without that guard, a `null` makes `.name` throw — and a gate that DIES on a malformed
     //    entry no longer reports ANYTHING. Same doctrine as the BOM-tolerant read: a gate never
     //    dies from the defect it reports.
     //    ⚠️ BOTH functions are exercised on the SAME degraded input, otherwise the robustness of
     //    one would only be luck.
     const deps = [d("a", "1.0.0"), null, undefined, d("b", "^2")];
     expect(ghostEntries(deps, { a: {} }, { b: {} })).toEqual([]);
-    expect(ghostEntries(deps, { fantome: {} }, {})).toEqual(["fantome"]);
+    expect(ghostEntries(deps, { ghost: {} }, {})).toEqual(["ghost"]);
     expect(ghostEntries([null, undefined], { x: {} }, {})).toEqual(["x"]);
-    expect(unclassifiedDeps(deps, { a: {} }, {}).map((x) => x.nom)).toEqual(["b"]);
+    expect(unclassifiedDeps(deps, { a: {} }, {}).map((x) => x.name)).toEqual(["b"]);
   });
 });

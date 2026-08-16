@@ -61,7 +61,7 @@ if (parcPresent) fs.writeFileSync(CONFIG, JSON.stringify(RUSH ? { confirm: false
 //    a permissive unsealing would mask a real divergence, and this test
 //    would become decorative — the class of the inert gates of 03/08.
 const SCEAU_RE = /^⚠️ SEALED INJECTION — this block ends with ###END:([0-9a-f]+)###\n[^\n]*\n[^\n]*\n\n([\s\S]*)\n\n###END:\1###$/;
-function desceller(ctx) {
+function unseal(ctx) {
   if (typeof ctx !== 'string') return ctx;
   const m = SCEAU_RE.exec(ctx);
   return m ? m[2] : ctx;
@@ -77,11 +77,11 @@ function runHook(script, payload, env) {
 }
 
 async function both(payload) {
-  const [vieux, neuf] = await Promise.all([
+  const [old, fresh] = await Promise.all([
     runHook(LEGACY, payload, {}),
     runHook(PORTE, payload, { CTXROUTE_CONFIG_PATH: CONFIG, CTXROUTE_STATE_DIR: path.join(TMP, 'state') }),
   ]);
-  return { vieux, neuf };
+  return { old, fresh };
 }
 
 // REAL payloads (known rules of the fleet) — read, write, Bash, non-match.
@@ -89,11 +89,11 @@ const HOOK_DIR = path.join(os.homedir(), '.claude', 'hooks');
 const READ_MATCH = { toolName: 'Read', toolInput: { file_path: 'C:/Users/dev/Desktop/ctxroute/lib-pure.js' } };
 
 test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + systemMessage)', async () => {
-  const { vieux, neuf } = await both(READ_MATCH);
-  assert.ok(vieux && neuf, 'both engines must inject on this known payload');
-  assert.strictEqual(vieux.hookSpecificOutput.permissionDecision, 'allow');
-  assert.strictEqual(neuf.hookSpecificOutput.permissionDecision, 'allow');
-  assert.strictEqual(withoutOrdinal(desceller(neuf.hookSpecificOutput.additionalContext)), vieux.hookSpecificOutput.additionalContext);
+  const { old, fresh } = await both(READ_MATCH);
+  assert.ok(old && fresh, 'both engines must inject on this known payload');
+  assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
+  assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
+  assert.strictEqual(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
   // ⚠️ DECLARED DIFFERENCE ON THE BADGE — THE NEW ONE NAMES MORE (07/08/2026).
   //
   // 🔴 REAL defect, measured HERE on the fleet: the old engine (and ours
@@ -115,10 +115,10 @@ test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + s
   //    changed its shape or invented a suffix stays RED.
   //    ⚠️ NEVER relax this into an `includes`: we would stop verifying the
   //    shape, that is to say stop verifying anything at all.
-  if (neuf.systemMessage !== vieux.systemMessage) {
-    assert.ok(neuf.systemMessage.startsWith(vieux.systemMessage),
-      `the badge LOST or DEFORMED the historical name.\n  old : ${vieux.systemMessage}\n  new : ${neuf.systemMessage}`);
-    const supplement = neuf.systemMessage.slice(vieux.systemMessage.length);
+  if (fresh.systemMessage !== old.systemMessage) {
+    assert.ok(fresh.systemMessage.startsWith(old.systemMessage),
+      `the badge LOST or DEFORMED the historical name.\n  old : ${old.systemMessage}\n  new : ${fresh.systemMessage}`);
+    const supplement = fresh.systemMessage.slice(old.systemMessage.length);
     assert.match(supplement, /^( · [^·]+)+$/,
       `the badge got enriched with something other than names of delivered docs: ${JSON.stringify(supplement)}`);
   }
@@ -133,61 +133,61 @@ test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', 
   //    proven on the action that PASSES (the file docs are 100 % dumb, the
   //    content of the 2nd action is identical). 🛑 NEVER "fix" this deny by
   //    removing the doc from the fleet nor by requiring `allow` on the 1st action.
-  let { vieux, neuf } = await both(payload);
-  if (neuf && neuf.hookSpecificOutput && neuf.hookSpecificOutput.permissionDecision === 'deny') {
-    ({ neuf } = await both(payload));
+  let { old, fresh } = await both(payload);
+  if (fresh && fresh.hookSpecificOutput && fresh.hookSpecificOutput.permissionDecision === 'deny') {
+    ({ fresh } = await both(payload));
   }
-  assert.ok(vieux && neuf, 'both engines must react on a documented write');
+  assert.ok(old && fresh, 'both engines must react on a documented write');
   if (RUSH) {
-    assert.strictEqual(vieux.hookSpecificOutput.permissionDecision, 'allow');
-    assert.strictEqual(neuf.hookSpecificOutput.permissionDecision, 'allow');
-    assert.strictEqual(RUSH_PREFIX + withoutOrdinal(desceller(neuf.hookSpecificOutput.additionalContext)), vieux.hookSpecificOutput.additionalContext);
+    assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
+    assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
+    assert.strictEqual(RUSH_PREFIX + withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
   } else {
-    assert.strictEqual(vieux.hookSpecificOutput.permissionDecision, 'ask');
-    assert.strictEqual(neuf.hookSpecificOutput.permissionDecision, 'ask');
-    assert.strictEqual(neuf.hookSpecificOutput.permissionDecisionReason, vieux.hookSpecificOutput.permissionDecisionReason);
+    assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'ask');
+    assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'ask');
+    assert.strictEqual(fresh.hookSpecificOutput.permissionDecisionReason, old.hookSpecificOutput.permissionDecisionReason);
   }
 });
 
 test.skipIf(!parcPresent)('BASH: cd && reconstruction — same docs injected', async () => {
-  const { vieux, neuf } = await both({ toolName: 'Bash', toolInput: { command: 'cd C:/Users/dev/Desktop/ctxroute && node doctor.js' } });
+  const { old, fresh } = await both({ toolName: 'Bash', toolInput: { command: 'cd C:/Users/dev/Desktop/ctxroute && node doctor.js' } });
   // Both silent OR identical injection — never one without the other.
-  assert.strictEqual(neuf === null, vieux === null, 'one engine speaks, the other keeps silent');
-  if (vieux) assert.strictEqual(withoutOrdinal(desceller(neuf.hookSpecificOutput.additionalContext)), vieux.hookSpecificOutput.additionalContext);
+  assert.strictEqual(fresh === null, old === null, 'one engine speaks, the other keeps silent');
+  if (old) assert.strictEqual(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
 });
 
 test.skipIf(!parcPresent)('GIT + NON-MATCH: silence on both sides', async () => {
   const git = await both({ toolName: 'Bash', toolInput: { command: 'git commit -m "fix lib-pure.js"' } });
-  assert.strictEqual(git.vieux, null);
-  assert.strictEqual(git.neuf, null);
-  const rien = await both({ toolName: 'Read', toolInput: { file_path: 'C:/tmp/fichier-inconnu-xyz.txt' } });
-  assert.strictEqual(rien.vieux, null);
-  assert.strictEqual(rien.neuf, null);
+  assert.strictEqual(git.old, null);
+  assert.strictEqual(git.fresh, null);
+  const rien = await both({ toolName: 'Read', toolInput: { file_path: 'C:/tmp/file-unknownOne-xyz.txt' } });
+  assert.strictEqual(rien.old, null);
+  assert.strictEqual(rien.fresh, null);
 });
 
 test.skipIf(!parcPresent)('HOOK_DIR sanity: the real fleet does exist where we think it does', () => {
   assert.ok(fs.existsSync(HOOK_DIR));
 });
 
-// ⚠️ NEGATIVE-CHECK of the unsealing (05/08/2026) — WITHOUT it, `desceller()` is
+// ⚠️ NEGATIVE-CHECK of the unsealing (05/08/2026) — WITHOUT it, `unseal()` is
 //    a disguised `return ctx` that would make the 3 comparisons above
 //    decorative. A relaxation introduced to make a red pass MUST
 //    prove that it only relaxes what it claims to.
-test('desceller() removes the envelope AND NOTHING ELSE', () => {
-  const corps = 'doc A\n\n---\n\ndoc B';
-  const scelle = '⚠️ SEALED INJECTION — this block ends with ###END:abcd1234###\n'
-    + '   ligne 2\n   ligne 3\n\n' + corps + '\n\n###END:abcd1234###';
-  assert.strictEqual(desceller(scelle), corps, 'a well-formed sealed block must return its EXACT body');
+test('unseal() removes the envelope AND NOTHING ELSE', () => {
+  const body = 'doc A\n\n---\n\ndoc B';
+  const sealed = '⚠️ SEALED INJECTION — this block ends with ###END:abcd1234###\n'
+    + '   line 2\n   line 3\n\n' + body + '\n\n###END:abcd1234###';
+  assert.strictEqual(unseal(sealed), body, 'a well-formed sealed block must return its EXACT body');
 
   // Not sealed → returned INTACT: the nominal path stays a strict comparison.
-  assert.strictEqual(desceller(corps), corps);
+  assert.strictEqual(unseal(body), body);
 
   // ⚠️ THE CASE THAT MATTERS: DIFFERENT markers = inconsistent seal. We do NOT
   //    unseal — otherwise we would swallow a real transport defect.
-  const bancal = scelle.replace('###END:abcd1234###\n', '###END:00000000###\n');
-  assert.strictEqual(desceller(bancal), bancal);
+  const bancal = sealed.replace('###END:abcd1234###\n', '###END:00000000###\n');
+  assert.strictEqual(unseal(bancal), bancal);
 
   // ⚠️ A divergence INSIDE the body stays visible after unsealing.
-  const autre = scelle.replace('doc B', 'doc C');
-  assert.notStrictEqual(desceller(autre), corps);
+  const other = sealed.replace('doc B', 'doc C');
+  assert.notStrictEqual(unseal(other), body);
 });

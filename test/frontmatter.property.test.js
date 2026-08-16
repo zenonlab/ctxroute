@@ -103,7 +103,7 @@ test('ROUND-TRIP — a written list [a, b] is read back as an array', () => {
 
 test('SECURITY — a doc WITHOUT `match` is ALWAYS invalid (never silent)', () => {
   // ⚠️ THE property that protects against the bug this refactor is meant to kill:
-  //    a doc without a trigger must never be « accepted but inert ».
+  //    a doc without a trigger must never be "accepted but inert".
   fc.assert(
     fc.property(fc.object(), (o) => {
       const data = { ...o };

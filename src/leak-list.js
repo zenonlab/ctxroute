@@ -40,18 +40,18 @@ function privateTerms() {
   } catch {
     return [];
   }
-  const termes = Array.isArray(decl.termes) ? [...decl.termes] : [];
+  const terms = Array.isArray(decl.terms) ? [...decl.terms] : [];
   for (const src of Array.isArray(decl.derivedFolders) ? decl.derivedFolders : []) {
     try {
-      for (const e of fs.readdirSync(src.racine, { withFileTypes: true })) {
-        if (e.isDirectory() && fs.existsSync(path.join(src.racine, e.name, src.marker))) {
-          termes.push(e.name);
+      for (const e of fs.readdirSync(src.root, { withFileTypes: true })) {
+        if (e.isDirectory() && fs.existsSync(path.join(src.root, e.name, src.marker))) {
+          terms.push(e.name);
         }
       }
     } catch { /* source absent on this machine: we invent nothing */ }
   }
   const exceptions = (Array.isArray(decl.exceptions) ? decl.exceptions : []).map((t) => String(t).toLowerCase());
-  return termes.filter((t) => !exceptions.includes(String(t).toLowerCase()));
+  return terms.filter((t) => !exceptions.includes(String(t).toLowerCase()));
 }
 
 module.exports = { privateListPath, privateTerms };

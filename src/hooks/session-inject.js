@@ -114,8 +114,8 @@ readStdinJson(
       const plan = res ? res.plan : emission.split(frais, budgetMax, 1)[0];
 
       // Empty frame (neither content nor announcement) ⇒ silence, like the PreToolUse gate.
-      if (!plan || plan.texte === '') process.exit(0);
-      const fullDoc = plan.texte;
+      if (!plan || plan.text === '') process.exit(0);
+      const fullDoc = plan.text;
       console.log(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'SessionStart',

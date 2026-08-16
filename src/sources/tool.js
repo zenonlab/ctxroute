@@ -58,9 +58,9 @@ const { WILDCARD, toolList } = require('../frontmatter');
 // ⚠️ EMPTY/absent tool name ⇒ the wildcard does NOT match (negative case required):
 //    "any tool" presupposes that there IS a tool. Without this guard,
 //    a degraded payload would trigger all the wildcard docs of the corpus.
-function targets(noms, toolName) {
-  if (noms.includes(toolName)) return true;
-  return noms.includes(WILDCARD) && typeof toolName === 'string' && toolName !== '';
+function targets(names, toolName) {
+  if (names.includes(toolName)) return true;
+  return names.includes(WILDCARD) && typeof toolName === 'string' && toolName !== '';
 }
 
 /**

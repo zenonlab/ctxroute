@@ -8,7 +8,7 @@
 //    Extracted on 16/07/2026 so that only ONE reading of the corpus exists —
 //    two copies of readCorpus would diverge silently (jscpd gate).
 //    Any change here = re-prove through doc-inject.test.js AND lint-corpus.test.js.
-// 🛑 THIS LINE USED TO SAY « shadow-inject.js (WIRED IN PROD) » (fixed on
+// 🛑 THIS LINE USED TO SAY "shadow-inject.js (WIRED IN PROD)" (fixed on
 //    09/08/2026): shadow-inject has been UNWIRED since 17/07/2026, its role of
 //    rehearsal before the switchover being over. The comment therefore named a
 //    relic as the production consumer, and SAID NOTHING about the gate — that is

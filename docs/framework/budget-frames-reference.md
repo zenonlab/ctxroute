@@ -32,7 +32,7 @@ Two standards solve exactly this problem — a message too big for its channel �
 
 ## Why this is TCP/MSS segmentation and NOT IP fragmentation
 
-[RFC 8900] says "SHOULD NOT develop new protocols that rely on IP fragmentation". Its 9 causes of fragility are **all intermediate equipment** (NAT, stateless firewalls, ECMP, reassembly-ID collisions) — there is **none** here: hook → harness → context. And its underlying recommendation, *« push fragmentation responsibilities upward to layers that understand application semantics »*, describes exactly what we do: we split knowing the content, on boundaries that carry meaning.
+[RFC 8900] says "SHOULD NOT develop new protocols that rely on IP fragmentation". Its 9 causes of fragility are **all intermediate equipment** (NAT, stateless firewalls, ECMP, reassembly-ID collisions) — there is **none** here: hook → harness → context. And its underlying recommendation, *"push fragmentation responsibilities upward to layers that understand application semantics"*, describes exactly what we do: we split knowing the content, on boundaries that carry meaning.
 
 ## Why NO automatic ceiling discovery (do not re-propose it)
 
@@ -55,9 +55,9 @@ Two standards solve exactly this problem — a message too big for its channel �
 ⚠️ **CORRECTION OF 2026-08-04 — "we READ the setting" was FALSE, and the word mattered.**
 Official doc (`learn.chatgpt.com/docs/hooks`, read that day): `additionalContextLimit` is declared
 **PER HANDLER**, next to `command`/`timeout`, in the hooks file — so **in OUR own
-wiring**. There is no upstream config to read: we **WRITE** it. Values: *« Omit
-additionalContextLimit to use the default 2500-token threshold »* · *« or 0 to pass the handler's
-complete additional context directly to the model »*.
+wiring**. There is no upstream config to read: we **WRITE** it. Values: *"Omit
+additionalContextLimit to use the default 2500-token threshold"* · *"or 0 to pass the handler's
+complete additional context directly to the model"*.
 🛑 **So it was not "a doc that lies" but a SILENT PRODUCTION OUTAGE**: the setting was
 absent from the wiring ⇒ default 2500 tokens ⇒ any slightly large skill (the `ctxroute` skill is 39 KB,
 ~10,000 tokens) was written to disk and replaced by a PREVIEW, with the hook knowing nothing.
@@ -70,7 +70,7 @@ emitter would leave the other mute, and a global match would miss it).
 
 1. **It does not break silently** — the seal announces the end marker up front; if it is missing on read, the agent knows it was truncated and will go read the files. The mechanism assumes no value.
 2. **The fix is ONE number**: `budgetInjection` in the config (or the harness setting). Everything re-splits automatically into smaller chunks.
-3. **Possibly** raise `--paquets N` if more frames are needed.
+3. **Possibly** raise `--frames N` if more frames are needed.
 
 No code to change. That is what update resistance means.
 

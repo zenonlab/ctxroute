@@ -45,18 +45,18 @@ async function main() {
     : [];
 
   const uniques = new Map(); // payload key -> { toolName, toolInput, docs }
-  let lignes = 0;
+  let lines = 0;
   for (const j of journaux) {
     for (const l of fs.readFileSync(path.join(stateDir, j), 'utf8').split('\n')) {
       if (!l.trim()) continue;
-      lignes++;
+      lines++;
       let e;
       try { e = JSON.parse(l); } catch (err) { continue; } // corrupted line (crash mid-write): ignored, still counted
       uniques.set(JSON.stringify([e.toolName, e.toolInput]), e);
     }
   }
 
-  console.log(`logs: ${journaux.length} · logged calls: ${lignes} · unique payloads: ${uniques.size}`);
+  console.log(`logs: ${journaux.length} · logged calls: ${lines} · unique payloads: ${uniques.size}`);
   if (uniques.size === 0) {
     console.error('⚠️ EMPTY LOG — the shadow measured nothing (dead hook? no traffic yet?). Nothing to conclude.');
     process.exit(2);
@@ -65,10 +65,10 @@ async function main() {
   const entries = [...uniques.values()];
   const divergences = (
     await mapPool(entries, 12, async (e) => {
-      const attendu = await legacyDocs(LEGACY, { toolName: e.toolName, toolInput: e.toolInput });
-      return attendu.join('|') === (e.docs || []).join('|')
+      const expected = await legacyDocs(LEGACY, { toolName: e.toolName, toolInput: e.toolInput });
+      return expected.join('|') === (e.docs || []).join('|')
         ? null
-        : { toolName: e.toolName, toolInput: e.toolInput, ancien: attendu, nouveau: e.docs };
+        : { toolName: e.toolName, toolInput: e.toolInput, former: expected, nouveau: e.docs };
     })
   ).filter(Boolean);
 

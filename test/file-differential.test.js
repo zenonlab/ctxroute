@@ -125,9 +125,9 @@ function reglesJouables(rules) {
 }
 
 test('differential sources/file.js ≡ protect-files.js on the real rules', { skip: !available && 'protect-files.js absent (fresh clone)', timeout: 6000000 }, async () => {
-  const toutes = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8')).rules;
-  const rules = reglesJouables(toutes);
-  const orphelines = toutes.length - rules.length;
+  const allOfThem = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8')).rules;
+  const rules = reglesJouables(allOfThem);
+  const orphelines = allOfThem.length - rules.length;
   // ⚠️ ANNOUNCED, never kept quiet: a silently reduced corpus is a "green" that lies.
   if (orphelines > 0) console.log(`  → ${orphelines} ORPHAN rule(s) discarded (doc deleted from the corpus — the frozen oracle still cites them)`);
   const corpus = buildCorpus(rules);
@@ -143,7 +143,7 @@ test('differential sources/file.js ≡ protect-files.js on the real rules', { sk
     //    parent→child order is broken — exactly the regression we are looking for.
     return a.join('|') === b.join('|')
       ? null
-      : { entree: payload.toolInput.file_path, outil: payload.toolName, ancien: a, nouveau: b };
+      : { entry: payload.toolInput.file_path, outil: payload.toolName, former: a, nouveau: b };
   });
 
   const divergences = results.filter(Boolean);
@@ -177,17 +177,17 @@ test('differential: Bash commands (cd reconstruction + git skip)', { skip: !avai
 //    orphan rule is the ONLY one discarded. Without this test, accidentally
 //    broadening the filter would empty the differential without anything turning red.
 test('differential: the filter discards ONLY the orphan rules', { skip: !available && 'corpus absent (fresh clone)' }, () => {
-  const toutes = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8')).rules;
-  const kept = reglesJouables(toutes);
+  const allOfThem = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8')).rules;
+  const kept = reglesJouables(allOfThem);
   assert.ok(kept.length > 0, 'the filter must never discard everything (emptied gate = dead gate)');
   for (const r of kept) {
     assert.ok(fs.existsSync(path.join(HOOKS_DIR, r.doc)), `kept while ${r.doc} is absent`);
   }
-  const filteredOut = toutes.filter((r) => !kept.includes(r));
+  const filteredOut = allOfThem.filter((r) => !kept.includes(r));
   for (const r of filteredOut) {
     assert.ok(!fs.existsSync(path.join(HOOKS_DIR, r.doc)), `discarded while ${r.doc} EXISTS — the filter eats healthy rules`);
   }
   // IN-MEMORY sabotage (never a real file): a rule pointing at a nonexistent doc MUST fall.
   const bidon = { pattern: 'x', doc: 'docs/__inexistante-' + Date.now() + '.md' };
-  assert.equal(reglesJouables([...toutes, bidon]).length, kept.length, 'an orphan rule must be discarded');
+  assert.equal(reglesJouables([...allOfThem, bidon]).length, kept.length, 'an orphan rule must be discarded');
 });

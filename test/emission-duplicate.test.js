@@ -69,9 +69,9 @@ import emission from '../src/emission-core.js';
 //    turns a shared fixture into a STATIC mutant, hence a false
 //    survivor (42 measured on 16/07/2026).
 const grosDoc = () => [{
-  id: 'doc/gros',
-  label: 'gros.md',
-  text: Array.from({ length: 400 }, (_, i) => `ligne ${i} ` + 'x'.repeat(70)).join('\n'),
+  id: 'doc/big',
+  label: 'big.md',
+  text: Array.from({ length: 400 }, (_, i) => `line ${i} ` + 'x'.repeat(70)).join('\n'),
 }];
 
 /** Isolates the store: never the real `state/`, it is shared with production. */
@@ -89,7 +89,7 @@ function isole(fn) {
 }
 
 /** All the ids that really went out, across all frames. */
-const idsEmis = (frames) => frames.flatMap((p) => p.emis || []);
+const idsEmis = (frames) => frames.flatMap((p) => p.emitted || []);
 
 /** What is persisted for the next action = the deferrals of the LAST frame. */
 const idsEnFile = (frames) => (frames[frames.length - 1].deferred || []).map((s) => s.id);

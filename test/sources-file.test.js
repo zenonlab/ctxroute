@@ -64,7 +64,7 @@ test('extractFilePaths: apply_patch ignored for the other tools', () => {
 //    as a design choice. `exclude` = ∀¬ over (all the params ∪ the context).
 test('shouldSkip: exclude matches the CURRENT context', () => {
   assert.strictEqual(shouldSkip(R('x', 'd', { exclude: ['umami'] }), '/srv/umami/x', {}), true);
-  assert.strictEqual(shouldSkip(R('x', 'd', { exclude: ['umami'] }), '/srv/autre/x', {}), false);
+  assert.strictEqual(shouldSkip(R('x', 'd', { exclude: ['umami'] }), '/srv/other/x', {}), false);
 });
 test('㊼ shouldSkip: exclude ALSO sees the params, not only the context', () => {
   // 🔴 FOUNDING CASE, MEASURED IN REAL USE ON 14/08/2026: the context is a
@@ -124,9 +124,9 @@ test('㊺① the GROUPED form is an AND between groups, an OR inside', () => {
   assert.strictEqual(shouldSkip(r, '/x', { command: 'c' }), true, 'the 1st group is not satisfied');
 });
 test('㊺① CONJUNCTION ≥ 3 — the language limit written on 12/08 is LIFTED', () => {
-  const r = R('x', 'd', { scope: [['ce-fichier'], ['ce-projet'], ['--prod']] });
-  assert.strictEqual(shouldSkip(r, '/x', { a: 'ce-fichier', b: 'ce-projet', c: '--prod' }), false);
-  assert.strictEqual(shouldSkip(r, '/x', { a: 'ce-fichier', b: 'ce-projet' }), true, 'ONE is missing ⇒ no injection');
+  const r = R('x', 'd', { scope: [['ce-file'], ['ce-projet'], ['--prod']] });
+  assert.strictEqual(shouldSkip(r, '/x', { a: 'ce-file', b: 'ce-projet', c: '--prod' }), false);
+  assert.strictEqual(shouldSkip(r, '/x', { a: 'ce-file', b: 'ce-projet' }), true, 'ONE is missing ⇒ no injection');
 });
 test('㊺① scopeGroups: total, and the MIXED form reads the most RESTRICTIVE', () => {
   // ⚠️ The mixed form is REFUSED by the validators. If it reaches the engine (unvalidated
@@ -176,15 +176,15 @@ test('㊵ shouldSkip: NEGATIVE — a nested payload WITHOUT the term stays skipp
 // ── ㊵.a THE TWO BOUNDS: present, and above all OBSERVABLE ──
 // 🛑 A MUTE bound recreates defect ㊵ through the back door: a scope that
 //    fails without a visible reason is indistinguishable from an absent scope.
-const enfouir = (n, feuille) => {
-  let v = feuille;
+const enfouir = (n, leaf) => {
+  let v = leaf;
   for (let i = 0; i < n; i++) v = { a: v };
   return v;
 };
 test('㊵.a textValues: the corpus REAL depth (11) is well within the bound', () => {
   // ⚠️ MEASUREMENT 12/08/2026: 25,898 real calls, max depth = 11 (gworkspace).
-  assert.deepStrictEqual(textValues(enfouir(11, 'trouve')).chunks, ['trouve']);
-  assert.strictEqual(textValues(enfouir(11, 'trouve')).truncated, null);
+  assert.deepStrictEqual(textValues(enfouir(11, 'found')).chunks, ['found']);
+  assert.strictEqual(textValues(enfouir(11, 'found')).truncated, null);
 });
 test('㊵.a textValues: beyond MAX_DEPTH it truncates, AND it SAYS so', () => {
   const r = textValues(enfouir(MAX_DEPTH + 1, 'perdu'));
@@ -193,7 +193,7 @@ test('㊵.a textValues: beyond MAX_DEPTH it truncates, AND it SAYS so', () => {
 });
 test('㊵.a textValues: beyond MAX_SIZE it truncates, AND it SAYS so', () => {
   const r = textValues({ a: 'x'.repeat(MAX_SIZE), b: 'debordement' });
-  assert.strictEqual(r.truncated, 'taille');
+  assert.strictEqual(r.truncated, 'size');
   assert.strictEqual(r.chunks.some((m) => m.includes('debordement')), false);
 });
 test('㊵.a textValues: the FIRST truncation reason is kept', () => {
@@ -436,7 +436,7 @@ test('extractFilePaths: toolInput.cwd = candidate path IF a string, ignored othe
   );
 });
 
-// ⚠️ MUTANT `typeof valeur === 'object'` → `true`: an `undefined` value would then
+// ⚠️ MUTANT `typeof value === 'object'` → `true`: an `undefined` value would then
 //    go into `Object.values(undefined)`, which THROWS. The function must stay TOTAL —
 //    a throw here would kill the hook, hence EVERY injection of the corpus.
 test('㊵.a textValues: TOTAL — undefined/boolean never throw', () => {
@@ -456,7 +456,7 @@ test('51 the trigger finds a NESTED path under a declared key', () => {
 test('51 the trigger reads ARRAYS (the element inherits the PARENT key)', () => {
   // ⚠️ Without the inheritance, the keys would be `0`/`1` and nothing would match — 56
   //    real paths went through there (measured on 7,553 calls).
-  assert.deepStrictEqual(docs([R('gate.js', 'd.md')], 'X', { path: ['/x/gate.js', '/y/autre.js'] }), ['d.md']);
+  assert.deepStrictEqual(docs([R('gate.js', 'd.md')], 'X', { path: ['/x/gate.js', '/y/other.js'] }), ['d.md']);
 });
 test('51 a NON-declared key triggers NOTHING (no guessing)', () => {
   // 🛑 We NEVER guess that a param carries a path from its name: the
@@ -479,7 +479,7 @@ test('㊿ the PAYLOAD CONTENT is out of the filters universe — BOTH of them', 
 test('51 MUTANT — the trigger DEPTH BOUND really bites', () => {
   // ⚠️ Same bound as the filters: two different bounds for the same payload
   //    would be one operator seeing further than another for no reason.
-  const creuser = (n, feuille) => (n === 0 ? feuille : { a: creuser(n - 1, feuille) });
+  const creuser = (n, leaf) => (n === 0 ? leaf : { a: creuser(n - 1, leaf) });
   assert.deepStrictEqual(extractFilePaths('X', creuser(3, { file_path: '/a/vu.js' })), ['/a/vu.js']);
   assert.deepStrictEqual(extractFilePaths('X', creuser(MAX_DEPTH + 2, { file_path: '/a/trop-loin.js' })), [],
     'the bound does not bite: an arbitrarily deep payload would become a point of failure');
@@ -488,10 +488,10 @@ test('51 MUTANT — the BOUND is EXACT (the last admitted level, and the first r
   // ⚠️ `> 0` mutated into `>= 0` is only visible AT the limit level: a "very
   //    deep" test is not enough, BOTH edges are needed. Same thing for
   //    `depth - 1` mutated into `+ 1`.
-  const creuser = (n, feuille) => (n === 0 ? feuille : { a: creuser(n - 1, feuille) });
-  const trouve = (n) => extractFilePaths('X', creuser(n, { path: '/x.js' })).length > 0;
-  assert.strictEqual(trouve(MAX_DEPTH - 1), true, 'the last ADMITTED level must be seen');
-  assert.strictEqual(trouve(MAX_DEPTH), false, 'the first REFUSED level must be invisible');
+  const creuser = (n, leaf) => (n === 0 ? leaf : { a: creuser(n - 1, leaf) });
+  const found = (n) => extractFilePaths('X', creuser(n, { path: '/x.js' })).length > 0;
+  assert.strictEqual(found(MAX_DEPTH - 1), true, 'the last ADMITTED level must be seen');
+  assert.strictEqual(found(MAX_DEPTH), false, 'the first REFUSED level must be invisible');
 });
 
 // ═══ 53bis (15/08/2026) — A PATTERN LIVES IN A VALUE, NEVER STRADDLING ═══

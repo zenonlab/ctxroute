@@ -66,9 +66,9 @@ const COMPTES_GENERIQUES = new Set([
  * @param {string[]} [supplementaires] - terms from a LOCAL gitignored list
  */
 function forbiddenPatterns(utilisateur, dossierPerso, supplementaires) {
-  const motifs = [
-    { nom: 'real email', re: EMAIL_REEL },
-    { nom: 'real machine IP (CGNAT/Tailscale)', re: IP_CGNAT },
+  const patterns = [
+    { name: 'real email', re: EMAIL_REEL },
+    { name: 'real machine IP (CGNAT/Tailscale)', re: IP_CGNAT },
   ];
   const litteraux = [];
   if (typeof utilisateur === 'string' && utilisateur.length >= 3) litteraux.push(utilisateur);
@@ -92,29 +92,29 @@ function forbiddenPatterns(utilisateur, dossierPerso, supplementaires) {
     //    being read — and the day it is right, nobody believes it.
     //    `\b` relies on [A-Za-z0-9_]: an accent counts as a separator, which is
     //    exactly the behaviour wanted here.
-    motifs.push({ nom: 'personal data: ' + l, re: new RegExp('\\b' + escapeLiteral(l) + '\\b', 'i') });
+    patterns.push({ name: 'personal data: ' + l, re: new RegExp('\\b' + escapeLiteral(l) + '\\b', 'i') });
   }
-  return motifs;
+  return patterns;
 }
 
 /**
  * Looks for the patterns in a text. TOTAL: never fails.
- * @returns {{nom:string, extrait:string}[]}
+ * @returns {{name:string, excerpt:string}[]}
  */
-function scan(texte, motifs) {
+function scan(texte, patterns) {
   if (typeof texte !== 'string') return [];
-  if (!Array.isArray(motifs)) return [];
-  const trouves = [];
-  for (const m of motifs) {
+  if (!Array.isArray(patterns)) return [];
+  const hits = [];
+  for (const m of patterns) {
     const found = texte.match(m.re);
     // ⚠️ A documentation IP contains "203.0.113.": we do NOT report it.
     //    Without this door, the doctrine ("use 203.0.113.x") would be forbidden
     //    by its own gate.
     if (found && !IP_AUTORISEES.test(found[0])) {
-      trouves.push({ nom: m.nom, extrait: found[0] });
+      hits.push({ name: m.name, excerpt: found[0] });
     }
   }
-  return trouves;
+  return hits;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

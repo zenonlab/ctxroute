@@ -43,7 +43,7 @@ test('doc without fm or without a tool key → ignored without a throw (totality
 test('scope = AND over the concatenated params (same semantics as the file source)', () => {
   const docs = [doc('web', { tool: 'WebFetch', scope: ['docs.x.ai'] })];
   assert.strictEqual(matchingDocs(docs, payload('WebFetch', { url: 'https://docs.x.ai/api' })).length, 1);
-  assert.strictEqual(matchingDocs(docs, payload('WebFetch', { url: 'https://autre.com' })).length, 0);
+  assert.strictEqual(matchingDocs(docs, payload('WebFetch', { url: 'https://other.com' })).length, 0);
 });
 
 test('exclude = NOT over the context (here the tool name)', () => {
