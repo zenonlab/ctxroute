@@ -136,6 +136,75 @@ test('② self-validation: aspect ② BITES (an undecided root is named)', () =>
   assert.equal(normalizePath('A\\B/'), 'a/b');
 });
 
+// ── ②ter STRICT SCHEMA OF THE PRIVATE LIST (2026-08-16) ─────────────────
+// 🔴 PAID THE SAME DAY: the module was renamed to English keys
+//    (`derivedFolders`/`root`/`marker`) while the private file still said
+//    `dossiersDerives`/`racine`/`marqueur` ⇒ ZERO client derived, gate GREEN.
+//    Aspect ② could not see it: its scan zones are DERIVED from
+//    `derivedFolders` itself — empty field, empty scan, green by VACUITY.
+//    An unknown key silently ignored is indistinguishable from a working one
+//    ⇒ the schema is CLOSED: any key outside the vocabulary is RED.
+const TOP_KEYS = new Set(['terms', 'derivedFolders', 'ignoredRoots', 'exceptions']);
+const ENTRY_KEYS = new Set(['root', 'marker']);
+function schemaFaults(decl) {
+  if (Object(decl) !== decl) return ['private list is not an object'];
+  const faults = [];
+  for (const k of Object.keys(decl)) {
+    if (k.startsWith('_')) continue; // author comments (_lisez_moi, _role…)
+    if (!TOP_KEYS.has(k)) faults.push(`unknown top-level key \`${k}\``);
+  }
+  for (const listKey of ['derivedFolders', 'ignoredRoots']) {
+    for (const e of Array.isArray(decl[listKey]) ? decl[listKey] : []) {
+      if (Object(e) !== e) { faults.push(`${listKey}: entry is not an object`); continue; }
+      for (const k of Object.keys(e)) {
+        if (k.startsWith('_')) continue;
+        if (!ENTRY_KEYS.has(k)) faults.push(`${listKey}: unknown entry key \`${k}\``);
+      }
+      if (typeof e.root !== 'string' || e.root === '') faults.push(`${listKey}: entry without a \`root\` string`);
+      if (listKey === 'derivedFolders' && (typeof e.marker !== 'string' || e.marker === '')) {
+        faults.push('derivedFolders: entry without a `marker` string');
+      }
+    }
+  }
+  return faults;
+}
+
+test('②ter the REAL private list matches the CLOSED schema (unknown key = RED)', () => {
+  let decl;
+  try {
+    decl = JSON.parse(fs.readFileSync(privateListPath(), 'utf8'));
+  } catch {
+    return; // no private list on this machine: mute, like aspects ① and ②
+  }
+  assert.deepEqual(
+    schemaFaults(decl),
+    [],
+    'PRIVATE LIST OUT OF SCHEMA — an unknown key is SILENTLY IGNORED by the\n'
+    + 'engine, so the protection it carries does not exist (paid 16/08/2026:\n'
+    + '`dossiersDerives` left over from a rename ⇒ zero client derived, green\n'
+    + 'gate). Fix ~/.claude/secrets/ctxroute-fuite.json:\n  '
+    + schemaFaults(decl).join('\n  '));
+});
+
+test('②ter self-validation: the schema gate BITES (in-memory sabotage)', () => {
+  // The exact defect of 16/08: pre-rename French keys.
+  const stale = { terms: [], dossiersDerives: [{ racine: 'C:/x', marqueur: 'brief.md' }] };
+  assert.ok(schemaFaults(stale).some((f) => f.includes('dossiersDerives')),
+    'SABOTAGE NOT DETECTED: the stale key class would pass again');
+  // Entry-level drift alone is caught too.
+  const entryDrift = { derivedFolders: [{ racine: 'C:/x', marker: 'brief.md' }] };
+  const faults = schemaFaults(entryDrift);
+  assert.ok(faults.some((f) => f.includes('racine')) && faults.some((f) => f.includes('root')),
+    'SABOTAGE NOT DETECTED: a renamed entry key would pass again');
+  // Healthy file: zero noise (a gate with false positives ends up disabled).
+  assert.deepEqual(schemaFaults({
+    _lisez_moi: 'x',
+    terms: ['a'],
+    derivedFolders: [{ _role: 'x', root: 'C:/x', marker: 'brief.md' }],
+    exceptions: ['b'],
+  }), []);
+});
+
 // ── THE GATE ────────────────────────────────────────────────────────────
 test('NO TRACKED file carries personal data', () => {
   const violations = scanRepo(ICI, motifs());
