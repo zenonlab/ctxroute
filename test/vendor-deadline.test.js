@@ -127,7 +127,10 @@ test('NO hook stays "manual" — the patch covers 100% of the fleet', { skip, ti
   //    protecting (3rd occurrence of this pattern on 15/07/2026 — always the same trap).
   const dir = stripBanner(clonerParc());
   const r = patcher(dir, false);
-  assert.match(r.stdout, /to arm\s+: 7/, `the stripped fleet must expose 7 hooks to arm:\n${r.stdout}`);
+  // ⚠️ FLOOR, never an exact carve (the carved "7" drifted on 16/08/2026 when the
+  //    fleet grew to 8 hooks). Ratchet: raise when the fleet grows, never lower.
+  const toArm = Number((r.stdout.match(/to arm\s+: (\d+)/) || [])[1] || 0);
+  assert.ok(toArm >= 8, `the stripped fleet must expose at least 8 hooks to arm (got ${toArm}):\n${r.stdout}`);
   assert.match(r.stdout, /⚠️ MANUAL\s+: 0/, `non-patchable hook(s) → incomplete coverage:\n${r.stdout}`);
 });
 
@@ -191,7 +194,7 @@ test('AFTER the patch — EVERY hook of the fleet dies on its own', { skip, time
     .filter((f) => f.endsWith('.js') && f !== 'deadline.js' && f !== 'deadline-conf.js')
     .filter((f) => /require\(['"]\.\/deadline['"]\)/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
 
-  assert.ok(hooks.length >= 7, `only ${hooks.length} armed hook(s), 7 expected`);
+  assert.ok(hooks.length >= 8, `only ${hooks.length} armed hook(s), at least 8 expected (floor raised 16/08/2026 with no-agent-cascade.js)`);
 
   const survivants = [];
   for (const f of hooks) {

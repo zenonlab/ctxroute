@@ -31,12 +31,17 @@ const present = fs.existsSync(PARC);
 // A HOOK = a .js that reads stdin. ⚠️ Derived from the CONTENT, never from a
 // hand-written list: a list forgets the next file added — the exact hole we
 // are closing.
+// ⚠️ SHARED predicates — the gate AND its negative-check below use the SAME
+//    functions. Duplicating them would make the sabotage prove a twin.
+const readsStdin = (src) => /process\.stdin/.test(src) || /require\(['"]\.\/stdin-json['"]\)/.test(src);
+const hasDeadline = (src) => /require\(['"]\.\/deadline['"]\)/.test(src) && /\barm\s*\(/.test(src);
+
 function hooksDuParc() {
   return fs
     .readdirSync(PARC)
     .filter((f) => f.endsWith('.js') && !f.endsWith('.test.js'))
     .map((f) => ({ name: f, src: fs.readFileSync(path.join(PARC, f), 'utf8') }))
-    .filter((h) => /process\.stdin/.test(h.src) || /require\(['"]\.\/stdin-json['"]\)/.test(h.src))
+    .filter((h) => readsStdin(h.src))
     // `deadline.js` itself = the vendored copy, it IS the deadline.
     .filter((h) => h.name !== 'deadline.js');
 }
@@ -53,9 +58,7 @@ test(
     //    CERTIFIES.
     assert.ok(hooks.length > 0, `no stdin-reading hook detected in ${PARC} — blind gate, check hooksDuParc()`);
 
-    const nus = hooks
-      .filter((h) => !/require\(['"]\.\/deadline['"]\)/.test(h.src) || !/\barm\s*\(/.test(h.src))
-      .map((h) => h.name);
+    const nus = hooks.filter((h) => !hasDeadline(h.src)).map((h) => h.name);
 
     assert.deepStrictEqual(
       nus,
@@ -68,3 +71,23 @@ test(
     );
   }
 );
+
+test('NEGATIVE: the predicates really BITE (in-memory sabotage, never a real file)', () => {
+  // 🛑 Without this part, a broken regex would make the gate green while
+  //    classifying every hook as safe — the exact class paid on 16/08/2026
+  //    (leak derivation inert, green by vacuity). Same predicates as the gate:
+  //    a twin here would prove nothing.
+  const bare = "const x = require('./stdin-json');\nconsole.log('no deadline here');\n";
+  assert.ok(readsStdin(bare), 'a stdin-json reader must be seen as a hook');
+  assert.ok(!hasDeadline(bare), 'SABOTAGE NOT DETECTED: a bare hook would pass as protected');
+
+  const rawStdin = 'process.stdin.on("data", () => {});\n';
+  assert.ok(readsStdin(rawStdin), 'a raw process.stdin reader must be seen as a hook');
+
+  const armed = "const deadline = require('./deadline');\ndeadline.arm();\nconst y = require('./stdin-json');\n";
+  assert.ok(readsStdin(armed) && hasDeadline(armed), 'a protected hook must NOT be reported');
+
+  // A require without arm() is NOT protection: the timer never starts.
+  const requireOnly = "const deadline = require('./deadline');\nconst z = require('./stdin-json');\n";
+  assert.ok(!hasDeadline(requireOnly), 'require without arm() must count as BARE');
+});
