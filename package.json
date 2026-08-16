@@ -1,0 +1,71 @@
+{
+  "name": "ctxroute",
+  "version": "2.0.0",
+  "description": "Declarative context routing for coding agents: a small, non-Turing-complete language that delivers knowledge (invariants, pitfalls, project skills) into an agent context at the exact tool call where it matters. Predictable, explainable, harness-agnostic.",
+  "main": "legacy-mcp-inject.js",
+  "scripts": {
+    "test": "vitest run --project=unit",
+    "test:all": "vitest run",
+    "t": "vitest related --run --project=unit",
+    "test:int": "vitest run --project=integration",
+    "test:lanes": "node vitest-projects.mjs",
+    "test:watch": "vitest --project=unit",
+    "test:fast": "vitest run lib-pure.test.js sources-file.test.js frontmatter.test.js lint.test.js gate.test.js lib-pure.property.test.js frontmatter.property.test.js lock.test.js config-gate.test.js mutation-workflow-gate.test.js deadline.test.js deadline-gate.test.js",
+    "test:porte": "vitest run gate.test.js doc-inject.test.js pretool-differential.test.js",
+    "lint": "node tools/lint-corpus.js",
+    "test:lint": "vitest run lint-corpus.test.js",
+    "test:config": "vitest run config-gate.test.js",
+    "test:ci-gate": "vitest run mutation-workflow-gate.test.js",
+    "test:spec": "vitest run spec-differential.test.js",
+    "test:property": "vitest run lib-pure.property.test.js frontmatter.property.test.js",
+    "test:doctor": "vitest run doctor.test.js",
+    "doctor": "node tools/doctor.js",
+    "explain": "node tools/explain.js",
+    "test:explain": "vitest run explain.test.js",
+    "test:couverture": "vitest run coverage-gate.test.js triggers-gate.test.js",
+    "test:unit": "vitest run lib-pure.test.js sources-file.test.js frontmatter.test.js lint.test.js gate.test.js",
+    "test:lock": "vitest run lock.test.js",
+    "test:integration": "vitest run legacy-mcp-inject.test.js",
+    "test:mutation": "stryker run",
+    "check:coupling": "npm run check:deps && npm run check:duplication",
+    "check:deps": "depcruise --config .dependency-cruiser.json .",
+    "check:duplication": "jscpd .",
+    "check:types": "tsc -p jsconfig.json",
+    "check:all": "npm run test:all && npm run check:types && npm run check:coupling && npm run test:mutation",
+    "test:deadline": "vitest run deadline.test.js deadline-gate.test.js && vitest run --config vitest.heavy.config.mjs deadline-load.test.js",
+    "test:differential": "vitest run --config vitest.heavy.config.mjs file-differential.test.js",
+    "test:fleet": "vitest run --config vitest.heavy.config.mjs hooks-fleet-gate.test.js deadline-vendor.test.js vendor-deadline.test.js",
+    "vendor": "node src/vendor-deadline.js",
+    "test:deps": "vitest run deps-criticality-pure.test.js deps-criticality-gate.test.js",
+    "prepare": "git config core.hooksPath .githooks || exit 0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "hooks",
+    "documentation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Soyouse/ctxroute.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Soyouse/ctxroute/issues"
+  },
+  "homepage": "https://github.com/Soyouse/ctxroute#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "^0.45.0",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@types/node": "^26.2.0",
+    "dependency-cruiser": "^18.1.0",
+    "fast-check": "^4.9.0",
+    "jscpd": "^5.0.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

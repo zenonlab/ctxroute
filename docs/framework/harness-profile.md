@@ -1,0 +1,16 @@
+---
+match: [harness-profile.js, harness-profile-gate.test.js]
+scope: [ctxroute]
+mode: smart
+rank: 512
+---
+# harness-profile.js — THE HARNESS DIALECT, IN ONE SINGLE PLACE (㊽, 2026-08-14)
+
+🛑 **It is DATA, not code**: zero logic, zero I/O, zero dependency. **Porting a harness = editing THIS file, NEVER the engine.** Default values derived from the DOCUMENTED hook contracts (doc-first), not from a local corpus.
+🔴 **BORN OF AN INVARIANT ASSERTED BUT NEVER GUARDED.** The porting contract says "ABSOLUTELY FORBIDDEN to modify `sources/`", and `sources-must-not-know-the-harness` was supposed to hold it — **but it only looks at IMPORTS, never at a LITERAL**. Measured: `sources/file.js` carried `'Bash'`, `apply_patch`, `file_path`, `remotePath` hard-coded, and `apply_patch` is a **CODEX** name ⇒ the leak had ALREADY happened, without a test flinching. **An invariant no machine checks is not an invariant.**
+⚠️ **WHAT WE DETECT INSTEAD OF LISTING — the SHELL.** No list of shell tools: we look at the **presence of a `command` parameter**. **MEASURED over 7,553 real calls**: 4 tools carry one (`Bash`, `PowerShell`, `mcp__ssh__ssh_exec`, `mcp__infra__infra_call`), **all 4 are shells, zero exceptions**. Testing by NAME made **809 commands out of 4,396 (18 %) INVISIBLE** to the trigger — all PowerShell, all SSH. 🛑 Adding a `shellTools` to the profile makes the gate go RED: a list is born stale and fails SILENTLY.
+🛑 **WHAT WE DO NOT DETECT BY FORM, and why.** ① The **PATCH** keeps its TOOL NAME: its marker (`*** Update File:`) can live INSIDE a file's CONTENT (a doc talking about it) ⇒ phantom paths. **A tool name does not lie; content does.** ② **PATH KEYS** remain a list: "this param designates a path" is a SEMANTICS. Guessing by name (`path`/`file`/`dir`) is RULED OUT — an **English-language** convention, hence silently blind to a server exposing `dateipfad`, and a heuristic in the TRIGGER (the only operator that CREATES an injection) is the first thing an external auditor attacks.
+⚠️ **THE PROFILE KEYS ARE IN ENGLISH, AND THAT IS A RULE**: this file is EDITED BY THE ADOPTER to port the framework ⇒ it is **public interface**, not internal code. Since 2026-08-16 the WHOLE repository is English-only (decision ㉒ reversed — code, comments, messages, docs); **everything the adopter READS or WRITES is in English** — language vocabulary, config keys, profile keys. The language itself has NEVER contained a French word (`match`/`scope`/`exclude`/…) and the 2 extensions of 08-14 created NO word.
+⚠️ **SEALED BY `harness-profile-gate.test.js`, DERIVED FROM THE PROFILE** (never a copied list): no word of the profile may reappear as a literal in the core (10 pure modules), COMMENTS stay free to mention them, + anti-dormancy + in-memory negative-check.
+⚠️ **SWITCHOVER MEASURED BEFORE WIRING**: differential over **4,702 real actions** ⇒ 128 change (2.72 %), **ZERO doc lost** (unidirectional risk confirmed), gains 100 % PowerShell/SSH and all legitimate (a project's VPS folder, a script launched in PowerShell). It was doc that should have arrived.
+⚠️ **The SPEC (`language-spec.js`) consumes the SAME profile**: it describes the semantics (∃/∀), not a harness's names. Without that, the differential would prove a LIST divergence instead of a MEANING divergence.

@@ -1,0 +1,11 @@
+---
+mode: dumb
+enforce: true
+---
+# Exemple — REFUSER un geste irréversible (`enforce`)
+🛑 **`enforce: true` = la porte REFUSE l'appel** au lieu de se contenter d'informer. C'est la seule chose qui protège LE geste visé : une doc injectée arrive *à côté du résultat de l'outil*, donc trop tard pour lui.
+⚠️ **UN REFUS N'EST JAMAIS SUIVI D'UN REFUS** (anti-boucle par alternance) : relancer le MÊME appel passe TOUJOURS. Ce n'est pas un mur, c'est un cran d'arrêt qui force une relecture.
+⚠️ **GRAIN OUTIL, PAS GRAIN SERVEUR** : ce fichier est `docs/mcp/{serveur}/{outil}.md`, il ne vise QUE cet outil. Armer `docs/mcp/{serveur}.md` bloquerait aussi les LECTURES — du bruit, et le bruit finit débranché.
+⚠️ **Réserver aux gestes IRRÉVERSIBLES** (argent, suppression, notification client). Sur un geste réversible, le coût dépasse le bénéfice.
+🛑 **GARDE-FOU, PAS SÉCURITÉ** : la porte est fail-open — un hook mort laisse passer. Protège d'un agent distrait, jamais d'un adversaire.
+⚠️ Copier en `create_refund.md` (sans `.example`) pour l'activer : les docs réelles sont gitignorées, seuls les `.example` sont publiés.

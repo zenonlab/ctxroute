@@ -1,0 +1,22 @@
+{
+  "$schema": "./ctxroute-config.schema.json",
+  "enabled": true,
+  "showNotification": true,
+  "mode": "smart",
+  "defaultThreshold": 4,
+  "frames": 12,
+  "filterMode": "none",
+  "filterList": [],
+  "servers": {},
+  "skills": {
+    "my-project": {
+      "match": [
+        "my-project"
+      ],
+      "mode": "once"
+    }
+  },
+  "skillsWithoutPerimeter": [
+    "example-on-demand-skill"
+  ]
+}

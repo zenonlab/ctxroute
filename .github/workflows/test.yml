@@ -1,0 +1,59 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      # ⚠️ `npm ci` MANDATORY here: the suite depends on fast-check
+      # (lib-pure.property.test.js). This job used to run without an install
+      # while the tests were zero-dep — forgetting it = red CI on all 3 OSes
+      # for a reason invisible locally (node_modules already present).
+      - run: npm ci
+      # 🛑 CI RUNS **EVERYTHING** (`test:all` = both projects). `npm test` is the
+      #    FAST lane of the edit loop (~2 s) — using it here would deprive CI of
+      #    the spawning suites, i.e. the only ones proving the hooks REALLY run.
+      #    The staging is in TIME, never in the proof.
+      - run: npm run test:all
+
+  coupling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # ㉑ (16/08/2026): tsc --checkJs — the checker, never the syntax.
+      # Binary ratchet: 0 errors, reached on 16/08/2026 (95 fixed, 0 runtime bugs).
+      - run: npm run check:types
+      - run: npm run check:coupling
+
+# ⚠️ MUTATION LIVES IN `.github/workflows/mutation.yml`, NOT HERE.
+#    Reason: `paths:` applies to the WHOLE workflow, never to a job — keeping
+#    it here would run it on EVERY push (235-296 s measured), including doc
+#    commits. Doctrine: "HEAVY job (> ~3 min) → SEPARATE workflow with strict
+#    paths". (This repo is PUBLIC, so minutes are unlimited — the separation
+#    still holds for feedback time, not for quota. Becomes a quota concern
+#    again if the repo ever goes private.)
+#    ⚠️ Do NOT re-add it here: it would run TWICE, and the other workflow's
+#    `paths` filter would become decorative.
+#    The paths ⟷ stryker.conf.json mirror is sealed by
+#    `mutation-workflow-gate.test.js`.

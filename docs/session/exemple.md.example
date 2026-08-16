@@ -1,0 +1,6 @@
+# Exemple de doc SESSION
+
+Tout `.md` posé dans `docs/session/` est injecté dans le contexte de l'agent
+à CHAQUE SessionStart (démarrage, resume, clear, ET après chaque compaction) —
+comme CLAUDE.md, mais géré par le framework. Format : < 10 lignes, 1 ligne =
+1 invariant/consigne, ton impératif. Les vraies docs sont gitignorées (perso).

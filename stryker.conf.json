@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation ONLY on the pure decision modules (zero I/O). legacy-mcp-inject.js/ctxroute-reset.js/lock.js are NOT mutated: I/O (fs/stdin/stdout) = integration/contract tests, never Stryker (doctrine: isolate the decision from the I/O BEFORE mutating).",
+  "_runner_comment": "⚠️ vitest MANDATORY (node:test BANNED 16/07/2026, cf stryker-runner-choice.md): perTest + live workers = zero spawn per mutant (12 min → seconds/minutes measured). NEVER go back to command/commandRunner — gate in mutation-workflow-gate.test.js. The suites launched per mutant = the ones vitest.config.mjs includes (include/exclude): new pure module ⇒ its suite MUST be discovered by vitest, not listed here.",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.stryker.config.mjs"
+  },
+  "coverageAnalysis": "perTest",
+  "_timeout_comment": "⚠️ ROOT CAUSE of 'the local score lies' (found 15/07/2026). Stryker default = timeoutMS 5000 + timeoutFactor 1.5 × baseline. ~5s suite ⇒ ~12s timeout. On a LOADED machine a normal 5s run exceeds 12s ⇒ TIMEOUT ⇒ Stryker counts it as KILLED ⇒ INFLATED score (measured: 100% locally with 411 timeouts / 0.17 tests per mutant, vs 97.54% in CI with 0 timeouts). Local wasn't lying by fate: this setting was missing. 60s = far above any realistic load ⇒ a timeout becomes a REAL signal again (test in an infinite loop), no longer load noise. Cost: ~0 (only TRULY infinite mutants wait). ⚠️ NEVER lower it to 'speed things up': that reintroduces the silent lie, and a false score is worse than no score.",
+  "timeoutMS": 60000,
+  "_language_spec_comment": "language-spec.js is DELIBERATELY OUTSIDE mutation (14/08/2026). It is not DECISION code but a MODEL (an executable specification), just like the data constants excluded elsewhere in the fleet. Mutating a model does not measure its quality: it measures the DOMAIN COVERAGE of the differential — and it produces genuinely EQUIVALENT mutants (e.g. norm() uppercasing instead of lowercasing: the comparison being internal to the model, the verdict is identical). The model's judge is `spec-differential.test.js`, whose NEGATIVE-CHECK on 3 engine sabotages is the real proof of liveness. 🛑 Do NOT add it to `mutate` to inflate a number: the per-file floor would then encode a false expectation.",
+  "_mutator_comment": "Regex excluded (Stryker mutates regexes character-by-character = mostly noise; serverName()/toolSuffix() are covered functionally by many cases in lib-pure.test.js, not by regex mutation).",
+  "mutator": {
+    "excludedMutations": [
+      "Regex"
+    ]
+  },
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
+  "mutate": [
+    "src/lib-pure.js",
+    "src/canary.js",
+    "src/sources/file.js",
+    "src/sources/tool.js",
+    "src/sources/mcp.js",
+    "src/sources/session.js",
+    "src/sources/skill.js",
+    "src/frontmatter.js",
+    "src/loader.js",
+    "src/lint.js",
+    "src/collisions.js",
+    "src/gate.js",
+    "src/deps-criticality-pure.js",
+    "src/budget.js",
+    "src/leak-pure.js",
+    "src/docfacts.js",
+    "src/harness-conformance.js"
+  ],
+  "incremental": true,
+  "_concurrency_comment": "⚠️ BOUNDED CONCURRENCY — set 27/07/2026, DO NOT RAISE. By default Stryker opens 1 worker per logical thread (12 on a Ryzen 5 5600X): the machine saturates at 100%. DAMAGE MEASURED that day: under saturation, hook processes no longer reach the line that arms their deadline (deadline.js) ⇒ 502 zombies accumulated, machine unusable, `git log` over 60 s, suites in FALSE REDS. Mutation is BACKGROUND work, not a race: 3 workers = ~50% load, usable machine, identical result. Fleet rule: incremental + perTest + timeoutMS + bounded concurrency, on ALL projects.",
+  "concurrency": 3,
+  "_known_survivor": "99.15% measured 15/07/2026 — 1 remaining survivor (isServerActive, fallback [] → [\"Stryker was here\"]): an EQUIVALENT mutant in practice. That literal is only observable if a test calls isServerActive with server==='Stryker was here' (a Stryker-internal string, not a real case; coupling a test to that value would break on a future tool version). Break pinned at 99 (ratchet never lowered, maintainer doctrine) — not 100: that last point is a genuine tooling ceiling, not a test hole.",
+  "thresholds": {
+    "high": 99,
+    "low": 90,
+    "break": 99
+  },
+  "_why_mutate": "ALL the PURE modules (dependency-cruiser gates guarantee zero I/O). NEVER the I/O files: equivalent mutants guaranteed.",
+  "jsonReporter": {
+    "fileName": "reports/mutation.json"
+  }
+}

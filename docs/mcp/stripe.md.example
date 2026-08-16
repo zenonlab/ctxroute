@@ -1,0 +1,6 @@
+# MCP Stripe — invariants (exemple)
+
+⚠️ NE JAMAIS cliquer/activer un bouton d'action de PAIEMENT réel sur un portail client (ex: "Payer maintenant", lien Stripe Link) — action IRRÉVERSIBLE, notifie le client immédiatement, aucun mode test sur le portail public.
+⚠️ Pour vérifier qu'une facture/lien fonctionne, s'arrêter à la LECTURE (page chargée, montant correct, bouton présent) — ne jamais cliquer l'action elle-même.
+2FA Stripe = TOTP, non stocké → toujours demander le code en live, jamais le deviner/contourner.
+Clés `sk_test_.../pk_test_...` = sandbox, zéro risque réel. Clés `sk_live_.../pk_live_...` = argent réel — ne jamais les afficher/logger en clair au-delà du strict nécessaire.

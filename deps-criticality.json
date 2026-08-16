@@ -1,0 +1,17 @@
+{
+  "_doc": "CRITICALITY CLASSIFICATION of the repo's dependencies (30/07/2026). SINGLE SOURCE, consumed by `deps-criticality-gate.test.js`. Every dependency of EVERY package.json in the repo MUST appear here — unclassified = RED.",
+  "_doc_classes": "`moteur` = the dependency DETERMINES THE DELIVERED OUTPUT (pixels, measurements, encoding) ⇒ EXACT pinning MANDATORY (no ^, no ~, no range), because its drift changes the product without anything going red. `ordinaire` = it does not change the output (tooling, transport) ⇒ caret DESIRABLE (security fixes).",
+  "_doc_zero_moteur": "⚠️ NO ENGINE HERE — and that is structural: this repo has ONLY development dependencies, its production code is JavaScript with no dependency (the hooks are spawned on every tool call, any runtime dependency would be paid for at every gesture). The gate is therefore not here to fix an existing defect: it makes it IMPOSSIBLE for an undecided dependency, runtime or engine, to enter in the future. ⚠️ A gate with an EMPTY scope is a DORMANT gate — hence the ANTI-DORMANCY test that proves the mechanism on a fake engine.",
+  "moteur": {},
+  "ordinaire": {
+    "vitest": "test harness. A drift changes the behaviour of the GATES, not the product's output — and a gate that breaks is LOUD (red).",
+    "@stryker-mutator/core": "mutation testing (gate tooling).",
+    "@stryker-mutator/vitest-runner": "Stryker runner (gate tooling).",
+    "fast-check": "property-based testing (gate tooling).",
+    "dependency-cruiser": "coupling detection and purity gates (gate tooling).",
+    "jscpd": "duplication detection. Its drift can move the PERCENTAGE hence the ratchet — but a crossed ratchet is RED, hence visible.",
+    "typescript": "type checker (㉑, 16/08/2026): `tsc --checkJs --noEmit` only — NEVER the syntax, zero build, the executed file stays the written file. A drift would make the type check red or mute: loud, never the product's output.",
+    "@types/node": "type definitions for the checker above (gate tooling, no code executed).",
+    "@ast-grep/cli": "AST parser of the layers gate (`layers-gate.test.js`). Gate tooling: it produces NO delivered file, it only SEARCHES the code. A drift on its part would make a gate red or mute — loud in the first case, and the ANTI-DORMANCY aspect of the gate covers the second. Chosen over a regex because the fleet doctrine requires it (a `process.exit` quoted in a comment is a false positive), and over ESLint because it does not add a 2nd tool for work dependency-cruiser already does on imports."
+  }
+}

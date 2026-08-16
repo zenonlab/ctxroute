@@ -1,0 +1,6 @@
+# MCP Odoo — invariants (exemple)
+
+⚠️ Ne jamais muter (`update_record`/`delete_record`/`post_message`) un `record_id` non lu dans CETTE session — préférer un gate de provenance dédié si mutation par ID.
+Vérifier si un `payment.token` est réellement stocké avant de supposer un prélèvement automatique — un abonnement peut être facturé côté Odoo sans être encaissé automatiquement (dépend de l'intégration).
+Un champ de date d'échéance générée en avance peut sembler incohérent (échéance antérieure à la date d'émission) — anomalie de génération connue sur certains modules d'abonnement, pas un refus de paiement client.
+`list_models` retourne le catalogue générique Odoo (200+ modèles), pas les modèles réellement utilisés par ton instance — filtrer par `search_records` ciblé plutôt que parcourir la liste complète.
