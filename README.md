@@ -1,6 +1,6 @@
 # ctxroute
 
-[![test](https://github.com/Soyouse/ctxroute/actions/workflows/test.yml/badge.svg)](https://github.com/Soyouse/ctxroute/actions/workflows/test.yml)
+[![test](https://github.com/zenonlab/ctxroute/actions/workflows/test.yml/badge.svg)](https://github.com/zenonlab/ctxroute/actions/workflows/test.yml)
 
 **Declarative context routing for coding agents.** ctxroute is a small,
 deliberately non-Turing-complete language: you declare *when* a piece of

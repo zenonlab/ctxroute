@@ -48,12 +48,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Soyouse/ctxroute.git"
+    "url": "https://github.com/zenonlab/ctxroute.git"
   },
   "bugs": {
-    "url": "https://github.com/Soyouse/ctxroute/issues"
+    "url": "https://github.com/zenonlab/ctxroute/issues"
   },
-  "homepage": "https://github.com/Soyouse/ctxroute#readme",
+  "homepage": "https://github.com/zenonlab/ctxroute#readme",
   "engines": {
     "node": ">=22"
   },
