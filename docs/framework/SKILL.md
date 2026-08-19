@@ -108,7 +108,7 @@
    key — the raw TEXT (what the gesture SAYS) and the directory it DESIGNATES (`cd X && …`, where it
    WORKS). While they shared a key, NO combination of operators could separate "I quote this project"
    from "I work in it". The boolean base was complete and the distinction inexpressible: **the hole
-   was in the OBSERVABLE SET, not in the combinators — 9 out of 9 now.**
+   was in the OBSERVABLE SET, not in the combinators — like EVERY defect before it.**
    ✅ Fix = **declare the missing observable** (`harness-profile.commandCwdKey`, DATA), never a new
    word: `keys` addresses it like any other key. `["-command"]` = stop reading what the command SAYS,
    keep reading where it WORKS · `["-commandCwd"]` = the exact opposite. **Price re-measured: 749
