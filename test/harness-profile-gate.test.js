@@ -115,6 +115,6 @@ test('㊽ THE SHELL IS NOT DECLARED — it is DETECTED (no list of shell tools)'
     'A `shellTools` has appeared: the shell is recognised by the PRESENCE of a `command`, never by a list of names.');
   assert.ok(Object.keys(DEFAULT_PROFILE).every((k) => /^[a-z][A-Za-z]*$/.test(k)),
     'Profile key outside the English camelCase convention — this file is PUBLIC INTERFACE.');
-  assert.deepStrictEqual(Object.keys(DEFAULT_PROFILE).sort(), ['commandKeys', 'contentKeys', 'patchTools', 'pathKeys'],
+  assert.deepStrictEqual(Object.keys(DEFAULT_PROFILE).sort(), ['commandCwdKey', 'commandKeys', 'contentKeys', 'patchTools', 'pathKeys'],
     'The profile has changed shape: update this gate AND the doc, in the same move.');
 });

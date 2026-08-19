@@ -142,6 +142,45 @@ const CELLULES = () => [
     avec: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo ' + ATOME } }),
     sans: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo rien' } }),
   })),
+  // ── THE TWO HALVES OF A SHELL GESTURE (20/08/2026) ─────────────────────
+  // 🔴 THE 9th DEFECT OF THE SAME FAMILY, and the one that closes the founding use case.
+  //    A command carries what the gesture SAYS and where it WORKS; while both lived under
+  //    one key, no combination of operators could tell "I quote this project" from "I work
+  //    in it" — the boolean base was complete and the distinction still inexpressible.
+  //    MEASURED on 28,703 real actions: merged, the only available move cost 47.7 % of
+  //    real work. These two cells prove the halves are SEPARABLE, in BOTH directions —
+  //    one cell alone would pass while the split stayed one-way, which is exactly how
+  //    `keys` shipped half-inert on 19/08.
+  // ⚠️ THE `sans` CASES ARE BUILT WITH CARE, and the first attempt was WRONG: every word
+  //    following a `cd` becomes a pseudo-path (`/w/rien/` + word), so putting the atom
+  //    after the `cd` makes it reachable through the DESIGNATED half and the cell measures
+  //    nothing. The atom must sit in a segment the reconstruction never reaches.
+  {
+    id: 'tool_input/command-cwd/reachable-without-the-raw-text', capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandKeys[0]] } },
+      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls -la' } }),
+    sans: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandKeys[0]] } },
+      { toolName: 'X', toolInput: { command: 'grep ' + ATOME + ' f.txt; cd /w/rien && ls' } }),
+  },
+  {
+    id: 'tool_input/command-raw/reachable-without-the-designated-dir', capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
+      { toolName: 'X', toolInput: { command: 'grep ' + ATOME + ' f.txt' } }),
+    sans: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
+      { toolName: 'X', toolInput: { command: 'grep rien f.txt' } }),
+  },
+  // 🛑 THE THIRD CELL IS THE ONE THAT MAKES THE OTHER TWO MEAN SOMETHING: it proves the
+  //    split is REAL and not one-way. Without it, an engine that ignored `-commandCwd`
+  //    entirely would satisfy both cells above — which is EXACTLY how `keys` shipped
+  //    half-inert on 19/08 (accepted by the schema, ignored by one dimension).
+  {
+    id: 'tool_input/command-cwd/really-droppable', capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: 'w/' + ATOME + '/ls' },
+      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls' } }),
+    sans: () => decideFile({ pattern: 'w/' + ATOME + '/ls', keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
+      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls' } }),
+  },
+
   ...DEFAULT_PROFILE.contentKeys.map((cle) => ({
     id: `tool_input/payload-key-by-default:${cle}`, capacite: 'tool_input', atteint: false,
     justification: '㊿ — a PAYLOAD key TRANSPORTS content, it DESIGNATES nothing. Reading it made the filters decide on the text one TYPES: 55 exclusions measured came from there. It is out of the DEFAULT universe, never out of REACH — the paired cell below proves an entry re-opens it with `keys`.',

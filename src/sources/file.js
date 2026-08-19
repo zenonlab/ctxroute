@@ -296,18 +296,66 @@ function scopeGroups(scope) {
 // ⚠️ `every` and NOT `some`: on a MIXED list — which `validate` refuses, but an unvalidated
 //    config can carry — the reading must be the MOST RESTRICTIVE. An engine that guesses must
 //    always guess in the direction that does NOT inject.
+// 🛑 ONE RULE DECIDES THE FORM, AND IT IS DECIDABLE BY LOOKING (20/08/2026):
+//    **at least one `-` ⇒ ADJUST the default universe · no `-` at all ⇒ REPLACE it.**
+//    ⇒ `["-command", "content"]` = "everything except the command, PLUS the content".
+// 🔴 THE MIXED FORM WAS REFUSED UNTIL TODAY, AND THE REFUSAL WAS THE HOLE. "Adjust the
+//    default" was expressible only as a full re-enumeration of the universe by hand — an
+//    ENUMERATION, hence born stale: the day the profile gains a key, every such entry
+//    silently fails to follow it. That is class ㊽ (a list that only knows the past),
+//    reintroduced by a validator that meant well. The old reason — "nobody can decide
+//    whether the author meant only-minus or everything-plus" — stops holding the moment
+//    the rule above is WRITTEN: a `-` is a verb, and a form with a verb adjusts.
+// ⚠️ What stays refused is what names NOTHING (`-` alone, an empty list): a mute entry is
+//    indistinguishable from a forgotten one.
 function keyDecision(keysDecl, axis) {
   const decl = Object(keysDecl) === keysDecl && !Array.isArray(keysDecl) ? keysDecl[axis] : keysDecl;
   if (!Array.isArray(decl)) return null;
-  const removals = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
-  const enleve = removals.length === decl.length;
-  const bannies = removals.map((k) => String(k).slice(KEY_REMOVE.length));
+  // 🛑 AN EMPTY LIST IS INERT, NEVER A WHITELIST OF NOTHING (decision kept from 19/08).
+  //     refuses it, but a hand-edited config is never validated — and a rule made
+  //    MUTE by a malformed value is indistinguishable from a forgotten one, which is the
+  //    defect this engine exists to kill. Before 20/08 this fell out of the arithmetic
+  //    (0 removals === 0 entries ⇒ blacklist of nothing); the ADJUST/REPLACE rule makes the
+  //    empty case a REPLACE, hence mute. It is now stated instead of being a side effect.
+  if (decl.length === 0) return null;
+  // Stryker disable next-line ArrayDeclaration: EQUIVALENT mutant, PROVEN not merely asserted.
+  //   Seeding these accumulators with a junk key changes NO verdict: `garde` and `triggerKeys` only
+  //   ever ASK whether a key name is present, and a name no payload can carry is asked about and
+  //   never found. Writing a test for it would mean fabricating a payload whose key is Stryker's own
+  //   literal — freezing a nonsense forever. We ELIMINATE by declaration, we never test dead ground.
+  // Stryker disable ArrayDeclaration: EQUIVALENT mutant, PROVEN not merely asserted.
+  //   Seeding these accumulators with a junk key changes NO verdict: `garde` and `triggerKeys` only
+  //   ever ASK whether a key NAME is present, and a name no payload can carry is asked about and
+  //   never found. A test for it would have to fabricate a payload keyed by Stryker's own literal —
+  //   freezing a nonsense forever. We ELIMINATE by declaration; we never test dead ground.
+  //   ⚠️ `disable` (not `disable next-line`): the pair spans TWO declarations, and a next-line
+  //   directive silently protected only the first — measured, the second survived anyway.
+  const bannies = [];
+  const ajouts = [];
+  // Stryker restore ArrayDeclaration
+  for (const k of decl) {
+    const s = String(k);
+    if (s.startsWith(KEY_REMOVE)) bannies.push(s.slice(KEY_REMOVE.length));
+    else ajouts.push(s);
+  }
+  const ajuste = bannies.length > 0;
   return {
-    // BLACKLIST: every key EXCEPT those named — a value bound to no key survives it.
-    // WHITELIST: ONLY the keys named — a keyless value is therefore dropped, because
-    // "only file_path" cannot honestly keep a value that comes from nowhere.
-    garde: enleve ? (key) => !bannies.includes(key) : (key) => decl.includes(key),
-    enleve,
+    // ADJUST: the default universe, minus the removals, plus the additions — a value bound
+    //   to no key survives it (it was never removed by name).
+    // REPLACE: ONLY the keys named — a keyless value is therefore dropped, because
+    //   "only file_path" cannot honestly keep a value that comes from nowhere.
+    // ⚠️ `garde` IS THE **FILTERS'** PREDICATE (the trigger reads `bannies`/`ajouts` through
+    //    `triggerKeys`), so its default is ㊿'s: every key EXCEPT the payload ones. Writing
+    //    it as a bare `!bannies.includes(key)` only worked because the shared traversal had
+    //    ALREADY dropped the payload keys — an invariant held by the CALLER, hence one that
+    //    breaks the day a caller changes. A mixed form re-traverses, so it would have let a
+    //    payload key back in WITHOUT anyone naming it: ㊿ silently undone by a form.
+    garde: ajuste
+      ? (key) => ajouts.includes(key) || (!bannies.includes(key) && !DEFAULT_PROFILE.contentKeys.includes(key))
+      : (key) => ajouts.includes(key),
+    ajuste,
+    bannies,
+    ajouts,
     decl,
   };
 }
@@ -316,7 +364,15 @@ function keyDecision(keysDecl, axis) {
 function triggerKeys(keysDecl, defauts) {
   const d = keyDecision(keysDecl, 'match');
   if (!d) return defauts;
-  return d.enleve ? defauts.filter(d.garde) : d.decl;
+  // ⚠️ REPLACE = the list IS the universe. ADJUST = the default MINUS the removals, PLUS the
+  //    additions.
+  // 🛑 NO DE-DUPLICATION OF THE ADDITIONS, and that is DELIBERATE: this list is only ever
+  //    consumed by `.includes()`, so a name present twice decides exactly like a name present
+  //    once. The first version filtered them out — Stryker kept the removal ALIVE, which is the
+  //    proof the filter decided nothing. Dead code that is TESTED becomes frozen forever, so we
+  //    ELIMINATE instead. Re-adding it would be re-adding an equivalent mutant.
+  if (!d.ajuste) return d.ajouts;
+  return defauts.filter((k) => !d.bannies.includes(k)).concat(d.ajouts);
 }
 
 function shouldSkip(rule, context, toolInput) {
@@ -360,7 +416,13 @@ function shouldSkip(rule, context, toolInput) {
     //    are the SAME question ("which keys does this entry read?"), so asking it twice
     //    would be two truths that diverge. A BLACKLIST keeps the shared traversal: it only
     //    ever REMOVES from the default, so it can need nothing the default did not collect.
-    const src = d.enleve ? brut : textValues(toolInput, 0, null, undefined, d);
+    // ⚠️ RE-TRAVERSED AS SOON AS THE ENTRY NAMES A BARE KEY — whitelist OR addition. A pure
+    //    removal can only take away from what the shared traversal already collected, so it
+    //    keeps it; naming a key may ask for one the default never collected (a payload key),
+    //    and only a re-traversal can produce it. Testing `!ajuste` alone would silently
+    //    ignore the ADDITIONS of a mixed form — the operator accepted and half inert, which
+    //    is the exact defect of 19/08.
+    const src = d.ajouts.length ? textValues(toolInput, 0, null, undefined, d) : brut;
     return src.chunks.filter((_, i) => d.garde(src.keys[i])).map(norm);
   };
   const valeurs = garde('scope');
@@ -396,13 +458,35 @@ function shouldSkip(rule, context, toolInput) {
 // ⚠️ Reconstruction `cd /path && command` — allows matching "infra-mcp/server.js"
 //    without an absolute path. DOES NOT COVER pushd, subshell, double cd (known limit,
 //    inherited as is: broadening it would make the differential diverge).
+// 🛑 THE DERIVED HALF IS ITS OWN OBSERVABLE (20/08/2026) — `commandCwdCandidates`.
+//    A shell command carries TWO DISTINCT FACTS under ONE key, and until today only one
+//    of them was declared: the raw TEXT (what the gesture SAYS) and the directory the
+//    gesture DESIGNATES (`cd X && …`, i.e. where it WORKS). Merging them made "quoting a
+//    project" indistinguishable from "working in it" — MEASURED on 28,703 real actions:
+//    removing the whole `command` key from a trigger's universe destroyed 2,281
+//    injections, of which **1,087 (47.7 %) were real work**. Declaring the derived half
+//    separately costs 749, of which **41 (5.5 %)** — the same target, a tenth of the price.
+// ⚠️ `bashCandidates` KEEPS returning BOTH (raw first): it is the public probe consumed by
+//    `explain.js` and the property laws, and the ∀¬ of `exclude` must keep seeing the whole
+//    universe. Only the TRIGGER composes the two halves per rule — a filter that stopped
+//    seeing a value would be a negation weakened in silence, which is ㊼ all over again.
 function bashCandidates(command) {
-  const out = [command];
+  return [command].concat(commandCwdCandidates(command));
+}
+
+// The DERIVED observable: the directory a shell command DESIGNATES.
+// ⚠️ Returns [] when the command designates nothing — a rule that reads ONLY this
+//    observable then bites on nothing, which is the honest answer, never a fallback on
+//    the raw text (that fallback would silently re-merge the two facts).
+function commandCwdCandidates(command) {
   const cdMatch = command.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
-  if (cdMatch) {
-    const afterCd = command.split(/&&|;/).slice(1).join(' ');
-    for (const w of afterCd.trim().split(/\s+/)) out.push(cdMatch[1] + '/' + w);
-  }
+  if (!cdMatch) return [];
+  // Stryker disable next-line ArrayDeclaration: EQUIVALENT mutant, same proof as above — a junk
+  //   candidate is never a SUBSTRING match of any pattern, so it can neither bite nor enter
+  //   `mordants`, hence it changes no decision and no exclusion universe.
+  const out = [];
+  const afterCd = command.split(/&&|;/).slice(1).join(' ');
+  for (const w of afterCd.trim().split(/\s+/)) out.push(cdMatch[1] + '/' + w);
   return out;
 }
 
@@ -480,11 +564,25 @@ function matchingDocs(rules, payload) {
     //    ["-command"]}` removes it and the hole reappears. **192 divergences measured**
     //    by the exhaustive differential. A "for all" cannot be bypassed BY CONSTRUCTION —
     //    that is the whole point, and it is why the decision is taken ONCE, not per candidate.
+    // ⚠️ THE TWO HALVES OF A SHELL GESTURE ARE TWO UNIVERSES (20/08/2026). The RAW text
+    //    follows the `command` key (hence `commandesR`); the DESIGNATED directory follows
+    //    its own declared name, and is therefore derived from the FULL command list — a
+    //    rule that drops `command` must keep seeing WHERE it works, which is the entire
+    //    point. Reading it from `commandesR` would re-merge them and cost 47.7 % of real
+    //    work, measured.
+    const cdKeys = rule.keys ? triggerKeys(rule.keys, [DEFAULT_PROFILE.commandCwdKey]) : null;
+    const cdActif = !cdKeys || cdKeys.includes(DEFAULT_PROFILE.commandCwdKey);
+
     const mordants = [];
     for (const fp of cheminsR) if (norm(fp).includes(normPattern)) mordants.push(fp);
     for (const commande of commandesR) {
-      for (const cand of bashCandidates(commande)) {
-        if (norm(cand).includes(normPattern)) mordants.push(cand);
+      if (norm(commande).includes(normPattern)) mordants.push(commande);
+    }
+    if (cdActif) {
+      for (const commande of commandes) {
+        for (const cand of commandCwdCandidates(commande)) {
+          if (norm(cand).includes(normPattern)) mordants.push(cand);
+        }
       }
     }
     if (mordants.length && !shouldSkip(rule, mordants, toolInput)) add(rule);
@@ -500,6 +598,7 @@ module.exports = {
   shouldSkip,
   scopeGroups,
   bashCandidates,
+  commandCwdCandidates,
   textValues,
   MAX_DEPTH,
   MAX_SIZE,

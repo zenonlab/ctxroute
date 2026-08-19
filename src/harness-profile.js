@@ -74,6 +74,24 @@ const DEFAULT_PROFILE = {
   //    stable — that is what we read, never the tool name (㊽). A harness that
   //    called it `cmd`/`script` adds an entry HERE, zero line of engine.
   commandKeys: ['command'],
+  // 🔴 THE **DERIVED** OBSERVABLE OF A SHELL GESTURE (20/08/2026) — the directory the
+  //    command DESIGNATES (`cd X && …`), as opposed to the raw text it CONTAINS.
+  // ⚠️ WHY IT IS DECLARED HERE AND NOT HARD-CODED IN THE ENGINE: a shell command carries
+  //    TWO facts under ONE key, and a language can only discriminate on facts it has
+  //    DECLARED. While both lived under `command`, "I am QUOTING this project" and "I am
+  //    WORKING in it" were the same observable — so no combination of operators could
+  //    separate them, and the defect was not in the boolean base but in the universe.
+  //    That is the 9th defect of this project and the 9th of the same family.
+  // 📐 MEASURED on 28,703 real actions before shipping: dropping the WHOLE `command` key
+  //    from a trigger costs 2,281 injections of which **1,087 are real work (47.7 %)** —
+  //    refused by the same threshold that reverted July's two exclusions. Dropping only
+  //    the RAW half costs 749 of which **41 (5.5 %, i.e. 0.2 % of all injections)**.
+  // ⚠️ It is a NAME, not a parameter: no harness sends it. It is the handle by which
+  //    `keys` addresses the derived half — `keys: {match: ["-command"]}` now means
+  //    "stop reading what the command SAYS, keep reading where it WORKS", and
+  //    `["-commandCwd"]` says the exact opposite. Default universe UNCHANGED: both halves
+  //    are active unless an entry says otherwise.
+  commandCwdKey: 'commandCwd',
   // 🛑 **PAYLOAD** PARAMETERS — they TRANSPORT content, they DESIGNATE
   //    nothing. Removed from the universe of BOTH filters (`scope` AND `exclude`, never
   //    one without the other: their duality is the theorem of ㊼).

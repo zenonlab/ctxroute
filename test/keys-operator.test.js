@@ -46,7 +46,24 @@ test('…but WORKING in it still does — the half that matters', () => {
 
 // ── THE TWO FORMS ───────────────────────────────────────────────────────────
 test('flat form = the SAME universe for the three axes (the shortcut)', () => {
-  assert.ok(!injecte(doc({ keys: ['-command'] }), cmd('cd projet-x && ls')));
+  // 🔴 THIS CASE ASSERTED THE OPPOSITE UNTIL 20/08/2026, AND IT WAS THE DEFECT ITSELF.
+  //    It demanded that `-command` silence `cd projet-x && ls` — a gesture that WORKS in
+  //    projet-x. MEASURED on 28,703 real actions: honouring that reading destroyed 2,281
+  //    injections of which **1,087 (47.7 %) were real work**, i.e. the operator was
+  //    unusable in the one situation it was written for. The raw TEXT and the DESIGNATED
+  //    directory are two observables; `-command` drops the first, never the second.
+  assert.ok(injecte(doc({ keys: ['-command'] }), cmd('cd projet-x && ls')),
+    'working IN the project must still inject: the designated directory is its own observable');
+  assert.ok(!injecte(doc({ keys: ['-command'] }), cmd('grep projet-x notes.md')),
+    'QUOTING the project must no longer inject: that is the whole purpose of the operator');
+  // ⚠️ THE REVERSE DIRECTION NEEDS A PATTERN ONLY THE RECONSTRUCTION CAN PRODUCE.
+  //    `cd projet-x && ls` CONTAINS the string "projet-x" in its raw text, so a naive
+  //    assertion here measures the raw half and proves nothing about the derived one —
+  //    a mistake made and caught by this very test, one minute after writing it.
+  assert.ok(injecte(doc({ pattern: 'projet-x/ls' }), cmd('cd projet-x && ls')),
+    'PRECONDITION: only the reconstruction can produce this candidate');
+  assert.ok(!injecte(doc({ pattern: 'projet-x/ls', keys: ['-commandCwd'] }), cmd('cd projet-x && ls')),
+    'the halves are separable in BOTH directions — otherwise the split is one-way and unproven');
   assert.ok(injecte(doc({ keys: ['-content'] }), cmd('cd projet-x && ls')), 'removing an unrelated key changes nothing');
 });
 
@@ -98,7 +115,11 @@ test('the validator refuses the AMBIGUOUS, and only that', () => {
   assert.deepStrictEqual(validate({ match: 'a', keys: ['file_path'] }), []);
   assert.deepStrictEqual(validate({ match: 'a', keys: ['-command'] }), []);
   assert.deepStrictEqual(validate({ match: 'a', scope: ['s'], keys: { match: ['a'], scope: ['-b'] } }), []);
-  for (const bad of [['a', '-b'], [], ['-'], [''], 'x', { bidon: ['a'] }, {}, { match: [] }]) {
+  // ✅ THE MIXED FORM IS LEGAL SINCE 20/08/2026 — "the default, minus this, plus that".
+  //    It used to be refused, and that refusal forced whoever wanted to ADD one key to
+  //    re-enumerate the whole universe by hand: an enumeration born stale (class ㊽).
+  assert.deepStrictEqual(validate({ match: 'a', keys: ['-command', 'content'] }), []);
+  for (const bad of [[], ['-'], [''], 'x', { bidon: ['a'] }, {}, { match: [] }]) {
     assert.ok(validate({ match: 'a', keys: bad }).length > 0, `accepted an unreadable form: ${JSON.stringify(bad)}`);
   }
 });
@@ -108,14 +129,35 @@ test('`keys` declared ALONE is refused — an inert key looks exactly like a wor
 });
 
 // ── RUNTIME ROBUSTNESS: the validator refuses, the engine must still not guess ──
-test('a MIXED list reaching the engine is read the MOST RESTRICTIVE way', () => {
-  // ⚠️ `validate` refuses this form, but a hand-edited config is never validated — and the
-  //    engine must then guess in the direction that does NOT inject. Read as a blacklist
-  //    (`some`), `["file_path","-command"]` would REMOVE the command and leave everything
-  //    else readable: strictly MORE injecting. Read as a whitelist (`every` = false), the
-  //    universe is exactly {file_path, -command} — nothing else is read.
-  const payload = { toolName: 'Bash', toolInput: { command: 'cd projet-x && ls' } };
-  assert.ok(!injecte(doc({ keys: { match: ['file_path', '-command'] } }), payload));
+test('the MIXED form ADJUSTS the default universe — minus the removals, plus the names', () => {
+  // 🔴 THIS CASE ASSERTED A REFUSAL UNTIL 20/08/2026, AND THE REFUSAL WAS THE HOLE.
+  //    "Everything the profile declares, PLUS this one key" was expressible only as a
+  //    hand-written enumeration of the whole universe — which stops following the profile
+  //    the day it gains a key, SILENTLY. That is class ㊽ (a list born stale), reintroduced
+  //    by a validator. The reading rule is one line and decidable by looking: a `-` present
+  //    ⇒ you ADJUST · no `-` ⇒ you REPLACE.
+  const payload = { toolName: 'Bash', toolInput: { command: 'grep projet-x notes.md', description: 'refonte projet-x' } };
+  assert.ok(injecte(doc({}), payload), 'PRECONDITION: the raw command carries the pattern');
+  assert.ok(!injecte(doc({ keys: { match: ['-command'] } }), payload), 'the removal applies');
+  assert.ok(injecte(doc({ keys: { match: ['-command', 'description'] } }), payload),
+    '…and the addition reaches a key the profile never declared, WITHOUT re-enumerating the rest');
+  // 🛑 THE ADDITION MUST NOT SMUGGLE THE REST BACK IN: `description` becomes readable, the
+  //    removed `command` stays removed. Otherwise "adjust" would silently mean "replace by
+  //    everything", i.e. an operator that widens when the author asked it to narrow.
+  assert.ok(!injecte(doc({ pattern: 'notes.md', keys: { match: ['-command', 'description'] } }), payload),
+    'what was removed stays removed');
+});
+
+test('ADJUST keeps the SURVIVING default keys — an addition never replaces the rest', () => {
+  // 🔴 THE MUTANT THIS KILLS: `triggerKeys` returning `d.ajouts` alone instead of
+  //    "default minus removals PLUS additions". It survived because the first mixed-form case
+  //    removed the ONLY default key of its axis — so "the rest" was empty and the two readings
+  //    agreed. **A capability is only measured by a case where it can differ**: here the removal
+  //    targets a path key that is NOT the one carrying the value, so a surviving default must
+  //    still be read. Same lesson as the domain that does not reach a capability.
+  const payload = { toolName: 'Edit', toolInput: { file_path: '/p/projet-x/a.js', description: 'note' } };
+  assert.ok(injecte(doc({ keys: { match: ['-remotePath', 'description'] } }), payload),
+    'file_path survives the removal of another path key, and must still trigger');
 });
 
 test('a non-object, non-list `keys` reaching the engine is inert, never a crash', () => {

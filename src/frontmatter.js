@@ -367,9 +367,14 @@ function keysListError(v, where) {
   if (!Array.isArray(v) || v.length === 0) return `\`${where}\` must be a NON-EMPTY list of key names`;
   if (!v.every(usefulString)) return `\`${where}\`: every entry must be a non-empty string`;
   const removals = v.filter((k) => k.startsWith(KEY_REMOVE));
-  if (removals.length !== 0 && removals.length !== v.length) {
-    return `\`${where}\`: MIXED forms. Choose — ["file_path"] = ONLY these keys · ["-command"] = every key EXCEPT these`;
-  }
+  // 🔴 THE MIXED FORM IS ADMITTED SINCE 20/08/2026, and the refusal was the real hole.
+  //    Reading rule, decidable by looking: **a `-` present ⇒ you ADJUST the default universe
+  //    (minus the removals, plus the bare names) · no `-` ⇒ you REPLACE it.** Before, "the
+  //    default plus this one key" could only be written by re-enumerating the whole
+  //    universe BY HAND — an enumeration, hence born stale: the day the profile gains a
+  //    key, every such entry silently stops following it (class ㊽, reintroduced by a
+  //    validator that meant well). The old argument ("nobody can decide what the author
+  //    meant") only held while the rule was unwritten; it is written now, in one line.
   if (removals.some((k) => k.slice(KEY_REMOVE.length).trim() === '')) {
     return `\`${where}\`: \`${KEY_REMOVE}\` alone names no key`;
   }

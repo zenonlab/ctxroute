@@ -99,6 +99,36 @@
    triggered), so `keys` would be accepted AND inert — the very defect that got `mcp:` removed
    from the file corpus. Proofs: 959 tests, **mutation 100.00 %** on both modules, doctor 14/14.
 
+3quater. ✅ **`commandCwd` — THE 9th DEFECT OF THE FAMILY, AND THE ONE THAT CLOSED THE FOUNDING
+   USE CASE (20/08/2026).** `keys` shipped correctly on 19/08 and **still could not do the thing it was
+   written for**. MEASURED on 28,703 real actions: `keys: {match:["-command"]}` on the 8 fleet skills
+   destroyed 2,281 injections of which **1,087 (47.7 %) were REAL WORK** — the July threshold refuses
+   that, so the operator was unusable exactly where it was needed.
+   🔑 **CAUSE, and it is the thesis of §0ter verbatim**: a shell command carries TWO FACTS under ONE
+   key — the raw TEXT (what the gesture SAYS) and the directory it DESIGNATES (`cd X && …`, where it
+   WORKS). While they shared a key, NO combination of operators could separate "I quote this project"
+   from "I work in it". The boolean base was complete and the distinction inexpressible: **the hole
+   was in the OBSERVABLE SET, not in the combinators — 9 out of 9 now.**
+   ✅ Fix = **declare the missing observable** (`harness-profile.commandCwdKey`, DATA), never a new
+   word: `keys` addresses it like any other key. `["-command"]` = stop reading what the command SAYS,
+   keep reading where it WORKS · `["-commandCwd"]` = the exact opposite. **Price re-measured: 749
+   injections lost, 41 of them real work (5.5 %, i.e. 0.2 % of all injections); 14 of 327
+   (session, skill) pairs lose the skill entirely.** Accepted, and DECLARED per entry — visible,
+   reversible, the author’s call.
+   📌 **THE DATA HALF IS SHIPPED TOO**: the 8 fleet entries carry `keys: {match:["-command"]}`. Proven
+   by real probe on the real config — a `grep netium` is silent, a `cd .../netium && ls` injects.
+   REFACTOR-PLAN 57 is CLOSED.
+3quinquies. ✅ **THE `keys` MIXED FORM IS ADMITTED (20/08/2026) — the refusal WAS a hole, and the
+   maintainer is the one who named it.** Rule, decidable by looking: **at least one `-` ⇒ you ADJUST
+   the default universe (minus the removals, plus the bare names) · no `-` ⇒ the list REPLACES it.**
+   Until then, "the default PLUS this one key" could only be written by re-enumerating the WHOLE
+   universe by hand — an enumeration, hence **born stale**: the day the profile gains a key, every
+   such entry silently stops following it. That is class ㊽, reintroduced by a validator that meant
+   well. 🛑 What stays refused is what NAMES NOTHING (`-` alone, empty list); an empty list is INERT,
+   never a whitelist of nothing. ⚠️ In ADJUST mode the filters keep ㊿ EXPLICITLY — a payload key
+   enters only if NAMED. Relying on the caller’s pre-filtered traversal was an invariant held
+   OUTSIDE the decision, and a mixed form re-traverses.
+
 3ter. 🔴 **THE `keys` DELIVERY OF 19/08 SHIPPED WITH FOUR HOLES — AND THE LESSON IS THE PROCESS, NOT THE HOLES.** The operator had a schema, a validator, a dedicated suite, **959 green tests and 100 % mutation**, and it was in **NO judge**: `language-spec.js` did not know it, so `spec-differential`'s 408,996 exhaustive cases enumerated a language it was not part of; `language-atoms` had no row for it; `language-completeness` did not generate it. **An operator outside the judges is an operator whose semantics nobody verifies** — and all four holes lived comfortably under the green.
    ⚠️ **① INERT ON THE SKILLS' `match` DIMENSION, 8 FLEET ENTRIES OUT OF 8.** `skillRules` REBUILDS its rule field by field, so any operator absent from that list is born inert — accepted by the schema, ignored by the engine. The other three dimensions (`rules`/`servers`/`tool`) pass the WHOLE entry to `shouldSkip` and were fine. That is class ㊴, one week later, in the same place, on the ONE form everybody uses.
    🔴 **①bis — AND THE WORST ONE: `loader.rulesOfDecl` DROPPED IT IN BOTH BRANCHES**, so `keys`

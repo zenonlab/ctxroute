@@ -335,7 +335,7 @@
                       "minProperties": 1
                     }
                   ],
-                  "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are refused: the danger is ambiguity, not the limit. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
+                  "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are ADMITTED and mean ADJUST: at least one '-' present => the default universe minus the removals plus the bare names; no '-' at all => the list REPLACES the universe. Refusing the mixed form (until 2026-08-20) left 'the default plus this one key' writable only as a hand-made enumeration of the whole universe, which stops following the profile the day it gains a key. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
                 }
               }
             }
@@ -471,7 +471,7 @@
                 "minProperties": 1
               }
             ],
-            "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are refused: the danger is ambiguity, not the limit. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
+            "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are ADMITTED and mean ADJUST: at least one '-' present => the default universe minus the removals plus the bare names; no '-' at all => the list REPLACES the universe. Refusing the mixed form (until 2026-08-20) left 'the default plus this one key' writable only as a hand-made enumeration of the whole universe, which stops following the profile the day it gains a key. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
           }
         }
       }

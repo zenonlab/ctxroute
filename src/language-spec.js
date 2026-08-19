@@ -109,27 +109,46 @@ const defautFiltre = (key) => !DEFAULT_PROFILE.contentKeys.includes(key);
 /** The declaration for ONE axis: flat list = the three axes, object = one per axis. */
 function declAxe(keysDecl, axis) {
   const d = Object(keysDecl) === keysDecl && !Array.isArray(keysDecl) ? keysDecl[axis] : keysDecl;
-  return Array.isArray(d) ? d : null;
+  // 🛑 An EMPTY list is INERT, never a whitelist of nothing — same decision as the engine.
+  return Array.isArray(d) && d.length > 0 ? d : null;
 }
+
+// 🛑 ONE RULE, DECIDABLE BY LOOKING (20/08/2026): at least one `-` ⇒ ADJUST the default
+//    universe (minus the removals, plus the bare names) · no `-` at all ⇒ REPLACE it.
+//    The mixed form used to be REFUSED, which made "the default, plus this one key"
+//    expressible only as a hand-written enumeration of the whole universe — an enumeration
+//    born stale, i.e. class ㊽ reintroduced by a validator.
+// ⚠️ WRITTEN AS A PARTITION, NOT AS THE ENGINE'S LOOP — and that is not a style choice.
+//    `jscpd` caught the first version as a CLONE of `sources/file.js`: the model had started to
+//    READ LIKE the engine, and a twin only proves that a copy agrees with itself. The whole
+//    value of this file is that it is derived from the INTENTION: "a declaration names keys to
+//    REMOVE and keys to ADD; naming at least one removal means you are adjusting the default."
+const estRetrait = (k) => String(k).startsWith(KEY_REMOVE);
+const parts = (decl) => ({
+  bannies: decl.filter(estRetrait).map((k) => String(k).slice(KEY_REMOVE.length)),
+  ajouts: decl.filter((k) => !estRetrait(k)).map(String),
+  ajuste: decl.some(estRetrait),
+});
 
 /** A predicate over the keys, for a FILTER axis (`scope`, `exclude`). */
 function garde(keysDecl, axis) {
   const decl = declAxe(keysDecl, axis);
   if (!decl) return defautFiltre;
-  const retraits = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
-  if (retraits.length !== decl.length) return (key) => decl.includes(key);
-  const bannies = retraits.map((k) => String(k).slice(KEY_REMOVE.length));
-  return (key) => defautFiltre(key) && !bannies.includes(key);
+  const { bannies, ajouts, ajuste } = parts(decl);
+  if (!ajuste) return (key) => ajouts.includes(key);
+  return (key) => ajouts.includes(key) || (defautFiltre(key) && !bannies.includes(key));
 }
 
 /** A LIST of keys, for the TRIGGER axis (its default universe IS a list). */
 function universeTrigger(keysDecl, defauts) {
   const decl = declAxe(keysDecl, 'match');
   if (!decl) return defauts;
-  const retraits = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
-  if (retraits.length !== decl.length) return decl;
-  const bannies = retraits.map((k) => String(k).slice(KEY_REMOVE.length));
-  return defauts.filter((k) => !bannies.includes(k));
+  const { bannies, ajouts, ajuste } = parts(decl);
+  if (!ajuste) return ajouts;
+  // ⚠️ No de-duplication: the universe is only ever consulted by membership, so a name listed
+  //    twice decides like a name listed once. The engine agrees, and Stryker is what proved the
+  //    filter decided nothing.
+  return defauts.filter((k) => !bannies.includes(k)).concat(ajouts);
 }
 
 /**
@@ -182,13 +201,24 @@ function candidates(toolName, toolInput, keysDecl) {
   //    by the tool's NAME — otherwise PowerShell and SSH stay invisible (18 % measured).
   // The commands come from the DECLARED KEYS, never from a hard-coded `command`:
   // that is what makes them narrowable by `keys` exactly like the paths.
-  for (const commande of keyValues(toolInput, clesCommandes, 20)) {
-      out.push(commande);
+  for (const commande of keyValues(toolInput, clesCommandes, 20)) out.push(commande);
+  // ⚠️ TWO FACTS, TWO UNIVERSES (20/08/2026). What a command SAYS (its raw text, above)
+  //    and WHERE it works (`cd X && …`, below) are DISTINCT observables, and the second
+  //    one has its own declared name in the profile. As long as they shared a key, a
+  //    language could not tell "I quote this project" from "I work in it" — the defect
+  //    was not in the combinators (∃/∀ were right) but in the universe they range over.
+  // ⚠️ It reads the FULL command list, NOT `clesCommandes`: dropping the raw half must
+  //    NOT drop the designated directory, otherwise the operator loses 47.7 % of real
+  //    work (measured on 28,703 actions) and becomes unusable — which is the whole point.
+  const clesCd = universeTrigger(keysDecl, [DEFAULT_PROFILE.commandCwdKey]);
+  if (clesCd.includes(DEFAULT_PROFILE.commandCwdKey)) {
+    for (const commande of keyValues(toolInput, DEFAULT_PROFILE.commandKeys, 20)) {
       const cd = commande.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
       if (cd) {
         const after = commande.split(/&&|;/).slice(1).join(' ');
         for (const word of after.trim().split(/\s+/)) out.push(cd[1] + '/' + word);
       }
+    }
   }
   return out;
 }

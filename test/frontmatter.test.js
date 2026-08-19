@@ -587,12 +587,20 @@ test('validate `keys`: both forms accepted, on the flat entry and per axis', () 
   assert.deepStrictEqual(validate({ match: 'a', scope: ['s'], keys: { match: ['a'], scope: ['-b'], exclude: ['c'] } }), []);
   assert.deepStrictEqual(validate({ rules: [{ pattern: 'p', keys: ['-command'] }] }), []);
 });
-test('validate `keys`: the MIXED form is REFUSED (ambiguity, never interpretation)', () => {
-  // 🛑 ["file_path", "-command"] means nothing a reader can decide: "only file_path minus
-  //    command" (contradictory) or "everything except command plus file_path" (redundant)?
-  const e = validate({ match: 'a', keys: ['file_path', '-command'] });
-  assert.ok(e.length > 0 && /MIXED forms/.test(e[0]), 'the mixed form must be named as such');
-  assert.ok(validate({ rules: [{ pattern: 'p', keys: ['a', '-b'] }] }).length > 0, 'same refusal per entry');
+test('validate `keys`: the MIXED form is ADMITTED — it ADJUSTS the default universe', () => {
+  // 🔴 REFUSED UNTIL 20/08/2026, AND THE REFUSAL WAS THE HOLE. It left "the default, plus
+  //    this key" writable only as a hand-made enumeration of the whole universe — a list
+  //    born stale that silently stops following the profile (class ㊽). The reading rule is
+  //    decidable by looking: a `-` present ⇒ ADJUST · no `-` ⇒ REPLACE.
+  assert.deepStrictEqual(validate({ match: 'a', keys: ['file_path', '-command'] }), []);
+  assert.deepStrictEqual(validate({ rules: [{ pattern: 'p', keys: ['a', '-b'] }] }), [], 'same admission per entry');
+  // 🔴 THE MUTANT THIS KILLS: the whole `if ('keys' in r)` block of the `rules` loop deleted.
+  //    It survived the moment the mixed form became legal, because the only per-entry case left
+  //    was one that now returns []. **A validation proven only by an ACCEPTANCE is not proven**:
+  //    what must be checked is that the entry is still LOOKED AT — so the per-entry check needs
+  //    a form that is still refused.
+  assert.ok(validate({ rules: [{ pattern: 'p', keys: ['-'] }] }).length > 0,
+    'a `keys` naming NOTHING is still refused INSIDE a rules entry, not only at the flat level');
 });
 test('validate `keys`: `-` alone names no key, and an empty list is not a whitelist of nothing', () => {
   assert.ok(/alone names no key/.test(validate({ match: 'a', keys: ['-'] })[0]));
