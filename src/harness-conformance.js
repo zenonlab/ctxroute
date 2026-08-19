@@ -48,7 +48,13 @@ function looksLikePath(v) {
 // that the profile does not know — the CANDIDATES for `pathKeys`, named once.
 function candidateKeys(toolInput, profil) {
   const p = profil || DEFAULT_PROFILE;
-  const known = new Set([...p.pathKeys, ...p.commandKeys, ...p.contentKeys, 'cwd']);
+  // ⚠️ NO literal `'cwd'` here: the profile DECLARES it as a path key since 19/08/2026, so
+  //    adding it by hand would be redundant — hence an EQUIVALENT MUTANT (removing it
+  //    changes no verdict). It survived in CI while the local run, using the incremental
+  //    Stryker cache, reported 100 %: this file had not changed, only `harness-profile.js`
+  //    had, and the cache did not invalidate its DEPENDENTS. 🛑 A dependency change makes
+  //    the incremental cache LIE — trust only a cacheless run, or the CI clone.
+  const known = new Set([...p.pathKeys, ...p.commandKeys, ...p.contentKeys]);
   const out = new Set();
   const visiter = (v, key, prof) => {
     if (typeof v === 'string') {
