@@ -292,6 +292,50 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "keys": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "match": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        },
+                        "scope": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        },
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        }
+                      },
+                      "minProperties": 1
+                    }
+                  ],
+                  "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are refused: the danger is ambiguity, not the limit. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
                 }
               }
             }

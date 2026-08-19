@@ -23,6 +23,9 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import lib from '../src/lib-pure.js';
+// ⚠️ The operator list comes FROM THE ENGINE, never a copy: that is what makes the
+//    shape-symmetry check cover an operator nobody has written yet.
+import { RULE_KEYS } from '../src/frontmatter.js';
 
 // Each ok(name, cond) = EXACTLY ONE vitest test (same name, same cond).
 function ok(name, cond) {
@@ -295,6 +298,31 @@ if (config) {
     !('anyOf' in scopeSkill) && !('type' in scopeSkill));
   ok('㊺① schema: `exclude` DOES NOT OFFER the grouped shape (∀¬ over a single universe, ㊼)',
     skills.properties.exclude.items.type === 'string' && !('oneOf' in skills.properties.exclude));
+
+  // 🔴 DERIVED, NOT NAMED (19/08/2026) — the check above named `scope`, so `keys` slipped
+  //    through: declared at SKILL level and ABSENT from `rules.items`, whose
+  //    `additionalProperties:false` therefore REFUSED a capability the engine HONOURS.
+  //    The mirror image of class ㊴: not "accepted and inert" but "works and forbidden" —
+  //    a config the author writes correctly, rejected by config-gate for no reason.
+  // ⚠️ The list comes from the SCHEMA ITSELF (whatever is declared at skill level and also
+  //    lives in RULE_KEYS), so the NEXT operator is covered without anyone editing this file.
+  {
+    // ⚠️ We compare the SHAPE, never the prose: a `description` present on one side only is
+    //    documentation, not a divergence — and a gate that reds on wording gets ignored, then
+    //    bypassed. Measured on the first run: `exclude` differed by its description ALONE.
+    const forme = (n) => JSON.stringify(n, (k, v) => (k === 'description' ? undefined : v));
+    const operateurs = RULE_KEYS.filter((k) => k !== 'pattern' && k in skills.properties);
+    ok('㊺① derivation is not empty (a filter that matches nothing would certify emptiness)',
+      operateurs.length >= 3);
+    for (const op of operateurs) {
+      const auSkill = skills.properties[op];
+      const parEntree = skills.properties.rules.items.properties[op];
+      ok(`㊺① schema: \`${op}\` is declared per-entry too (an operator refused there is a capability lost)`,
+        parEntree !== undefined);
+      ok(`㊺① schema: \`${op}\` declares the IDENTICAL shape at both levels (single source)`,
+        forme(auSkill) === forme(parEntree));
+    }
+  }
 
   // NEGATIVE-CHECK: the assertions above are not true "by accident".
   ok('㊺① NEGATIVE-CHECK — a 3-branch shape would be REFUSED by this gate',
