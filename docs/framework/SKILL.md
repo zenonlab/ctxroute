@@ -199,8 +199,8 @@ shipped outside anyway.** A rule that only prose guards is not a rule.
 
 ## 🛑 EXPRESSIVENESS IS A PRODUCT, AND ONLY ONE FACTOR WAS EVER MEASURED (19/08/2026)
 
-**THE EIGHT DEFECTS OF THIS PROJECT ARE THE SAME DEFECT.** ㊵ · 51 · ㊴ · ㊽ · ㊿ · 53bis · `keys` ·
-`cwd` — **eight out of eight are holes in WHAT THE LANGUAGE CAN SEE.** Not one is a hole in how it
+**EVERY DEFECT THIS PROJECT HAS EVER HAD IS THE SAME DEFECT.** ㊵ · 51 · ㊴ · ㊽ · ㊿ · 53bis · `keys` ·
+`cwd` · `commandCwd` — **ALL of them are holes in WHAT THE LANGUAGE CAN SEE.** Not one is a hole in how it
 COMBINES what it sees. Read that list again before designing anything here: it predicts where the
 next one will be.
 

@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 //
 // 🔴 WHY THIS FILE EXISTS (2026-08-19), and it is the most important line here:
-//    **THE EIGHT DEFECTS THIS PROJECT HAS EVER HAD ARE THE SAME DEFECT.**
+//    **EVERY DEFECT THIS PROJECT HAS EVER HAD IS THE SAME DEFECT.**
 //      ㊵    `scope` read one level      → nested params INVISIBLE
 //      51    same on the trigger          → a path in `args{}` INVISIBLE
 //      ㊴    `servers` dimension          → whole dimension UNOBSERVABLE by the filters
@@ -12,8 +12,11 @@
 //      53bis universe was a concatenation → a text visible that exists in NO param
 //      keys  key universe was a constant  → not declarable per entry
 //      cwd   pushed as a special case     → outside EVERY key universe
-//    Eight out of eight are holes in **WHAT THE LANGUAGE CAN SEE**. Not one is a
-//    hole in how it COMBINES what it sees.
+//      cmdCwd a shell command carried TWO facts under ONE key → "I quote this"
+//            and "I work here" were the SAME observable, hence inseparable
+//    ALL of them are holes in **WHAT THE LANGUAGE CAN SEE**. Not one is a
+//    hole in how it COMBINES what it sees. The list only ever grows on this axis —
+//    that is the prediction this file makes, and it has held nine times.
 //
 // 🛑 SO COMPLETENESS WAS MEASURED ON THE WRONG AXIS. `language-completeness`
 //    proves that over a FIXED universe every boolean function is expressible —

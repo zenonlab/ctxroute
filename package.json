@@ -63,6 +63,7 @@
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^26.2.0",
     "dependency-cruiser": "^18.1.0",
+    "eld": "^2.1.0",
     "fast-check": "^4.9.0",
     "jscpd": "^5.0.12",
     "typescript": "^7.0.2",
