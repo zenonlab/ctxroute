@@ -36,6 +36,10 @@
 //    `harness-profile.js`. No harness literal must COME BACK here — a
 //    gate derived from the profile refuses it. Porting = editing the profile, never this file.
 const { DEFAULT_PROFILE } = require('../harness-profile.js');
+// ⚠️ SINGLE SOURCE of the `keys` syntax: the validator REFUSES what this engine cannot
+//    read. Redefining the marker here would be a second truth, and the copy would drift the
+//    day the syntax moves — exactly the class this repo keeps closing.
+const { KEY_REMOVE } = require('../frontmatter.js');
 
 // ⚠️ norm() = normalization for a robust cross-platform `.includes()`.
 //   - Windows backslash → POSIX slash (otherwise scope "api-site/src" misses on "C:\api-site\src")
@@ -141,7 +145,7 @@ const MAX_SIZE = 262144;
  *   (a scope that fails without a visible reason is indistinguishable from an absent scope).
  */
 function textValues(value, depth, etat, key) {
-  const acc = etat || { chunks: [], size: 0, truncated: null };
+  const acc = etat || { chunks: [], keys: [], size: 0, truncated: null };
   // 🛑 ㊿ (15/08/2026) — THE PAYLOAD CONTENT IS OUT OF THE FILTERS' UNIVERSE. A param that
   //    CARRIES content (`old_string`, `content`…) DESIGNATES nothing: reading it
   //    made `scope`/`exclude` decide on the text one TYPES. **Measured: 55
@@ -158,6 +162,13 @@ function textValues(value, depth, etat, key) {
     if (acc.size + value.length > MAX_SIZE) acc.truncated = acc.truncated || 'size';
     else {
       acc.chunks.push(value);
+      // ⚠️ `keys` STAYS PARALLEL to `chunks` — same index, same value. It is what lets an
+      //    ENTRY narrow the universe by key (`keys:` operator) without traversing twice:
+      //    two traversals = two truths that diverge at the first change of bounds.
+      // ⚠️ At the root the key is `undefined` (a payload IS an object): a value reached
+      //    without ever passing through a named key belongs to no key, hence is kept by a
+      //    blacklist and dropped by a whitelist — which is exactly the meaning of both.
+      acc.keys.push(key);
       acc.size += value.length;
     }
   } else if (value !== null && typeof value === 'object') {
@@ -176,7 +187,12 @@ function textValues(value, depth, etat, key) {
   //    matched there straddling two values — a text that exists in no
   //    param. The field was DELETED (not kept "for diagnostics"):
   //    a dead field always ends up finding a reader.
-  return { chunks: acc.chunks, truncated: acc.truncated };
+  // ⚠️ `keys` travels WITH `chunks`, same index, same value — that is what lets the `keys`
+  //    operator narrow the universe without a SECOND traversal (two traversals = two truths
+  //    that diverge at the first change of bounds, the class this file keeps closing).
+  //    🛑 Never rebuild it on the caller's side from the payload: it would be that second
+  //    traversal, and it would silently disagree the day `contentKeys` moves.
+  return { chunks: acc.chunks, keys: acc.keys, truncated: acc.truncated };
 }
 
 // ⚠️⚠️ THE TWO OPERATORS ARE DUAL — SAME UNIVERSE, COMPLEMENTARY QUANTIFIERS.
@@ -232,6 +248,57 @@ function scopeGroups(scope) {
   return scope.map((g) => (Array.isArray(g) ? g : [g]));
 }
 
+// ⚠️ `keys` — THE OPERATOR THAT SAYS **WHERE** TO LOOK (the others say WHAT to look for).
+//    Two forms: a flat list = the same universe for the three axes · an object = ONE universe
+//    PER AXIS (`match`/`scope`/`exclude`). An axis left out keeps the default universe:
+//    omission is never a restriction, otherwise every existing rule would silently narrow.
+// 🛑 RETURNS A PREDICATE, never a filtered list: the caller owns its own traversal, and a
+//    second traversal here would be a second truth (the defect class this engine keeps
+//    closing). A predicate composes with anything, a list must be rebuilt everywhere.
+// ⚠️ UNDECLARED ⇒ `null` ⇒ the caller keeps its universe UNTOUCHED. Returning an
+//    "always true" predicate instead would look identical and cost a traversal for nothing —
+//    an equivalent mutant, avoided BY CONSTRUCTION (the doctrine of this file).
+// ⚠️ `keys` — THE OPERATOR THAT SAYS **WHERE** TO LOOK (the others say WHAT to look for).
+//    ONE decision, read two ways: the filters want a PREDICATE (they traverse values), the
+//    trigger wants a LIST (it asks `keyValues` for declared keys). Deciding twice is what this
+//    file spends its comments forbidding — the second copy drifts and nobody sees it.
+//
+// 🛑 A WHITELIST **REPLACES** the default universe, it does not intersect it: an entry may
+//    therefore make `match` read a key the profile never declared. That is the "zero blocking"
+//    rule — intersecting would let `keys` only ever SHRINK, and half the combinations would be
+//    unreachable. A BLACKLIST, symmetrically, removes from the default.
+// ⚠️ Undeclared ⇒ `null` ⇒ every caller keeps its universe UNTOUCHED. Returning a neutral
+//    object instead would look identical and cost work for nothing — an equivalent mutant,
+//    avoided BY CONSTRUCTION, which is the doctrine of this file.
+// ⚠️ `String(k)` and not a `typeof` guard: it keeps TOTALITY on a hand-edited config (a
+//    non-string never throws) in ONE expression, where a conjunction would leave a mutant
+//    that no test can distinguish.
+// ⚠️ `every` and NOT `some`: on a MIXED list — which `validate` refuses, but an unvalidated
+//    config can carry — the reading must be the MOST RESTRICTIVE. An engine that guesses must
+//    always guess in the direction that does NOT inject.
+function keyDecision(keysDecl, axis) {
+  const decl = Object(keysDecl) === keysDecl && !Array.isArray(keysDecl) ? keysDecl[axis] : keysDecl;
+  if (!Array.isArray(decl)) return null;
+  const removals = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
+  const enleve = removals.length === decl.length;
+  const bannies = removals.map((k) => String(k).slice(KEY_REMOVE.length));
+  return {
+    // BLACKLIST: every key EXCEPT those named — a value bound to no key survives it.
+    // WHITELIST: ONLY the keys named — a keyless value is therefore dropped, because
+    // "only file_path" cannot honestly keep a value that comes from nowhere.
+    garde: enleve ? (key) => !bannies.includes(key) : (key) => decl.includes(key),
+    enleve,
+    decl,
+  };
+}
+
+// The TRIGGER's shape: a list of key names, derived from the SAME decision.
+function triggerKeys(keysDecl, defauts) {
+  const d = keyDecision(keysDecl, 'match');
+  if (!d) return defauts;
+  return d.enleve ? defauts.filter(d.garde) : d.decl;
+}
+
 function shouldSkip(rule, context, toolInput) {
   // ⚠️ ONE SINGLE traversal of the payload for BOTH operators: two calls side
   //    by side = two truths that would diverge at the first change of bounds.
@@ -250,13 +317,27 @@ function shouldSkip(rule, context, toolInput) {
   //    (`language-spec.js::params`, per-value since its birth), and the
   //    exhaustive differential now carries the boundary form: going back
   //    to a `join` makes it TURN RED.
-  const valeurs = textValues(toolInput).chunks.map(norm);
+  const brut = textValues(toolInput);
+  // ⚠️ `keys` NARROWS the universe PER AXIS. Computed once per operator, on the SAME
+  //    traversal — the parallel `keys[]` is what makes that possible without a 2nd pass.
+  // ⚠️ The triggering CONTEXT carries no parameter key (it is a candidate path, not a
+  //    param): it is therefore treated like any keyless value — kept by a blacklist,
+  //    dropped by a whitelist. Exempting it would make `keys` lie by half.
+  const garde = (axis) => {
+    const d = keyDecision(rule.keys, axis);
+    return d ? brut.chunks.filter((_, i) => d.garde(brut.keys[i])).map(norm) : brut.chunks.map(norm);
+  };
+  const valeurs = garde('scope');
   if (Array.isArray(rule.exclude)) {
     // ⚠️ The CONTEXT remains a SEPARATE value, never glued to the params: glued,
     //    the end of the params and the start of the context fabricated a pattern that
     //    exists nowhere (`…ex` + `plain.js` = "explain.js"). Same class
     //    as the concatenation above, fixed before it.
-    const univers = valeurs.concat(norm(context));
+    // 🛑 `exclude` READS ITS OWN AXIS, never `scope`'s. Reusing the list computed above
+    //    was a REAL bug caught by the test the same hour: the two axes are declared
+    //    separately precisely so they can differ, and sharing one universe made the
+    //    `exclude` axis silently inert — an operator that accepts a value and ignores it.
+    const univers = garde('exclude').concat(norm(context));
     if (rule.exclude.some((ex) => univers.some((u) => u.includes(norm(ex))))) return true;
   }
   // ⚠️ `scope` absent OR EMPTY array = "no filter": without the length
@@ -334,11 +415,24 @@ function matchingDocs(rules, payload) {
     if (!rule || typeof rule.pattern !== 'string') continue;
     const normPattern = norm(rule.pattern);
 
-    for (const fp of filePaths) {
+    // ⚠️ `keys.match` NARROWS (or WIDENS) what the trigger reads, FOR THIS RULE ONLY. The
+    //    universes are recomputed ONLY when the rule declares `keys` — the 852 rules of the
+    //    fleet keep the shared computation, so this operator costs them exactly nothing.
+    // ⚠️ ONE axis, TWO sets: `match` reads paths AND commands. A whitelist naming only a path
+    //    key therefore leaves NO command key — which is precisely how one writes "trigger on
+    //    the file, never on the text of a command that merely mentions it".
+    const cheminsR = rule.keys
+      ? extractFilePaths(toolName, toolInput, { ...DEFAULT_PROFILE, pathKeys: triggerKeys(rule.keys, DEFAULT_PROFILE.pathKeys) })
+      : filePaths;
+    const commandesR = rule.keys
+      ? keyValues(toolInput, triggerKeys(rule.keys, DEFAULT_PROFILE.commandKeys), MAX_DEPTH)
+      : commandes;
+
+    for (const fp of cheminsR) {
       if (norm(fp).includes(normPattern) && !shouldSkip(rule, fp, toolInput)) add(rule);
     }
 
-    for (const commande of commandes) {
+    for (const commande of commandesR) {
       for (const cand of bashCandidates(commande)) {
         if (norm(cand).includes(normPattern) && !shouldSkip(rule, cand, toolInput)) add(rule);
       }

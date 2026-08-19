@@ -32,8 +32,8 @@ FACTS, never on guessed intent).
 
 ## Vocabulary (CLOSED — one concept, one word, everywhere)
 <!-- AUTO:vocabulary -->
-File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
-`rules` entry keys: `pattern` · `scope` · `exclude` · `rank`
+File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
+`rules` entry keys: `pattern` · `scope` · `exclude` · `keys` · `rank`
 Triggers: `match` · `rules` · `tool` · tool wildcard `*` · `inject: never` disarms
 Unknown key ⇒ doc REJECTED (never silently ignored).
 <!-- /AUTO -->

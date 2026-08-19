@@ -22,6 +22,11 @@ export default defineConfig({
       'test/canary.test.js',
       'test/leak-pure.test.js',
       'test/sources-file.test.js',
+      // ⚠️ `keys` operator (19/08/2026): DETERMINISTIC suite covering sources/file.js.
+      //    Absent from this list its cases exist but Stryker never runs them ⇒ the
+      //    operator's branches sit at NoCoverage while the fleet suite is green —
+      //    a module believed mutated and measured on nothing (62 survivors, measured).
+      'test/keys-operator.test.js',
       // ⚠️ The judge of `language-spec.js` is the EXHAUSTIVE differential: a mutant
       //    of the spec must be killed by the confrontation with the engine. It is
       //    deterministic (total enumeration, zero randomness) — it belongs here.

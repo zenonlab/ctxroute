@@ -6,8 +6,8 @@
 
 ## Vocabulary (CLOSED)
 <!-- AUTO:vocabulary -->
-File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
-`rules` entry keys: `pattern` · `scope` · `exclude` · `rank`
+File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
+`rules` entry keys: `pattern` · `scope` · `exclude` · `keys` · `rank`
 Triggers: `match` · `rules` · `tool` · tool wildcard `*` · `inject: never` disarms
 Unknown key ⇒ doc REJECTED (never silently ignored).
 <!-- /AUTO -->
@@ -26,6 +26,44 @@ Beyond that the value is truncated ⇒ `scope` goes mute — and `explain.js` sa
 <!-- /AUTO -->
 
 ✅ **EXPRESSIVENESS MEASURED, and above all CHARACTERIZED** (`language-completeness.test.js`, exhaustive enumeration on the real engine, 2026-08-14): the expressible set is **EXACTLY `{f | f(empty action) = false}`** — 0 missing, 0 extra. ⇒ **the language is COMPLETE**, up to a single STRUCTURAL constraint: *nothing injects on an action that contains nothing*, which is the project's load-bearing wall ("we only inject on FACTS"), not a hole. `A∧B∧C` ✅ (㊺①) · "not if ANOTHER param contains X" ✅ (㊼). 🛑 NEVER replace this line with a SENTENCE about expressiveness: a machine measures it, and it has already refuted a promise that lived for 3 weeks.
+
+## Choosing the operator (judgement — the facts are above and in `explain.js`)
+
+**`keys` says WHERE the others look.** Every other operator asks WHAT to look for; this one
+chooses which parameter keys of the gesture are even visible. Until 2026-08-19 that universe was
+a single global constant, identical for the whole fleet — an entry could not say "for me, ignore
+this parameter", and naming a project inside a shell command injected its skill exactly like
+working in it. Flat list = the same universe for the three axes; object = one per axis. A name
+prefixed with `-` REMOVES a key; without the prefix the list REPLACES the universe, so an entry
+may also read a key the profile never declared.
+
+⚠️ It NARROWS, it never triggers: declared alone it is refused, like `scope`. And what the
+validator refuses is the AMBIGUOUS (a list half whitelist, half blacklist), never the unusual —
+giving `scope` and `exclude` different universes is allowed, visible in the entry, and yours to
+own.
+
+Reach for a **PLACE** (`match`) only when the knowledge belongs to a file. For an **ACTION**, `match`
+is the wrong door: it never sees what an MCP tool or a non-POSIX shell does. The operator that sees
+every parameter is `scope`, and it never fires alone — so pair it with a trigger that depends on no
+path. Enumerating tools stays possible but goes silent the day a shell or an MCP is added.
+
+⚠️ **A skill is filtered by the SAME words as a doc** — `scope`/`exclude` apply to it too, on its
+file dimension AND its `servers` one. The line above lists what TRIGGERS a skill; it does not list
+what NARROWS it. Not knowing this makes a perimeter look unfixable when it is merely unwritten.
+
+⚠️ **There is also a global, per-TARGET filter** (`filterMode`/`filterList` in the config, with a
+`defaults.{source}` stage) — "never inject on these tools/servers" is a config question, not a
+frontmatter one. Look there before concluding that a perimeter cannot be narrowed.
+
+🛑 **A CITATION IS AN ACTION.** Naming a project inside a shell command — a commit message, a
+heredoc, a path passed to a script — triggers its skill exactly like working in it: `match` reads
+the command's TEXT, not the intent. Measured again on 2026-08-19: writing the name into a memory
+file injected nothing, while the shell command that wrote it injected the whole skill.
+⇒ Before blaming the engine, run `explain.js` on the REAL payload: the trigger is often not the
+action you suspect, and an exclusion aimed at the wrong one changes nothing.
+⚠️ And an exclusion that separates an INTENT (a verb, a way of phrasing a command) rather than a
+PLACE has already been measured harmful here: it silenced agents genuinely working in the repo.
+Prefer what a path can decide; measure any exclusion on REAL actions before keeping it.
 
 ## Cadence
 <!-- AUTO:cadence -->

@@ -10,12 +10,31 @@
       "additionalProperties": false,
       "description": "Cadence settings — SAME vocabulary as an entry (anti-synonym law: one concept = one word, whatever the stage). All keys optional.",
       "properties": {
-        "mode": { "enum": ["dumb", "once", "smart"] },
-        "threshold": { "type": "integer", "minimum": 1 },
-        "driftUnit": { "enum": ["tool", "turn"] },
+        "mode": {
+          "enum": [
+            "dumb",
+            "once",
+            "smart"
+          ]
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "driftUnit": {
+          "enum": [
+            "tool",
+            "turn"
+          ]
+        },
         "note": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "AUTHOR COMMENT — never read by the engine. Here: 'why this default for this WHOLE category'. ⚠️ ADDED on 05/08/2026 by the vocabulary-symmetry gate, which found the gap on its first run: `note` existed in file docs, MCP docs and skill entries, but NOT in `defaults.{source}` — an omission, not a decision. Symmetry is the DEFAULT; every exception must be justified in writing."
         },
         "enforce": {
@@ -23,19 +42,27 @@
           "description": "REFUSE the action instead of informing (05/08/2026). ⚠️ Only meaningful for a category whose docs are ALL in `mode: once` — the engine honors `enforce` only on an EFFECTIVE `once` mode (anti-loop guarantee in gate.js), otherwise it informs. Setting `enforce` on a whole category is DISCOURAGED: every first action of a session would be refused, and a system people endure ends up unplugged. Reserved for irreversible actions, doc by doc. An entry can opt out with `enforce: false`."
         },
         "filterMode": {
-          "enum": ["none", "whitelist", "blacklist"],
+          "enum": [
+            "none",
+            "whitelist",
+            "blacklist"
+          ],
           "description": "PER-TARGET FILTER, for THIS doc category (52, 15/08/2026) — SAME words, same meaning as the global one. A `\"none\"` declared here UNSUBSCRIBES the category from a global filter (mirror of the explicit `enforce: false` — without it the stage could not be opted out of). The filterMode+filterList pair cascades TOGETHER: the stage that provides the mode provides its list."
         },
         "filterList": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "TARGETS of this category's filterMode: MCP server, exact tool name, or wildcard \"*\" (52, 15/08/2026)."
         }
       }
     }
   },
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "enabled": {
       "type": "boolean",
       "description": "GLOBAL switch — false cuts EVERYTHING (injection AND tracking). Distinct from showNotification."
@@ -45,7 +72,11 @@
       "description": "Controls ONLY the visual 📄 badge — false hides the badge, the real injection continues."
     },
     "mode": {
-      "enum": ["dumb", "once", "smart"],
+      "enum": [
+        "dumb",
+        "once",
+        "smart"
+      ],
       "description": "dumb = re-injects on every call (debug only, never in a shipped config — gated). once = 1st call then silence until compaction. smart = once + re-injection after N calls to other tools."
     },
     "defaultThreshold": {
@@ -54,28 +85,41 @@
       "description": "The N of smart mode: number of calls to OTHER tools before re-injection."
     },
     "defaultDriftUnit": {
-      "enum": ["tool", "turn"],
+      "enum": [
+        "tool",
+        "turn"
+      ],
       "description": "GLOBAL unit of the smart counter (18/07/2026): tool = tool calls (framework default, historical behavior); turn = conversation turns (counter fed by turn-count.js on UserPromptSubmit). Cascade: entry driftUnit (doc frontmatter / skill entry) > defaultDriftUnit > framework default 'tool'. Degenerate outside smart (dumb=0, once=∞)."
     },
     "budgetInjection": {
       "type": "integer",
       "minimum": 200,
       "description": "Emission budget of one injection, in CHARACTERS (31/07/2026). Every harness bounds the size of an injection and FILES the overflow away without telling the producer — the agent then receives an intro while believing it holds the whole contract. This budget keeps the output under that wall: whatever does not fit is ANNOUNCED (name + path), never silently lost. Cascade: framework default (budget.js) > harness limit declared by the shell > this key. ⚠️ This key can only REDUCE the budget (Math.min): the harness limit is physical, exceeding it would restore silent truncation at the very moment you think you are loosening the constraint.",
-      "examples": [8000]
+      "examples": [
+        8000
+      ]
     },
     "frames": {
       "type": "integer",
       "minimum": 1,
       "description": "NUMBER OF FRAMES declared for ONE action — the framework's BANDWIDTH (07/08/2026). Default 12. Capacity of an action = frames × (budgetInjection − envelope); measured 07/08/2026: 12 × 7,661 = 91,932 characters, for a real worst-case load of 65,265 c (71%). What overflows is NEVER lost (emission queue) but lands on the NEXT action — so the agent will have acted on partial knowledge. ⚠️ THIS KEY DRIVES NOTHING AT RUNTIME: the harness launches exactly the processes declared in ITS wiring (settings.json), cold, and no extra frame can be created during a call. It is the SOURCE OF TRUTH that `doctor.js --settings` confronts with the real wiring — two places for one number diverge silently, defect MEASURED on 05/08/2026 (a skill delivered over 11 actions instead of 1, 995 green tests). ⚠️ RAISING IT COSTS: each frame is a process launched on EVERY tool call, even empty (~330 ms measured) — 12 ⇒ ~4 s, 50 ⇒ ~17 s. Don't inflate 'just in case'; the overflow alarm says when it is justified.",
-      "examples": [12]
+      "examples": [
+        12
+      ]
     },
     "filterMode": {
-      "enum": ["none", "whitelist", "blacklist"],
+      "enum": [
+        "none",
+        "whitelist",
+        "blacklist"
+      ],
       "description": "GLOBAL PER-TARGET FILTER (generalized 15/08/2026, work item 52 — it used to target MCP servers only: class ㊴). whitelist = the framework only injects on actions whose target is in filterList. blacklist = never on those targets ('NEVER inject on our production tools'). An excluded target still counts as 'foreign' for the other docs' counters. SINGLE application point = gate.js, exclusion OBSERVABLE (badge + explain.js). Also tunable PER CATEGORY via defaults.{source}.filterMode — a `\"none\"` declared there UNSUBSCRIBES the category from a global filter."
     },
     "filterList": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "TARGETS of the filterMode: MCP SERVER name (\"stripe\" — historical semantics), exact TOOL name (\"Bash\", \"mcp__stripe__pay\"), or wildcard \"*\" (52, 15/08/2026). The filterMode+filterList pair cascades TOGETHER: the stage that provides the mode provides its list."
     },
     "servers": {
@@ -94,7 +138,9 @@
     },
     "skillsWithoutPerimeter": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "SKILLS DELIBERATELY WITHOUT A PERIMETER + SWITCH of the zero-silence discipline (19/07/2026 — mirror of `inject: never`). EXPLICIT OPT-IN: the presence of THIS key (even []) activates the reverse direction of skill-registry-gate; absent = no exhaustiveness required (using `skills` imposes NOTHING — a language never imposes a policy). Every harness skill MUST be EITHER registered in `skills` (auto-injection by perimeter) OR listed HERE (reference/on-demand, manual invocation). A skill in NEITHER list = RED (skill-registry-gate, reverse direction) — a FORGOTTEN perimeter and a deliberately silent skill are indistinguishable without this declaration.",
       "uniqueItems": true
     },
@@ -103,10 +149,22 @@
       "additionalProperties": false,
       "description": "PER-SOURCE DEFAULTS — 3rd stage of the cascade (04/08/2026). Generalizes the old `skillDefaults`, which offered that stage only to skills: between the global ('the whole corpus') and the entry ('this very doc'), 'all docs of THIS category' was missing. Full cascade, 4 stages: entry (frontmatter/registry) > defaults.{source} > global (mode/defaultThreshold/defaultDriftUnit) > FRAMEWORK default. TOTAL fallback at every stage: absent key or invalid value ⇒ we go down, never an error. EVERYTHING is optional — `defaults` absent = previous behavior, identical. ⚠️ DELIBERATE ASYMMETRY, do not 'fix' it: the `skill` source does NOT consult the global (its framework default is `once`, the docs' is `smart`) — a skill is project knowledge, a doc is an action reminder. Making them uniform would change the behavior of all skills the moment a global config is set. ⚠️ NO `session` key HERE, and it is not an omission: docs/session/ docs are delivered by session-inject.js (SessionStart/PostCompact), which consults NEITHER gate.decide NOR any cadence — they inject once per context, by construction. A `session` key would be ACCEPTED and INERT, i.e. the false green this repo killed on 31/07 (`mcp:` in a docs/ doc). The keys admitted here are exactly the `id`s of the source-adapters.js registry — sealed by a gate.",
       "properties": {
-        "file": { "$ref": "#/definitions/cadence", "description": "Default for docs triggered by PATH (frontmatter match/rules)." },
-        "mcp": { "$ref": "#/definitions/cadence", "description": "Default for docs/mcp/{server}[/{tool}].md docs." },
-        "skill": { "$ref": "#/definitions/cadence", "description": "Default for perimeter skills (ex-`skillDefaults`, same semantics)." },
-        "tool": { "$ref": "#/definitions/cadence", "description": "Default for docs triggered by a native TOOL NAME (frontmatter tool:)." }
+        "file": {
+          "$ref": "#/definitions/cadence",
+          "description": "Default for docs triggered by PATH (frontmatter match/rules)."
+        },
+        "mcp": {
+          "$ref": "#/definitions/cadence",
+          "description": "Default for docs/mcp/{server}[/{tool}].md docs."
+        },
+        "skill": {
+          "$ref": "#/definitions/cadence",
+          "description": "Default for perimeter skills (ex-`skillDefaults`, same semantics)."
+        },
+        "tool": {
+          "$ref": "#/definitions/cadence",
+          "description": "Default for docs triggered by a native TOOL NAME (frontmatter tool:)."
+        }
       }
     },
     "skills": {
@@ -116,23 +174,74 @@
         "type": "object",
         "additionalProperties": false,
         "anyOf": [
-          { "required": ["match"] },
-          { "required": ["rules"] },
-          { "required": ["servers"] },
-          { "required": ["tool"] }
+          {
+            "required": [
+              "match"
+            ]
+          },
+          {
+            "required": [
+              "rules"
+            ]
+          },
+          {
+            "required": [
+              "servers"
+            ]
+          },
+          {
+            "required": [
+              "tool"
+            ]
+          }
         ],
         "not": {
           "anyOf": [
-            { "required": ["rules", "match"] },
-            { "required": ["rules", "scope"] },
-            { "required": ["rules", "exclude"] },
+            {
+              "required": [
+                "rules",
+                "match"
+              ]
+            },
+            {
+              "required": [
+                "rules",
+                "scope"
+              ]
+            },
+            {
+              "required": [
+                "rules",
+                "exclude"
+              ]
+            },
             {
               "description": "BARE WILDCARD FORBIDDEN (EXACT parity with frontmatter.validate): `tool: [\"*\"]` without `scope` or `exclude` would inject the WHOLE skill on EVERY tool call. The wildcard exists to say 'whatever the tool, WHEN this' — the WHEN is mandatory.",
-              "required": ["tool"],
-              "properties": { "tool": { "contains": { "const": "*" } } },
+              "required": [
+                "tool"
+              ],
+              "properties": {
+                "tool": {
+                  "contains": {
+                    "const": "*"
+                  }
+                }
+              },
               "allOf": [
-                { "not": { "required": ["scope"] } },
-                { "not": { "required": ["exclude"] } }
+                {
+                  "not": {
+                    "required": [
+                      "scope"
+                    ]
+                  }
+                },
+                {
+                  "not": {
+                    "required": [
+                      "exclude"
+                    ]
+                  }
+                }
               ]
             }
           ]
@@ -145,33 +254,77 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["pattern"],
+              "required": [
+                "pattern"
+              ],
               "properties": {
-                "pattern": { "type": "string", "minLength": 1 },
-                "scope": { "oneOf": [ { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }, { "type": "array", "items": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }, "minItems": 1 } ], "description": "FLAT FORM = OR (inherited, untouched) - GROUPED FORM = AND of ORs (㊺①, 14/08/2026): [[\"a\"],[\"b\"]] = a AND b, [[\"a\",\"b\"],[\"c\"]] = (a OR b) AND c. EXACT MIRROR of frontmatter.js::formeScopeErreur - two form declarations that diverge = class ㊴, invisible to a gate that probes the PRESENCE of a key. 🛑 MIXED forms REFUSED (oneOf): the danger of this extension is AMBIGUITY, not the limit - an author writing [\"a\",\"b\"] meaning AND gets an OR, hence a WIDER rule, SILENTLY."},
-                "exclude": { "type": "array", "items": { "type": "string" } }
+                "pattern": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scope": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1
+                      },
+                      "minItems": 1
+                    }
+                  ],
+                  "description": "FLAT FORM = OR (inherited, untouched) - GROUPED FORM = AND of ORs (㊺①, 14/08/2026): [[\"a\"],[\"b\"]] = a AND b, [[\"a\",\"b\"],[\"c\"]] = (a OR b) AND c. EXACT MIRROR of frontmatter.js::formeScopeErreur - two form declarations that diverge = class ㊴, invisible to a gate that probes the PRESENCE of a key. 🛑 MIXED forms REFUSED (oneOf): the danger of this extension is AMBIGUITY, not the limit - an author writing [\"a\",\"b\"] meaning AND gets an OR, hence a WIDER rule, SILENTLY."
+                },
+                "exclude": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
           },
           "match": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "minItems": 1,
             "description": "FILE DIMENSION — substring patterns (same rules as file match): when a tool param contains one, the skill injects. Pick strings DISTINCTIVE of the project (over-genericity = over-injection)."
           },
           "servers": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "MCP DIMENSION, 3 GRAINS (18/07/2026, same levels as MCP docs): \"infra\" = any tool of the server · \"gworkspace/send_mail\" = THAT precise tool (suffix of mcp__{server}__{tool}) · \"odoo/create_invoice\" = THAT sub-tool (via servers.{server}.subToolParam). Lib primitives reused (serverName/toolSuffix/getByPath — zero new matching). A project is worked through files AND through MCP — the 2 dimensions are a UNION."
           },
           "tool": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "minItems": 1,
             "description": "TOOL DIMENSION (㊴, 12/08/2026) — EXACT tool name (===, never a substring) + wildcard \"*\". SAME word, SAME meaning as the docs' frontmatter `tool:`: no vocabulary created, we extend the usage to a source that lacked it. This is what finally lets a skill react to an ACTION (with `scope`, which sees ALL params) and not only to a PLACE. A skill could NOT react to a parameter's CONTENT: real measured cost = a client email drafted without its folder."
           },
           "mode": {
-            "enum": ["dumb", "once", "smart"],
+            "enum": [
+              "dumb",
+              "once",
+              "smart"
+            ],
             "description": "Cadence (default once). Skills = a NEW source with no legacy parity → once/smart FREE from day one (unlike file docs, held at dumb until the Codex port)."
           },
           "threshold": {
@@ -180,7 +333,10 @@
             "description": "The N of smart mode for this skill."
           },
           "driftUnit": {
-            "enum": ["tool", "turn"],
+            "enum": [
+              "tool",
+              "turn"
+            ],
             "description": "Unit of the smart counter for THIS skill: tool (tool calls) or turn (conversation turns). Last word of the cascade."
           },
           "enforce": {
@@ -188,16 +344,91 @@
             "description": "REFUSE the action instead of informing (05/08/2026) — SAME word, SAME meaning as the docs' frontmatter (anti-synonym law). ⚠️ Only effective with an EFFECTIVE `once` mode (skills' framework default): gate.js NEVER honors `enforce` on `dumb`/`smart`, otherwise the blocked agent retries and gets re-blocked ENDLESSLY. An explicit `false` CANCELS the `defaults.skill` inheritance."
           },
           "note": {
-            "type": ["string", "array"],
-            "items": { "type": "string" },
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
             "description": "AUTHOR COMMENT (04/08/2026) — the ONLY field the engine NEVER reads. Addressee = whoever comes to MODIFY this entry ('why this mode', 'why this scope', 're-check after such version'), not the agent that acts. Exact mirror of the docs' frontmatter `note` key: one concept = one word, whatever the corpus. 🛑 BOUND: NEVER the why of an INVARIANT — that one stays in the body, visible to the acting agent; an invariant deprived of its reason drifts."
           },
           "exclude": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Patterns to reject (matched on the current path/command) — homonyms (node_modules, dist...)."
           },
-          "scope": { "oneOf": [ { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }, { "type": "array", "items": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }, "minItems": 1 } ], "description": "FLAT FORM = OR (inherited, untouched) - GROUPED FORM = AND of ORs (㊺①, 14/08/2026): [[\"a\"],[\"b\"]] = a AND b, [[\"a\",\"b\"],[\"c\"]] = (a OR b) AND c. EXACT MIRROR of frontmatter.js::formeScopeErreur - two form declarations that diverge = class ㊴, invisible to a gate that probes the PRESENCE of a key. 🛑 MIXED forms REFUSED (oneOf): the danger of this extension is AMBIGUITY, not the limit - an author writing [\"a\",\"b\"] meaning AND gets an OR, hence a WIDER rule, SILENTLY."}
+          "scope": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "minItems": 1
+              }
+            ],
+            "description": "FLAT FORM = OR (inherited, untouched) - GROUPED FORM = AND of ORs (㊺①, 14/08/2026): [[\"a\"],[\"b\"]] = a AND b, [[\"a\",\"b\"],[\"c\"]] = (a OR b) AND c. EXACT MIRROR of frontmatter.js::formeScopeErreur - two form declarations that diverge = class ㊴, invisible to a gate that probes the PRESENCE of a key. 🛑 MIXED forms REFUSED (oneOf): the danger of this extension is AMBIGUITY, not the limit - an author writing [\"a\",\"b\"] meaning AND gets an OR, hence a WIDER rule, SILENTLY."
+          },
+          "keys": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "match": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "scope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  }
+                },
+                "minProperties": 1
+              }
+            ],
+            "description": "WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blacklist); without the prefix the list REPLACES it (whitelist), which is what allows an entry to read a key the harness profile never declared. MIXED forms are refused: the danger is ambiguity, not the limit. MIRROR of frontmatter.validate — the two declarations must not diverge (class 34: a gate probing a key's PRESENCE never sees its FORM)."
+          }
         }
       }
     }

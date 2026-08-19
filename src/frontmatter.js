@@ -249,7 +249,20 @@ const DRIFT_UNITS = ['tool', 'turn'];
 // ⚠️ The engine must NEVER depend on it: no decision, no matching,
 //    no sorting. The day a source read it, it would be a config field
 //    disguised as a comment — hence a 2nd truth.
-const KNOWN = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce'];
+const KNOWN = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce'];
+
+// ⚠️ `keys` — WHICH PARAMETER KEYS THIS ENTRY IS ALLOWED TO SEE.
+//    The other operators say WHAT to look for; this one says WHERE to look. Until now that
+//    universe was a GLOBAL constant (`harness-profile.js`: pathKeys/commandKeys/contentKeys),
+//    hence identical for every doc of the fleet — an entry could not say "for me, ignore
+//    this parameter". `contentKeys` proved the need at the global scale (55 exclusions were
+//    decided by CONTENT alone); this is the same need, expressed per entry.
+// 🛑 ONE WORD, TWO FORMS — never two words (anti-synonym law §8), exactly like `scope` (㊺①):
+//    ["file_path"]  = WHITELIST — the universe is REDUCED to these keys
+//    ["-command"]   = BLACKLIST — these keys are REMOVED from the universe
+//    MIXED = REFUSED. The danger of this extension was never the limit, it is AMBIGUITY:
+//    whoever writes ["file_path", "-command"] means something no reader can decide.
+const KEY_REMOVE = '-';
 
 // ⚠️ `inject: never` — SILENCE BECOMES A DECLARATION, never an oversight.
 //    MEASURED on 15/07/2026: 14 docs out of 306 are targeted by NO rule.
@@ -337,7 +350,61 @@ function isMatchDecl(v) {
 //    whose rules are scattered through the JSON among those of OTHER docs — a group
 //    rank would invert the evaluation order, 1 real divergence caught by the
 //    loader differential). Each rule keeps its exact JSON index.
-const RULE_KEYS = ['pattern', 'scope', 'exclude', 'rank'];
+const RULE_KEYS = ['pattern', 'scope', 'exclude', 'keys', 'rank'];
+
+// ⚠️ SHAPE OF `keys`, VALIDATED IN A SINGLE PLACE — consumed by the FLAT frontmatter AND by
+//    the `rules` entries, exactly like `scopeFormError`. Two shape declarations diverge
+//    silently (class ㊴: a gate probing a key's PRESENCE never sees its FORM).
+// 🛑 MIXED REFUSED: `["file_path", "-command"]` is not "interpreted", it is REFUSED — nobody
+//    can decide whether the author meant "only file_path, minus command" (contradictory) or
+//    "everything except command, plus file_path" (redundant). An engine that guesses here
+//    would guess in the direction that CHANGES what is injected, silently.
+// ⚠️ An EMPTY list is refused too: a whitelist of nothing makes the entry mute FOREVER, and a
+//    mute rule is indistinguishable from a forgotten one — the very defect this file kills.
+const KEY_AXES = ['match', 'scope', 'exclude'];
+
+function keysListError(v, where) {
+  if (!Array.isArray(v) || v.length === 0) return `\`${where}\` must be a NON-EMPTY list of key names`;
+  if (!v.every(usefulString)) return `\`${where}\`: every entry must be a non-empty string`;
+  const removals = v.filter((k) => k.startsWith(KEY_REMOVE));
+  if (removals.length !== 0 && removals.length !== v.length) {
+    return `\`${where}\`: MIXED forms. Choose — ["file_path"] = ONLY these keys · ["-command"] = every key EXCEPT these`;
+  }
+  if (removals.some((k) => k.slice(KEY_REMOVE.length).trim() === '')) {
+    return `\`${where}\`: \`${KEY_REMOVE}\` alone names no key`;
+  }
+  return null;
+}
+
+// ⚠️ TWO FORMS, and the second is what makes it MOLECULAR:
+//    ["-command"]                     → the SHORTCUT: the same universe for all three axes
+//    {match: [...], scope: [...]}     → PER AXIS: each operator gets its own universe
+//    An axis left out keeps the profile's default universe — omission is never a restriction.
+// 🛑 WHAT IS REFUSED IS THE AMBIGUOUS, NEVER THE UNUSUAL. A list that is half whitelist and
+//    half blacklist expresses nothing a reader can decide; every other combination — however
+//    exotic — is the author's to make. The language does not protect anyone from their intent.
+// ⚠️ KNOWN CONSEQUENCE OF SPLITTING `scope` AND `exclude` (㊼): they are duals over ONE
+//    universe (`¬(∃c : m ⊑ c) ≡ ∀c : m ⋢ c`). Give them DIFFERENT universes and `exclude`
+//    stops being a true "for all" — it becomes bypassable by the way a command is written,
+//    which is the 53 KB leak of 14/08/2026. Doing it deliberately is legitimate and VISIBLE
+//    in the entry; doing it by accident is what the engine used to do, silently. That is the
+//    whole difference, and it is why this is a WARNING in the code and not a refusal.
+function keysFormError(v, where) {
+  if (Array.isArray(v)) return keysListError(v, where);
+  // ⚠️ `Object(v) !== v` = "it is NOT an object", in ONE expression — same form as the engine
+  //    (`sources/file.js`), same reason: `!v || typeof v !== 'object'` carries a conjunction
+  //    whose halves no test can separate once arrays are already out, hence eternal survivors.
+  //    Equivalence is eliminated BY CONSTRUCTION here, never tested.
+  if (Object(v) !== v) return `\`${where}\` must be a list [a, b] or an object {${KEY_AXES.join(', ')}}`;
+  const axes = Object.keys(v);
+  if (axes.length === 0) return `\`${where}\`: empty object — name at least one axis (${KEY_AXES.join(', ')})`;
+  const inconnu = axes.find((axis) => !KEY_AXES.includes(axis));
+  if (inconnu) return `\`${where}\`: unknown axis \`${inconnu}\` (known: ${KEY_AXES.join(', ')})`;
+  // ⚠️ `find(Boolean)` and not a loop with `if (e) return e`: the guard was an EQUIVALENT
+  //    mutant (returning a null error changes nothing). The FIRST error is returned, so the
+  //    author fixes one thing at a time instead of reading a wall.
+  return axes.map((axis) => keysListError(v[axis], `${where}.${axis}`)).find(Boolean) || null;
+}
 
 // ⚠️ ㊺① — THE SHAPE OF `scope`, VALIDATED IN A SINGLE PLACE (here), consumed by the
 //    FLAT frontmatter **and** by the `rules` entries. The JSON schema of the skills is
@@ -386,6 +453,11 @@ function isRulesDecl(rules) {
     }
     if ('exclude' in r && !(Array.isArray(r.exclude) && r.exclude.every(usefulString))) {
       errs.push(`\`rules[${i}].exclude\` must be a list of non-empty strings`);
+    }
+    // ⚠️ SAME shape as the flat form, SAME validator — a per-entry copy would drift (㊴).
+    if ('keys' in r) {
+      const e = keysFormError(r.keys, `rules[${i}].keys`);
+      if (e) errs.push(e);
     }
     if ('rank' in r && typeof r.rank !== 'number') {
       errs.push(`\`rules[${i}].rank\` must be a number`);
@@ -474,6 +546,16 @@ function validate(data) {
   //    works by accident is a form we will one day find broken, with no test.
   if ('exclude' in data && !(Array.isArray(data.exclude) && data.exclude.every(usefulString))) {
     errs.push('`exclude` must be a list of non-empty strings [a, b]');
+  }
+  // ⚠️ `keys` restricts the UNIVERSE the operators read; it triggers nothing on its own.
+  //    Declared ALONE it would be INERT — and an inert key is indistinguishable from a
+  //    working one, which is the whole class of defects this validator exists to kill.
+  if ('keys' in data) {
+    const e = keysFormError(data.keys, 'keys');
+    if (e) errs.push(e);
+    else if (declares.length === 0 && !('scope' in data) && !('exclude' in data)) {
+      errs.push('`keys` alone changes NOTHING: it narrows WHERE `match`/`scope`/`exclude` look. Add the operator it is meant to restrict.');
+    }
   }
   for (const e of cadenceErrors(data)) errs.push(e);
   for (const e of noteErrors(data)) errs.push(e);
@@ -585,4 +667,4 @@ function cadenceErrors(data) {
 }
 // Stryker restore StringLiteral
 
-module.exports = { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, KNOWN, TRIGGERS, INJECT, RULE_KEYS, WILDCARD };
+module.exports = { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, KNOWN, TRIGGERS, INJECT, RULE_KEYS, WILDCARD, KEY_REMOVE, KEY_AXES };

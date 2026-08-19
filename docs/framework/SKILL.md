@@ -15,6 +15,31 @@
 2. **Single primitive**: DECIDABLE event → injection. ⚠️ **The engine's SOURCES are exactly the `id`s of the `source-adapters.js` registry: `file` · `mcp` · `skill` · `tool`** — they alone go through matcher + gate + cadence. Extending = 1 pure source + 1 adapter, the core NEVER moves.
 2bis. ⚠️ **`docs/session/` IS NOT A SOURCE** (corrected 04/08/2026 — this line claimed the opposite and led to an INERT config key being written). It is a separate injection path: `session-inject.js` (SessionStart/PostCompact) delivers these docs ONCE per context, without consulting `gate.decide`. They therefore have **no cadence** — setting one would be accepted and have no effect.
 2ter. **AMBITION = MULTI-HARNESS INDUSTRY STANDARD** (maintainer decision 19/07/2026): this framework aims to become THE context-injection standard, harness-agnostic — like a language. Architecture imposed by that ambition: pure engine with NO dialect (CI gate) + shared cores (pretool-core/guard-core) + thin shells per harness (~15 lines of emit). New harness = measure its dialect (doc-first + REAL captured payload, never on trust) → reuse the gates as-is if identical, else a shell — NEVER a copy, NEVER a harness-if in the core. Proven on Codex: 3 gates reused byte-for-byte, 2 shells, 0 jscpd clones.
+3bis. ✅ **`keys` SHIPPED 2026-08-19 — AND THE BOOLEAN BASE IS STILL CLOSED.** It adds no
+   connective: `match`/`scope`/`exclude` remain the whole of OR/AND/NOT. `keys` is ORTHOGONAL —
+   it does not say what to look for, it says **WHERE to look** (which parameter keys are visible
+   at all). That axis existed already, but only as a GLOBAL constant (`harness-profile.js`),
+   hence identical for the fleet's 852 rules; the operator makes it declarable PER ENTRY.
+   🔴 **THE MEASURED DEFECT THAT OPENED IT**: naming a project inside a shell command — a commit
+   message, a heredoc, a path passed to a script — injected its ENTIRE skill, exactly like
+   working in it. `match` reads the command's TEXT, and a text cannot tell "I work here" from
+   "I mention this". Same nature as ㊿ (55 exclusions decided by CONTENT alone), which had been
+   closed GLOBALLY by `contentKeys` — closing it globally is what hid the per-entry need.
+   ⚠️ **Two forms, never two words**: `["-command"]` = the same universe for the three axes ·
+   `{match: [...], scope: [...], exclude: [...]}` = one per axis. A `-` prefix REMOVES from the
+   default universe; a bare name REPLACES it — so an entry may also WIDEN, reading a key the
+   profile never declared. Intersecting instead would let `keys` only ever shrink, and half the
+   combinations would be unreachable ("zero blocking").
+   🛑 **What is refused is the AMBIGUOUS, never the unusual**: a list half whitelist and half
+   blacklist expresses nothing a reader can decide. Splitting `scope` and `exclude` IS allowed
+   even though it weakens ㊼ (they stop being exact duals over one universe) — it is the
+   author's decision, VISIBLE in their entry. What the engine used to do silently is the defect.
+   ⚠️ ONE decision, two readings (`keyDecision`): the filters consume a PREDICATE, the trigger a
+   LIST. Deciding twice was tried and produced 18 survivors — the second copy always drifts.
+   ⚠️ Absent from MCP docs, with a written reason: they carry NO matching operator (path-
+   triggered), so `keys` would be accepted AND inert — the very defect that got `mcp:` removed
+   from the file corpus. Proofs: 959 tests, **mutation 100.00 %** on both modules, doctor 14/14.
+
 3. **Matching = a CLOSED BOOLEAN BASE**: `match` = OR (at least one pattern present → triggers) · `scope` = AND between axes, and **TWO FORMS since ㊺①: `["a","b"]` = OR · `[["a","b"],["c"]]` = AND of ORs** (mixed REFUSED) · `exclude` = NOT (forbidden absent). THAT is why we NEVER add an operator: the base is closed, a 4th word would necessarily be a synonym (anti-synonym law §8, precedent `perimeter`). Every operator was born from a real pain: false positives→exclude, project partitioning→scope, triggering→match.
    🛑 **THIS PARAGRAPH OVER-PROMISED ON 12/08, THEN THE PROMISE BECAME TRUE ON 14/08 — AND ONLY A MACHINE CAN SAY SO.** It announced "completeness ⇒ ANY condition is expressible" with no test confronting it with the engine; the enumeration answered NO (120/256, `A∧B∧C` inexpressible), ㊺① made it expressible. **The lesson is not the number, it is that a language's expressiveness is COMPUTED, never proof-read.**
    📐 **EXACT EXPRESSIVENESS, COMPUTED BY A MACHINE** (`language-completeness.test.js`, EXHAUSTIVE enumeration calling the REAL engine — never a copy): **128 conditions out of 256**, and above all **CHARACTERIZED** — the expressible set is EXACTLY `{f | f(empty action) = false}`, **0 missing, 0 extra**. ⇒ **THE LANGUAGE IS COMPLETE**, up to ONE STRUCTURAL constraint: nothing injects on an action that contains nothing. 🛑 That constraint is the **load-bearing wall §3bis** ("we only inject on FACTS"), not a hole: a language able to say "inject when NOTHING happens" would betray its reason for being. `A ∧ B` ✅ · `A ∧ ¬C` ✅ · `A ∧ B ∧ C` ✅ (㊺①) · "except when ANOTHER param contains X" ✅ (㊼).

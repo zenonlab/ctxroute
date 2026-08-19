@@ -164,7 +164,14 @@ test('validate: all the COMPATIBLE keys accepted together', () => {
   // ⚠️ DELIBERATE UPDATE (05/08/2026): `enforce` added. This test turned red
   //    first — that is its role: the vocabulary never extends itself by
   //    accident. Adding a key MUST cost an explicit decision here.
-  assert.deepStrictEqual(KNOWN, ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce']);
+  // ⚠️ DELIBERATE UPDATE (19/08/2026): `keys` added — the operator that says WHERE the
+  //    others look (which parameter keys an entry may see). Whitelist `["file_path"]`
+  //    REPLACES the universe, blacklist `["-command"]` removes from it; per axis via
+  //    `{match, scope, exclude}`. This test turned red first, which is its job.
+  assert.deepStrictEqual(KNOWN, ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce']);
+  // The operator composes with everything, on both shapes.
+  assert.deepStrictEqual(validate({ match: 'a', keys: ['-command'] }), []);
+  assert.deepStrictEqual(validate({ match: 'a', scope: ['s'], keys: { match: ['file_path'], scope: ['-content'] } }), []);
   // ⚠️ HARD-CODED contract for DRIFT_UNITS too (single source of the unit vocabulary).
   assert.deepStrictEqual(DRIFT_UNITS, ['tool', 'turn']);
   // ⚠️ HARD-CODED contract of the TRIGGERS (4 since 19/07/2026: + `tool`).
@@ -551,7 +558,12 @@ test('ANTI-RETURN: `confirm` is no longer vocabulary, in NO corpus', () => {
 // MATCHING operators — specific to the corpus by nature (a skill has no
 // `rank`, an MCP doc is triggered by its PATH). Contract written hard-coded:
 // deriving them from the code under test would make them mutate with it.
-const MATCHING = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'rank'];
+// ⚠️ `keys` is a MATCHING operator, not a behaviour: it says WHERE the others look.
+//    Like `scope`/`exclude` it lives PER ENTRY (doc + skill) and has no cadence to
+//    inherit — a global `keys` would narrow every rule of the fleet indistinctly,
+//    which is the opposite of an operator. Its 4-corpus symmetry is therefore the
+//    doc↔skill MIRROR (gate ③ below), never the behaviour cascade.
+const MATCHING = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'rank'];
 
 // A VALID sample per behaviour key. Any key without a sample = RED
 // (part ⓪): impossible to add a key by making it invisible to the gate.
@@ -564,6 +576,53 @@ const ASYMETRIES_JUSTIFIEES = {
   //    symmetrical since the removal of `confirm` (05/08/2026). An entry here
   //    is a written DECISION, never a workaround to make the gate pass.
 };
+
+// ── `keys` — the operator that says WHERE to look (19/08/2026) ──
+// ⚠️ These cases live HERE, in the module's Stryker suite: written only in
+//    keys-operator.test.js they left the refusal branches at NoCoverage — a validator
+//    whose refusals are never exercised is a validator that will one day accept anything.
+test('validate `keys`: both forms accepted, on the flat entry and per axis', () => {
+  assert.deepStrictEqual(validate({ match: 'a', keys: ['file_path'] }), []);
+  assert.deepStrictEqual(validate({ match: 'a', keys: ['-command'] }), []);
+  assert.deepStrictEqual(validate({ match: 'a', scope: ['s'], keys: { match: ['a'], scope: ['-b'], exclude: ['c'] } }), []);
+  assert.deepStrictEqual(validate({ rules: [{ pattern: 'p', keys: ['-command'] }] }), []);
+});
+test('validate `keys`: the MIXED form is REFUSED (ambiguity, never interpretation)', () => {
+  // 🛑 ["file_path", "-command"] means nothing a reader can decide: "only file_path minus
+  //    command" (contradictory) or "everything except command plus file_path" (redundant)?
+  const e = validate({ match: 'a', keys: ['file_path', '-command'] });
+  assert.ok(e.length > 0 && /MIXED forms/.test(e[0]), 'the mixed form must be named as such');
+  assert.ok(validate({ rules: [{ pattern: 'p', keys: ['a', '-b'] }] }).length > 0, 'same refusal per entry');
+});
+test('validate `keys`: `-` alone names no key, and an empty list is not a whitelist of nothing', () => {
+  assert.ok(/alone names no key/.test(validate({ match: 'a', keys: ['-'] })[0]));
+  assert.ok(/alone names no key/.test(validate({ match: 'a', keys: ['-', '-x'] })[0]));
+  assert.ok(validate({ match: 'a', keys: [] }).length > 0);
+  assert.ok(validate({ match: 'a', keys: [''] }).length > 0);
+  // ⚠️ `every` and not `some`: ONE bad entry among valid ones must still refuse. With
+  //    `some` the list would be accepted as soon as a SINGLE entry is usable — the
+  //    empty name would then reach the engine and match every key.
+  assert.ok(validate({ match: 'a', keys: ['file_path', ''] }).length > 0);
+  // ⚠️ `some` and not `every` on the removals: ONE bare `-` is enough to refuse, even
+  //    surrounded by valid ones — it names no key and would silently ban nothing.
+  assert.ok(/alone names no key/.test(validate({ match: 'a', keys: ['-x', '-', '-y'] })[0]));
+  // ⚠️ `.trim()`: `"- "` names no key either — a blank is not a name. Without the trim the
+  //    entry would be accepted and would ban a key called " ", i.e. nothing, silently.
+  assert.ok(/alone names no key/.test(validate({ match: 'a', keys: ['- '] })[0]));
+  // 🛑 TOTALITY: `null` must REFUSE, never THROW. A throw here kills the parser, hence the
+  //    whole fleet's injection — one malformed .md would silence every doc everywhere.
+  assert.doesNotThrow(() => validate({ match: 'a', keys: null }));
+  assert.ok(validate({ match: 'a', keys: null }).length > 0);
+});
+test('validate `keys`: the object form refuses an unknown axis and an empty object', () => {
+  assert.ok(/unknown axis/.test(validate({ match: 'a', keys: { bidon: ['x'] } })[0]));
+  assert.ok(/name at least one axis/.test(validate({ match: 'a', keys: {} })[0]));
+  assert.ok(validate({ match: 'a', keys: 'x' }).length > 0, 'a scalar is neither a list nor an object');
+  assert.ok(validate({ match: 'a', keys: { match: [] } }).length > 0, 'an empty axis is refused too');
+});
+test('validate `keys`: declared ALONE it is refused — an inert key looks like a working one', () => {
+  assert.ok(/changes NOTHING/.test(validate({ mode: 'once', keys: ['-command'] }).find((x) => /changes NOTHING/.test(x)) || ''));
+});
 
 test('SYMMETRY GATE ⓪: every behaviour key has a sample (nothing can hide)', () => {
   const comportement = KNOWN.filter((k) => !MATCHING.includes(k));
@@ -629,11 +688,22 @@ const CORPUS_DECLARATIFS = ['file doc', 'MCP doc', 'skill entry'];
 // A VALID sample per operator (a form accepted by the 3 corpora: a list).
 const ECHANTILLON_MATCHING = {
   match: ['x'], rules: [{ pattern: 'x' }], tool: ['T'], scope: ['s'], exclude: ['e'],
+  // ⚠️ `keys` is PROBED like the others — an operator without a sample is invisible to the
+  //    gate, which would then CERTIFY instead of protecting. The sample uses the blacklist
+  //    form because it is the one that composes with a bare `match` (a whitelist would need
+  //    to name the very key the trigger reads, which is a different test, made below).
+  keys: ['-command'],
 };
 
 // 🛑 ADMITTED OPERATOR ASYMMETRIES — each with its REASON. Adding an
 //    entry here is a written DECISION, never a way to silence the gate.
 const ASYMETRIES_MATCHING = {
+  keys:
+    "An MCP doc is triggered by its PATH and carries NO matching operator (no match, no "
+    + "scope, no exclude): there is nothing there whose universe could be narrowed. Admitting "
+    + "`keys` in it would create an accepted AND INERT key — exactly the defect that had `mcp:` "
+    + "removed from the file corpus on 31/07/2026. A validator that approves dead things points "
+    + "at the WRONG cause.",
   match:
     "An MCP doc is triggered by its PATH (docs/mcp/{server}.md), never by a pattern: "
     + "a single matching key would be AMBIGUOUS (`match: stripe` = the file stripe-config.js OR "
@@ -680,7 +750,9 @@ test('SYMMETRY GATE ②: an OPERATOR absent from a declarative corpus MUST be ju
     //    by hand, which would stay green on a broken engine.
     //    `scope`/`exclude` NEVER trigger on their own: we probe them accompanied
     //    by a trigger, otherwise we would be measuring "no trigger", not the key.
-    const avecDeclencheur = k === 'scope' || k === 'exclude' ? { match: 'x' } : {};
+    // ⚠️ `keys` joins them: it NARROWS where the operators look, it triggers nothing.
+    //    Probing it bare would measure "no trigger", not the key.
+    const avecDeclencheur = k === 'scope' || k === 'exclude' || k === 'keys' ? { match: 'x' } : {};
     const presence = {
       'file doc': validate({ ...avecDeclencheur, [k]: v }).length === 0,
       'MCP doc': validateMcp({ [k]: v }).length === 0,

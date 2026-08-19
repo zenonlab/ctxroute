@@ -48,6 +48,9 @@ on:
       - 'test/canary.test.js'
       - 'test/leak-pure.test.js'
       - 'test/sources-file.test.js'
+      # `keys` operator (19/08/2026): launched by Stryker, so a change to it can move the
+      # score — the workflow must therefore see it. Sealed by mutation-workflow-gate.
+      - 'test/keys-operator.test.js'
       - 'test/spec-differential.test.js'
       - 'src/language-spec.js'
       - 'test/sources-tool.test.js'
