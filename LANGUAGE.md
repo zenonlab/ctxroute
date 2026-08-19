@@ -34,8 +34,12 @@ project has actually committed.
 - **`scope`**: ∃ filter over ALL parameter values, at any depth. Two forms:
   flat list = OR · grouped `[["a","b"],["c"]]` = AND of ORs. Mixed forms are
   refused (ambiguity, not capability, is the danger).
-- **`exclude`**: ∀¬ over all values ∪ the triggering context — the exact dual
-  of `scope`. One motif present anywhere in the gesture ⇒ no injection.
+- **`exclude`**: ∀¬ over all values ∪ the triggering context — the quantifier dual
+  of `scope`, over a STRICTLY LARGER universe: `scope` reads the params,
+  `exclude` reads the params AND the triggering context (the tool name, the
+  biting candidate). One motif present anywhere in that universe ⇒ no injection.
+  ⚠️ Consequence, stated: a fact carried only by the context is reachable
+  NEGATIVELY and not positively.
 - **`keys`** (orthogonal — it adds no connective): chooses WHICH parameter
   keys the three operators above may read at all. Flat list = the same
   universe for the three axes · `{match, scope, exclude}` = one per axis.

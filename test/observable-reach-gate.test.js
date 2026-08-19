@@ -51,6 +51,7 @@ import { conformance } from '../src/harness-conformance.js';
 import * as fileSrc from '../src/sources/file.js';
 import * as toolSrc from '../src/sources/tool.js';
 import * as skillSrc from '../src/sources/skill.js';
+import { DEFAULT_PROFILE } from '../src/harness-profile.js';
 
 const ATOME = 'atome-temoin';
 const decideFile = (rule, geste) => fileSrc.matchingDocs([{ ...rule, doc: 'd.md' }], geste).length > 0;
@@ -118,17 +119,40 @@ const CELLULES = () => [
     sans: () => decideFile({ pattern: ATOME }, { toolName: 'PowerShell', toolInput: { command: 'echo rien' } }),
   },
   {
-    id: 'tool_input/positive/payload-key-via-keys', capacite: 'tool_input', atteint: true, // ㊿ + keys
-    // Out of the DEFAULT universe, but reachable by an entry that NAMES it — that
-    // is exactly what `keys` bought, and why the default is not a floor.
-    avec: () => decideFile({ pattern: 'base', scope: [ATOME], keys: { scope: ['content'] } }, { toolName: 'X', toolInput: { file_path: '/base', content: ATOME } }),
-    sans: () => decideFile({ pattern: 'base', scope: [ATOME], keys: { scope: ['content'] } }, { toolName: 'X', toolInput: { file_path: '/base', content: 'rien' } }),
-  },
-  {
     id: 'tool_input/negative', capacite: 'tool_input', atteint: true,
     avec: () => !decideFile({ pattern: 'base', exclude: [ATOME] }, { toolName: 'X', toolInput: { file_path: '/base', autre: ATOME } }),
     sans: () => !decideFile({ pattern: 'base', exclude: [ATOME] }, { toolName: 'X', toolInput: { file_path: '/base', autre: 'rien' } }),
   },
+
+  // ── tool_input — THE KEY FAMILIES, DERIVED FROM THE PROFILE ────────────
+  // 🔴 THESE CELLS WERE HAND-WRITTEN IN THE FIRST VERSION OF THIS FILE — the exact
+  //    fault it reproaches `language-atoms` with, one level smaller, committed the
+  //    same day by the same agent. The families now come from `harness-profile.js`:
+  //    a key added to the dialect lands here BY ITSELF.
+  // ⚠️ `contentKeys` is the load-bearing pair: blind BY DEFAULT (㊿) and REACHABLE
+  //    the moment an entry names it (`keys`). Deriving BOTH is what proves the
+  //    default universe is not a floor.
+  ...DEFAULT_PROFILE.pathKeys.filter((k) => k !== 'cwd').map((cle) => ({
+    id: `tool_input/positive/path-key:${cle}`, capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: '/x/' + ATOME } }),
+    sans: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: '/x/rien' } }),
+  })),
+  ...DEFAULT_PROFILE.commandKeys.map((cle) => ({
+    id: `tool_input/positive/command-key:${cle}`, capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo ' + ATOME } }),
+    sans: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo rien' } }),
+  })),
+  ...DEFAULT_PROFILE.contentKeys.map((cle) => ({
+    id: `tool_input/payload-key-by-default:${cle}`, capacite: 'tool_input', atteint: false,
+    justification: '㊿ — a PAYLOAD key TRANSPORTS content, it DESIGNATES nothing. Reading it made the filters decide on the text one TYPES: 55 exclusions measured came from there. It is out of the DEFAULT universe, never out of REACH — the paired cell below proves an entry re-opens it with `keys`.',
+    avec: () => decideFile({ pattern: 'base', scope: [ATOME] }, { toolName: 'X', toolInput: { file_path: '/base', [cle]: ATOME } }),
+    sans: () => decideFile({ pattern: 'base', scope: [ATOME] }, { toolName: 'X', toolInput: { file_path: '/base', [cle]: 'rien' } }),
+  })),
+  ...DEFAULT_PROFILE.contentKeys.map((cle) => ({
+    id: `tool_input/payload-key-via-keys:${cle}`, capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: 'base', scope: [ATOME], keys: { scope: [cle] } }, { toolName: 'X', toolInput: { file_path: '/base', [cle]: ATOME } }),
+    sans: () => decideFile({ pattern: 'base', scope: [ATOME], keys: { scope: [cle] } }, { toolName: 'X', toolInput: { file_path: '/base', [cle]: 'rien' } }),
+  })),
 
   // ── cwd ────────────────────────────────────────────────────────────────
   {
@@ -207,8 +231,8 @@ test('② the table observes BOTH classes, in plausible numbers', () => {
   const aveugles = cells.length - atteints;
   // A table where everything came out the same way (broken probes, dead imports)
   // would be GREEN while measuring nothing — the defect already paid 3 times here.
-  assert.ok(atteints >= 8, `suspicious: only ${atteints} reachable cells`);
-  assert.ok(aveugles >= 3, `suspicious: only ${aveugles} blind cells`);
+  assert.ok(atteints >= 12, `suspicious: only ${atteints} reachable cells`);
+  assert.ok(aveugles >= 4, `suspicious: only ${aveugles} blind cells`);
   const ids = cells.map((c) => c.id);
   assert.strictEqual(new Set(ids).size, ids.length, 'duplicated cell ids');
 });
