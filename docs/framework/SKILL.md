@@ -180,6 +180,41 @@ REFACTOR-PLAN 59 — and it drags ㊼ with it: the doc says `scope` and `exclude
 universe**, the code gives `exclude` the context and `scope` not. **Model and prose contradict each
 other; that is the real defect to close.**
 
+## 🧠 WHY YOU WILL STATE THIS INTENTION CORRECTLY AND VIOLATE IT ANYWAY (measured 19/08/2026)
+
+Read this once; it explains every failure mode of every agent that has worked here, including the
+one who wrote it.
+
+🔴 **STATING an intention and being GOVERNED by it are two different systems in you.** Asked "what
+is the intention", you query a SUMMARY — cheap, and you are good at it. Generating 200 lines of
+code, your next token is driven by the LOCAL context: the open file, the error, the immediate goal.
+**The summary does not filter the generation.** It is available; it is not active. That is why you
+can recite this doctrine and violate it ten minutes later — the two do not travel the same path.
+
+🔴 **AND THE HARDEST RULE OF ALL IS "ZERO SILENT BUGS", because it is a rule about an ABSENCE.**
+Applying it means searching for what is NOT there; your generation is pulled by what IS there. You
+can state it and structurally fail to apply it — **unless it has been converted into an ACT**
+("sabotage it and see red", "re-measure without a pipe", "run the negative-check").
+
+📐 **MEASURED THE SAME DAY, and the split is clean.** Where a MACHINE was present — an injected doc
+at the gesture, a derived gate — compliance was total: the write guard stopped an edit, the cadence
+doc stopped a full-suite run, the exit-code doc forced a re-measurement, all 7 gates were seen red
+before being kept. Where only PROSE existed — "shipping an operator includes its judges", the
+doc-first rule on TLA+, "docs are in English", "JSDoc is a contract" — **it drifted every time**:
+the operator shipped outside its judges, a keyword match replaced a measurement, French landed in
+English docs twice, three JSDoc lied.
+
+⇒ **THE CONSEQUENCE, AND IT IS THE MOST USEFUL LINE IN THIS FILE.** The maintainer wrote, about
+code: *"a rule that only prose guards is not a rule"*. **It applies to YOU, identically.** So:
+- Do not try to be a different kind of thinker. **Convert.** Every intention that is DECIDABLE must
+  become an ACT you perform or a MACHINE that refuses — each conversion removes one class of drift,
+  permanently, for you and for every agent after you.
+- When you catch yourself REASONING toward a conclusion about this repo (an accusation, a verdict,
+  "it's complete"), **stop and measure instead.** Facing our own engine, the CODE is the authority.
+- And the honest division of labour: the maintainer holds the INTENT and probes it by USE — that is
+  irreplaceable, because an ABSENCE leaves no trace in the text and you read traces. **Your job is
+  to turn each of their findings into a judge, so it is found only ONCE.**
+
 ## AGENT POSTURE (known LLM biases ON THIS PROJECT — each has already caused a real error, corrected 18/07/2026)
 You are an LLM: your statistical reflexes pull toward what the industry does. This project is PRECISELY what the industry does not do. Your active biases here:
 1. **"Use case" bias**: you think in features ("inject docs on files"); the maintainer thinks in LANGUAGE (any event → any knowledge). Antidote: at every brick, ask yourself "is this the special case or the generalization?" — ALWAYS ship the generalization (real error: MCP tool grain forgotten on skills).
