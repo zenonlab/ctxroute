@@ -44,6 +44,7 @@ import { RULE_KEYS, validateMcp } from '../src/frontmatter.js';
 import * as fileSrc from '../src/sources/file.js';
 import * as toolSrc from '../src/sources/tool.js';
 import * as skillSrc from '../src/sources/skill.js';
+import { rulesFromCorpus } from '../src/loader.js';
 
 // ── WHAT COUNTS AS A NARROWING OPERATOR ─────────────────────────────────
 // Derived from `RULE_KEYS`, the per-rule vocabulary of the engine. The two
@@ -76,8 +77,30 @@ const FRAGMENTS = () => ({
 const skill = (entry, geste) =>
   skillSrc.matchingSkills({ skills: { demo: entry } }, geste).length > 0;
 
+// 🔴 THE ROAD FROM A WRITTEN FRONTMATTER TO A DECISION — the one that actually ships.
+//    A hand-built rule object bypasses `loader.rulesOfDecl`, and THAT is where `keys` was
+//    dropped on 19/08: the operator was alive in every test and INERT in every real doc of
+//    the corpus. **An operator proven on a literal rule is not proven at all.** Any cell
+//    below that skips this road measures an engine nobody runs.
+const yaml = (frag) => Object.entries(frag)
+  .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
+const parDoc = (entete, geste) => {
+  const texte = `---\n${entete}\nmode: dumb\n---\nBody.\n`;
+  return fileSrc.matchingDocs(rulesFromCorpus([{ doc: 'd.md', text: texte }]), geste).length > 0;
+};
+
 // ── THE CELLS: every (source × dimension) that carries matching operators ──
 const CELLULES = () => [
+  {
+    // THE REAL ROAD: frontmatter text -> loader -> rules -> decision.
+    id: 'corpus/frontmatter-match',
+    decide: (f) => parDoc(`match: ${ATOME}\n${yaml(f)}`, GESTE_SHELL),
+  },
+  {
+    // Same road, per-entry `rules` form (its operators live INSIDE the entry).
+    id: 'corpus/frontmatter-rules',
+    decide: (f) => parDoc(`rules: ${JSON.stringify([{ pattern: ATOME, ...f }])}`, GESTE_SHELL),
+  },
   {
     id: 'file/pattern',
     decide: (f) => fileSrc.matchingDocs([{ pattern: ATOME, doc: 'd.md', ...f }], GESTE_SHELL).length > 0,

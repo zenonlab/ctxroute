@@ -98,6 +98,25 @@ test('REASON `scope` not satisfied — distinguished from "pattern absent"', () 
   assert.ok(/scope/.test(d.motif), 'expected reason: scope not satisfied, received: ' + d.motif);
 });
 
+test('REASON `keys` — distinguished from `scope`, `exclude` AND "pattern absent"', () => {
+  // 🔴 WITHOUT THIS PROBE, THE TOOL LIES BY OMISSION. `keys` chooses the UNIVERSE the three
+  //    operators read, so a rule it silences fails THROUGH one of them — and the tool would
+  //    calmly blame `scope`. A true-but-wrong reason is worse than none: it sends the author
+  //    to fix an operator that is doing its job (the mistake of 31/07, one session lost).
+  const parc = parcAvec({ 'k.md': '---\nmatch: demo-projet\nkeys: ["-command"]\nscope: [demo-projet]\nmode: dumb\n---\nCorps.\n' });
+  const d = json(['--doc', 'k.md', '--tool', 'Bash', '--input', JSON.stringify({ command: 'echo demo-projet >> memo.md' })], parc).diagnostic;
+  assert.equal(d.injects, false);
+  assert.ok(/keys/.test(d.motif), 'expected reason: keys, received: ' + d.motif);
+});
+
+test('`keys` is NOT blamed when the rule is silent for another reason', () => {
+  // The symmetric half: a probe that always accuses `keys` would be just as useless.
+  const parc = parcAvec({ 'k2.md': '---\nmatch: demo-projet\nkeys: ["-cwd"]\nscope: [absent-partout]\nmode: dumb\n---\nCorps.\n' });
+  const d = json(['--doc', 'k2.md', '--tool', 'Bash', '--input', JSON.stringify({ command: 'echo demo-projet' })], parc).diagnostic;
+  assert.equal(d.injects, false);
+  assert.ok(/scope/.test(d.motif), 'expected reason: scope, received: ' + d.motif);
+});
+
 test('REASON `exclude` — distinguished from `scope`', () => {
   const parc = parcAvec({ 'e.md': '---\nmatch: gate.js\nexclude: [node_modules]\nmode: dumb\n---\nCorps.\n' });
   const d = json(['--doc', 'e.md', '--file', 'C:/p/node_modules/gate.js'], parc).diagnostic;

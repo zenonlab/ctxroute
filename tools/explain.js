@@ -82,12 +82,20 @@ function verdict(config, payload) {
 function matchesWith(rules, payload) {
   return fileSource.matchingDocs(rules, payload).length > 0;
 }
-const sansFiltres = (rules) => rules.map((r) => ({ pattern: r.pattern, doc: r.doc }));
+// 🛑 THE PROBES KEEP `keys` — REMOVING IT WOULD FABRICATE A FALSE REASON. `keys` chooses
+//    the UNIVERSE the three operators read, so a probe that drops it answers a question
+//    about a DIFFERENT rule: the tool would blame `scope` for a silence caused by the key
+//    universe. That is precisely the false reason this file exists to make impossible.
+const sansFiltres = (rules) => rules.map((r) => ({ pattern: r.pattern, doc: r.doc, keys: r.keys }));
 const sansScope = (rules) => rules.map((r) => {
-  const out = { pattern: r.pattern, doc: r.doc };
+  const out = { pattern: r.pattern, doc: r.doc, keys: r.keys };
   if (r.exclude) out.exclude = r.exclude;
   return out;
 });
+// The `keys` probe: the SAME rule minus that single operator. If the verdict flips, the
+// key universe is the cause — and it is the only thing that can say so, since a narrowed
+// rule fails through `match`, `scope` OR `exclude` depending on which key carried the term.
+const sansKeys = (rules) => rules.map(({ keys, ...r }) => r);
 
 // Contexts REALLY confronted with the patterns (same functions as the source).
 function testedContexts(payload) {
@@ -145,6 +153,9 @@ function diagnose(docId, text, payload) {
       if (names.includes(WILDCARD)) d.piege = '⚠️ `*` IS a wildcard, but it requires a NON-EMPTY tool name — here the payload carries none. Check your `--tool`.';
       return d;
     }
+    if (fm.keys !== undefined && toolSource.matchingDocs([{ doc: docId, fm: { ...fm, keys: undefined } }], payload).length > 0) {
+      return { ...base, injects: false, axe: 'outil', motif: `\`keys\` SILENCED this rule — without it, it would inject. Declared: ${JSON.stringify(fm.keys)}` };
+    }
     // The tool is targeted: so it is scope or exclude that rejected (tool
     // axis, where exclude's "context" is the TOOL NAME — cf sources/tool.js).
     // PROBE: we remove `scope` and ask the SOURCE again. If it passes, that
@@ -177,6 +188,12 @@ function diagnose(docId, text, payload) {
   const command = typeof payload.toolInput.command === 'string' ? payload.toolInput.command : '';
   if (payload.toolName === 'Bash' && /^\s*git\s+/.test(command)) {
     return { ...base, injects: false, motif: 'GIT COMMAND IGNORED BY CONSTRUCTION (sources/file.js) — a file name inside a commit message would produce a false positive', piege: 'Test with a NON-git command: the silence here says nothing about your rule.' };
+  }
+  // ⚠️ ASKED BEFORE the other reasons: `keys` is UPSTREAM of the three operators, so a
+  //    silence it caused would otherwise be attributed to whichever one happened to fail.
+  if (rules.some((r) => r.keys !== undefined) && matchesWith(sansKeys(rules), payload)) {
+    return { ...base, injects: false, axe: 'file', motif: `\`keys\` SILENCED this rule — without it, it would inject. Declared: ${JSON.stringify(rules.map((r) => r.keys).filter(Boolean))}`,
+      piege: '⚠️ `keys` chooses WHICH parameter keys are readable. A `-name` removes one from the default universe; a bare list REPLACES that universe entirely — so a whitelist naming only path keys leaves NO command key, and vice versa.' };
   }
   if (!matchesWith(sansFiltres(rules), payload)) {
     return { ...base, injects: false, axe: 'file', motif: 'NO PATTERN matches', detail: { patterns: rules.map((r) => r.pattern), testedContexts: testedContexts(payload) },

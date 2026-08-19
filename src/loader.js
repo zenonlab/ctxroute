@@ -27,13 +27,24 @@
 
 const { parse, validate } = require('./frontmatter');
 
-// One declaration -> its flat rules { pattern, doc, scope?, exclude? }.
+// One declaration -> its flat rules { pattern, doc, scope?, exclude?, keys? }.
 // ⚠️ Reproduces EXACTLY the inverse semantics of migrate.declaration():
 //    `match` + doc-level scope/exclude (homogeneous) OR per-entry `rules` (divergent).
+// 🔴 **THIS FUNCTION IS THE ONLY ROAD FROM A WRITTEN FRONTMATTER TO A DECISION, AND ANY
+//    OPERATOR MISSING HERE IS INERT IN THE WHOLE CORPUS.** Measured 19/08/2026: `keys`
+//    shipped with a schema, a validator, a dedicated suite, 959 green tests and 100 %
+//    mutation, and was dropped HERE — so it worked only on rules built by hand, i.e. only
+//    in tests. **An operator proven on a hand-built rule is not proven at all**: the gate
+//    that guards this class (`operator-consumption-gate`) therefore goes THROUGH the real
+//    corpus path, never through a literal rule object.
+// ⚠️ `keys` is propagated WITHOUT a shape check, unlike its neighbours: `keyDecision` is
+//    TOTAL (a string, a null, an absent key all mean "no narrowing"), so a guard here would
+//    decide nothing and survive as an equivalent mutant — the same arbitration as in
+//    `sources/skill.js::skillRules`.
 function rulesOfDecl(data, doc) {
   if (Array.isArray(data.rules)) {
     return data.rules.map((r) => {
-      const out = { pattern: r.pattern, doc };
+      const out = { pattern: r.pattern, doc, keys: r.keys };
       if (Array.isArray(r.scope) && r.scope.length) out.scope = r.scope;
       if (Array.isArray(r.exclude) && r.exclude.length) out.exclude = r.exclude;
       // PER-ENTRY rank (interleaved docs): the rule carries its exact JSON index.
@@ -44,7 +55,7 @@ function rulesOfDecl(data, doc) {
   if (data.match === undefined) return [];
   const patterns = Array.isArray(data.match) ? data.match : [data.match];
   return patterns.map((p) => {
-    const out = { pattern: String(p), doc };
+    const out = { pattern: String(p), doc, keys: data.keys };
     if (Array.isArray(data.scope) && data.scope.length) out.scope = data.scope;
     if (Array.isArray(data.exclude) && data.exclude.length) out.exclude = data.exclude;
     return out;
