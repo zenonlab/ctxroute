@@ -31,6 +31,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 import { matchingDocs } from '../src/sources/file.js';
+import { RULE_KEYS } from '../src/frontmatter.js';
 import { matchingDocs as engineTool } from '../src/sources/tool.js';
 import { matchingDocs as engineMcp } from '../src/sources/mcp.js';
 import { matchingSkills } from '../src/sources/skill.js';
@@ -142,6 +143,35 @@ function rules() {
   }
   return out;
 }
+
+// ── ⓪ THE DOMAIN EXERCISES EVERY MATCHING OPERATOR ──────────────────────
+// 🔴 THE CLASS THIS CLOSES, AND IT COST A WHOLE DAY (19/08/2026): `keys` shipped with a
+//    schema, a validator, a dedicated suite, 959 green tests and 100 % mutation — and it
+//    was in NO judge. This model did not know it, so the exhaustive enumeration below
+//    measured a language the operator was not part of. Teaching it the operator then found
+//    TWO real defects immediately (780 + 192 divergences).
+// 🛑 UNTIL TODAY ONLY PROSE FORBADE THAT (the skill: "shipping an operator includes its
+//    judges"). This session is the proof that prose does not hold: the rule existed and the
+//    operator shipped outside anyway. A machine now refuses it.
+// ⚠️ DERIVED FROM `RULE_KEYS` and PROBED ON THE REAL GENERATOR — never a copied list and
+//    never a grep of this file's text (a name in a comment would satisfy a grep). We look
+//    at the rules the domain ACTUALLY produces.
+const NON_EXERCES = {
+  pattern: 'it IS the trigger — every generated rule carries one, and `triggers-gate` proves its consumption',
+  rank: 'an emission ORDER, not a matching semantics: it decides no injection (covered by loader.test.js)',
+};
+test('⓪ the DOMAIN exercises every matching operator of the vocabulary', () => {
+  const produits = new Set();
+  for (const r of rules()) for (const k of Object.keys(r)) produits.add(k);
+  // ANTI-VACUITY: a broken generator would yield an empty set and the check would pass
+  // while proving nothing — the failure mode of every derived gate.
+  assert.ok(produits.size >= 3, `suspicious domain: it produces only ${produits.size} distinct keys`);
+  const manquants = RULE_KEYS.filter((k) => !(k in NON_EXERCES) && !produits.has(k));
+  assert.deepStrictEqual(
+    manquants, [],
+    `operator(s) the exhaustive domain NEVER exercises: ${manquants.join(', ')} — this differential therefore measures a language that is not ours. Extend the domain, or declare the operator in NON_EXERCES WITH ITS REASON. Shipping an operator INCLUDES its judges.`,
+  );
+});
 
 test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', () => {
   const G = gestes();

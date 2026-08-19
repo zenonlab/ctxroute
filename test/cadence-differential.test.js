@@ -26,6 +26,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import gate from '../src/gate.js';
 import * as spec from '../src/cadence-spec.js';
+import { KNOWN } from '../src/frontmatter.js';
 
 // The owner sources of the real registry, plus `undefined` = the parity path
 // (no `owners` passed at all, i.e. what every differential replays).
@@ -41,6 +42,40 @@ const VALEURS = {
   enforce: [undefined, true, false, 'x'],
 };
 const CLE_GLOBALE = { mode: 'mode', threshold: 'defaultThreshold', driftUnit: 'defaultDriftUnit', enforce: 'enforce' };
+
+// ── ⓪ THE DOMAIN EXERCISES EVERY CADENCE KEY OF THE VOCABULARY ──────────
+// 🔴 THE CLASS THIS CLOSES: on 19/08/2026 `keys` shipped into the vocabulary and into NO
+//    judge — only PROSE said an operator must be taught to its models, and the operator
+//    shipped outside anyway. A machine now refuses it, on BOTH halves of the language.
+// ⚠️ DERIVED FROM `KNOWN` (the whole vocabulary), so a word added tomorrow lands here by
+//    itself and stays RED until someone either exercises it or declares why it is not a
+//    cadence key. Every exclusion below is a DECISION, never a convenience.
+const HORS_CADENCE = {
+  match: 'a TRIGGER: it selects, it does not schedule (spec-differential + triggers-gate)',
+  mcp: 'corpus routing by PATH, consumed by no cadence resolver',
+  rules: 'a TRIGGER in per-entry form (same judges as `match`)',
+  tool: 'a TRIGGER on the tool name (same judges)',
+  inject: 'disarms a doc upstream of any cadence — it never reaches `decide`',
+  scope: 'a MATCHING filter — judged by spec-differential, on the other half',
+  exclude: 'a MATCHING filter — same',
+  keys: 'the MATCHING key universe — same',
+  rank: 'an emission ORDER: it decides no delivery (loader.test.js)',
+  note: 'the ONLY field the engine NEVER reads — an author comment, inert by contract',
+};
+test('⓪ the DOMAIN exercises every CADENCE key of the vocabulary', () => {
+  const exerces = new Set(Object.keys(VALEURS));
+  assert.ok(exerces.size >= 3, `suspicious domain: only ${exerces.size} settings exercised`);
+  const manquants = KNOWN.filter((k) => !(k in HORS_CADENCE) && !exerces.has(k));
+  assert.deepStrictEqual(
+    manquants, [],
+    `cadence key(s) the exhaustive domain NEVER exercises: ${manquants.join(', ')} — this differential therefore measures a cadence that is not ours. Extend the domain, or declare the key in HORS_CADENCE WITH ITS REASON. Shipping a behaviour INCLUDES its judges.`,
+  );
+  // INVERSE CHECK: a justification that has become false must turn red too — the same
+  // discipline as ASYMETRIES_JUSTIFIEES. An excluded key that the domain DOES exercise
+  // means the reason is stale, and a stale reason is how a gate starts lying.
+  const perimees = Object.keys(HORS_CADENCE).filter((k) => exerces.has(k));
+  assert.deepStrictEqual(perimees, [], `STALE justification(s): ${perimees.join(', ')} are declared out of the cadence yet the domain exercises them.`);
+});
 
 // ── ① THE CASCADE, EXHAUSTIVELY, SETTING BY SETTING ─────────────────────
 const RESOLVEURS = {

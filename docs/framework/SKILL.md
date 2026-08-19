@@ -101,6 +101,13 @@ nobody verifies — and that sentence has now been paid for on BOTH halves.
 its quality); its judge is the sabotages. But its SUITE belongs in the Stryker config when it
 exercises mutated code — the cadence differential kills `gate.js` mutants.
 
+🛑 **AND IT IS NO LONGER AN INSTRUCTION: IT IS A GATE (part ⓪ of BOTH differentials, 19/08/2026).**
+The exhaustive domain must EXERCISE every word of the vocabulary, derived from `RULE_KEYS`/`KNOWN`
+and probed on the REAL GENERATOR. A word added tomorrow enters the table by itself and stays RED
+until it is exercised, or declared out of scope with its reason (+ an inverse check against a stale
+justification). **The prose ALREADY said "shipping an operator includes its judges" — and `keys`
+shipped outside anyway.** A rule that only prose guards is not a rule.
+
 ## AGENT POSTURE (known LLM biases ON THIS PROJECT — each has already caused a real error, corrected 18/07/2026)
 You are an LLM: your statistical reflexes pull toward what the industry does. This project is PRECISELY what the industry does not do. Your active biases here:
 1. **"Use case" bias**: you think in features ("inject docs on files"); the maintainer thinks in LANGUAGE (any event → any knowledge). Antidote: at every brick, ask yourself "is this the special case or the generalization?" — ALWAYS ship the generalization (real error: MCP tool grain forgotten on skills).
