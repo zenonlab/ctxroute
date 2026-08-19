@@ -51,6 +51,25 @@
    SILENT bugs**: a loud failure (named refusal, fail-closed, red gate) is perfectly acceptable —
    a system that keeps LOOKING healthy while being wrong is not.
 
+0septies. 🛑 **WHEN IS A CLASS OF DEFECT ACTUALLY CLOSED? FOUR CONDITIONS, ALL NECESSARY.**
+   This is the criterion the whole project reduces to — apply it to every guardrail you write, and
+   demand it of every one you inherit. A guardrail missing ONE of the four is a NOTE, not a gate.
+   ① **DERIVED from the code** (`RULE_KEYS`, `KNOWN`, `conformance({})`, the profile, the rules of
+     dependency-cruiser…), **never a copied list**. A list only knows the past; a derivation covers
+     what does not exist yet. 🔴 Every list written by hand here has eventually diverged — including
+     in the very files meant to guard this class (`language-atoms`, and the first version of
+     `observable-reach-gate`, written the same day by the agent reproaching it).
+   ② **PROBED BY BEHAVIOUR**, never by reading text. A cell passes only if the ENGINE'S DECISION
+     changes. A grep can be satisfied by a comment; a decision cannot be faked.
+   ③ **ANTI-VACUITY**: it must be IMPOSSIBLE for the check to pass while measuring nothing. A floor
+     on the domain, a count displayed, a base case that must really fire. 🔴 Paid THREE times here
+     (`deps-purity`, `deadline-gate`, `layers-gate`): a gate green because it analysed zero files.
+   ④ **SEEN RED** — by sabotaging the REAL defect, in memory, then restoring. A gate never seen
+     failing is a gate ASSUMED to work, and this repo's worst defect has never been a red gate: it
+     is a **GREEN gate that sees nothing**.
+   ⇒ If you cannot satisfy the four, say so and open a work item. **Do not ship a guardrail that
+   certifies instead of protecting** — it is worse than none, because it stops people looking.
+
 1. **What this is**: a **declarative language (DSL) for programming TRACEABLE context-injection workflows**. Not yet another engine: a language. You DESCRIBE when a piece of knowledge must appear; the machine injects it, predictable and explainable.
 2. **Single primitive**: DECIDABLE event → injection. ⚠️ **The engine's SOURCES are exactly the `id`s of the `source-adapters.js` registry: `file` · `mcp` · `skill` · `tool`** — they alone go through matcher + gate + cadence. Extending = 1 pure source + 1 adapter, the core NEVER moves.
 2bis. ⚠️ **`docs/session/` IS NOT A SOURCE** (corrected 04/08/2026 — this line claimed the opposite and led to an INERT config key being written). It is a separate injection path: `session-inject.js` (SessionStart/PostCompact) delivers these docs ONCE per context, without consulting `gate.decide`. They therefore have **no cadence** — setting one would be accepted and have no effect.
