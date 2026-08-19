@@ -41,6 +41,12 @@ export default defineConfig({
       'test/lint.test.js',
       'test/collisions.test.js',
       'test/gate.test.js',
+      // ⚠️ The cadence differential exercises `gate.js` — WHICH IS MUTATED — over 11,346
+      //    exhaustive cases. Absent from this list, those cases exist and Stryker never
+      //    runs them: the cascade/alternation/filter branches would be measured on
+      //    nothing, exactly the trap `keys-operator.test.js` fell into (62 survivors).
+      //    Deterministic (total enumeration, zero randomness) — it belongs here.
+      'test/cadence-differential.test.js',
       'test/budget.test.js',
       'test/docfacts.test.js',
     ],

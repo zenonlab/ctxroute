@@ -52,5 +52,6 @@
   "_why_mutate": "ALL the PURE modules (dependency-cruiser gates guarantee zero I/O). NEVER the I/O files: equivalent mutants guaranteed.",
   "jsonReporter": {
     "fileName": "reports/mutation.json"
-  }
+  },
+  "_cadence_spec_comment": "cadence-spec.js is DELIBERATELY OUTSIDE mutation (19/08/2026), for the SAME reason as language-spec.js: it is not DECISION code but an executable MODEL. Mutating a model measures the DOMAIN COVERAGE of its differential, never the model's quality, and it yields genuinely EQUIVALENT mutants (the comparison being internal to the model, many rewrites change no verdict). Its judge is `cadence-differential.test.js` and its 4 engine sabotages — that negative-check is the real proof of liveness. ⚠️ The suite IS in the Stryker vitest config, because it exercises `gate.js`, which IS mutated: 11,346 exhaustive cases killing cascade/alternation/filter mutants. 🛑 Do NOT add this file to `mutate` to inflate a number: the per-file floor would then encode a false expectation."
 }

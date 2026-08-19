@@ -191,9 +191,22 @@ test('thresholdForDoc: integer decl.threshold > defaultThreshold > default 4', (
   // non-integer = ignored (never a silent NaN in the comparison)
   assert.equal(thresholdForDoc({ defaultThreshold: 6 }, { threshold: '2' }), 6);
   assert.equal(thresholdForDoc({ defaultThreshold: '6' }, {}), 4);
-  // ⚠️ 0 is a LEGITIMATE integer (re-injection on every foreign tool) — a
-  // `||` would swallow it: an anti-mutant AND anti-regression case.
-  assert.equal(thresholdForDoc({ defaultThreshold: 6 }, { threshold: 0 }), 0);
+  // 🔴 THIS CASE SAID THE OPPOSITE UNTIL 19/08/2026 — it asserted "0 is a LEGITIMATE
+  //    integer (re-injection on every foreign tool)". The cadence differential found the
+  //    contradiction: `0` was accepted at stages ① and ③ and REFUSED at stage ②, so one
+  //    setting had two validity rules. ⚖️ ARBITRATED BY MEASUREMENT — all FOUR
+  //    author-facing declarations demand `>= 1` (frontmatter.validate's message, the
+  //    skills schema, `definitions.cadence`, `defaultThreshold`), so 0 is refused
+  //    everywhere an author can write it; the engine and this comment were the lone
+  //    dissenters. And semantically `smart` + threshold 0 evaluates `drift >= 0` = ALWAYS
+  //    true = exactly `dumb`: a SECOND WAY to say one thing, which the anti-synonym law
+  //    (§8 of the mental model) forbids.
+  // ⚠️ THE ANTI-`||` VALUE OF THE CASE IS KEPT, differently: validity is tested with
+  //    `Number.isInteger` + `>= 1`, never truthiness, so a legitimate `1` is not swallowed
+  //    — and 0 now FALLS THROUGH to the next stage instead of freezing the cascade.
+  assert.equal(thresholdForDoc({ defaultThreshold: 6 }, { threshold: 0 }), 6);
+  assert.equal(thresholdForDoc({}, { threshold: 0 }), 4);
+  assert.equal(thresholdForDoc({ defaultThreshold: 1 }, { threshold: 1 }), 1);
 });
 
 test('decide: the PER-DOC threshold governs the smart re-injection (two docs, two thresholds)', () => {

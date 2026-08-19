@@ -97,11 +97,23 @@ function modeForDoc(config, decl, source) {
 // ⚠️ 04/08/2026: level ② (defaults.{source}) inserted — SAME cascade as mode.
 //    A threshold is valid at its level if it is an integer ≥ 1, otherwise we GO DOWN
 //    (total fallback: an invalid value never crashes anything, it ignores itself).
+// 🔴 THE VALIDITY RULE WAS DIFFERENT AT EACH STAGE — found 19/08/2026 by the cadence
+//    differential, 43 divergence classes, all the same defect. Stage ② demanded `>= 1`;
+//    stages ① and ③ accepted ANY integer, so `0` got through. And a `smart` doc with
+//    threshold 0 evaluates `drift >= 0` ⇒ ALWAYS true ⇒ it becomes `dumb`: a SECOND WAY
+//    to say what `dumb` already says, silently, for the whole fleet.
+// ⚠️ THE UPSTREAM VALIDATORS ALL REFUSE 0 (frontmatter, skills schema, `defaultThreshold`
+//    minimum:1) — AND THAT IS NOT A REASON. `config-gate` is a TEST, not a runtime guard:
+//    nothing validates `ctxroute-config.json` when the hook reads it, so a hand-edited
+//    `defaultThreshold: 0` reached here. Defense in depth: a threshold is a COUNT of
+//    ticks, so it is an integer >= 1 at EVERY stage, and an invalid value IGNORES ITSELF
+//    and lets the next stage exist (total fallback).
+const seuilValide = (v) => Number.isInteger(v) && v >= 1;
 function thresholdForDoc(config, decl, source) {
   const cat = defaultsOf(config, source);
-  if (decl && Number.isInteger(decl.threshold)) return decl.threshold;
-  if (Number.isInteger(cat.threshold) && cat.threshold >= 1) return cat.threshold;
-  return Number.isInteger(config && config.defaultThreshold) ? config.defaultThreshold : 4;
+  if (decl && seuilValide(decl.threshold)) return decl.threshold;
+  if (seuilValide(cat.threshold)) return cat.threshold;
+  return seuilValide(config && config.defaultThreshold) ? config.defaultThreshold : 4;
 }
 
 // Unit of the `smart` counter for ONE doc — CASCADE OF 3 AUTHORITIES (exact mirror of

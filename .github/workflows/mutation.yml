@@ -54,6 +54,8 @@ on:
       - 'test/operator-consumption-gate.test.js'
       - 'test/spec-differential.test.js'
       - 'src/language-spec.js'
+      - 'src/cadence-spec.js'
+      - 'test/cadence-differential.test.js'
       - 'test/sources-tool.test.js'
       - 'test/sources-mcp.test.js'
       - 'test/sources-session.test.js'

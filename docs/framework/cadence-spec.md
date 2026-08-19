@@ -1,0 +1,14 @@
+---
+match: [cadence-spec.js, cadence-differential.test.js]
+mode: dumb
+---
+
+# cadence-spec.js + cadence-differential.test.js — THE OTHER HALF, NOW JUDGED (19/08/2026)
+
+🔴 **WHY: HALF THE LANGUAGE HAD A MACHINE JUDGE AND HALF DID NOT.** `language-spec` says WHICH docs a gesture selects; this one says whether a selected doc is DELIVERED and whether the gesture is REFUSED. Until today the cadence had only tests that CALL `gate.js` — so they proved what it DOES, never what it SHOULD DO. **And that axis had already paid it twice, both "accepted and inert":** `enforce` not transported to the MCP channel (the word that REFUSES, mute exactly where the founding incident lives — the Stripe click), then `defaults.mcp` short-circuited by a source that FILLED a default. Both found by ARMING them for real, never by a test.
+📐 **11,346 EXHAUSTIVE cases** (cascade 1,890 · delivery/drift 384 · memory/alternation/filter 9,072) — a proof, not a sample. **FOUND ON ITS FIRST RUN: 43 divergence classes, one single defect** — `threshold` had a DIFFERENT validity rule per stage (② demanded `>= 1`, ① and ③ took any integer) ⇒ `0` got through, and `smart` with threshold 0 evaluates `drift >= 0` = always true = **a second way to say `dumb`, silently, for the whole fleet**.
+🛑 **"THE UPSTREAM VALIDATORS REFUSE 0" IS NOT A DEFENCE**: `config-gate` is a TEST, not a runtime guard — nothing validates `ctxroute-config.json` when the hook reads it. Defense in depth: the engine never trusts its input.
+⚠️ **THE DOMAIN MUST CARRY THE INVALID VALUES** — the total fallback ("an invalid value ignores itself and we go down") is a load-bearing promise, and a domain of valid values only never tests it. Same for the TWO docs (one selected, one only in memory: without it the "a gesture that ignored me makes me drift" clause is unreachable and the differential passes by vacuity) and for the filter at BOTH stages.
+🛑 **WRITTEN FROM THE INTENTION, NEVER COPIED FROM `gate.js`** — a twin only proves a copy agrees with itself. A divergence is never silenced by adjusting the model: you DECIDE which side is right and you write it down.
+⚠️ **OUTSIDE `mutate`, like `language-spec.js`, and for the same reason**: mutating a MODEL measures its differential's domain coverage, not its quality, and yields genuinely equivalent mutants. Its judge is the 4 engine sabotages of the differential. ⚠️ But the SUITE is in the Stryker vitest config — it exercises `gate.js`, which IS mutated.
+⚠️ The 4 cascade asymmetries live in the model as DATA (`FRAMEWORK`, `GLOBAL_KEY`), never as a buried `if`: an asymmetry nobody can enumerate is an asymmetry nobody can audit.

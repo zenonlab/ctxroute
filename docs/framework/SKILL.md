@@ -74,6 +74,33 @@
    ⚠️ **ONE CONCEPT = ONE WORD, EVERYWHERE (anti-synonym law)**: before adding a key, check whether an existing primitive already covers the semantics — if the new key feeds the SAME code path as an existing key, it IS the same key (reuse it, never rename it per context). A new word requires NEW semantics. Real precedent: `perimeter` invented as a synonym of `match` for skills (18/07/2026) → deleted. Docs, skills, future sources: the SAME vocabulary (`match`/`mcp`/`rules`/`tool`/`scope`/`exclude`/`mode`/`threshold`/`driftUnit`/`note`/`enforce`), no exception. ⚠️ **A word is also REMOVED**: `confirm`/`ask` deleted on 05/08/2026 (390 frontmatters cleaned, expand/contract) — an extinct key nobody uses is debt, not an option. ⚠️ **`enforce` (05/08/2026)** = boolean, REFUSES the action; **an explicit `false` CANCELS the inheritance** from `defaults.{source}` (without it, a category switched to enforce would be IMPOSSIBLE TO OPT OUT of — the dead end of any cascade). **No global stage**: a global block would refuse the 1st action of every session, and a system people endure ends up unplugged. 🛑 Do NOT invent a "doesn't block" value (I tried `warn`: a word that did nothing, hence a synonym of `false`). ⚠️ **`note` (04/08/2026) = AUTHOR comment, the ONLY field the engine NEVER reads**: meant for whoever comes to MODIFY the entry ("why this mode/this scope"), invisible to the injection since the whole frontmatter is stripped from the body. 🛑 NEVER the why of an INVARIANT — that one stays in the body, otherwise the rule drifts. The 4 TRIGGERS, DISJOINT semantics never merged: `match` = PATH substring · `mcp` = exact SERVER name · `rules` = per-entry match · `tool` (19/07/2026) = EXACT name of a NATIVE TOOL (WebFetch, WebSearch… — the blind spot of tools with no path and no mcp__, closed; covers any future harness tool by default: naming it in a doc is enough, zero code).
 9. **Honest**: covers 100% of the decidable-that-acts; "finding the unknown" stays with RAG. Ultimate goal (the maintainer): eliminate toil — learn once, NEVER re-explain. Work = one-time capex, the asset is eternal.
 
+## THE LANGUAGE HAS TWO HALVES, AND BOTH ARE NOW MACHINE-JUDGED (19/08/2026)
+
+🛑 **UNTIL TODAY, HALF THE LANGUAGE HAD A JUDGE AND HALF DID NOT** — and that is the single most
+useful thing to know before touching anything here. `language-spec.js` + `spec-differential`
+(892,224 exhaustive cases) say WHICH docs a gesture selects. Nothing said whether a selected doc is
+DELIVERED, nor whether the gesture is REFUSED: the cadence had only tests that CALL `gate.js`, so
+they proved what it DOES, never what it SHOULD DO.
+🔴 **THAT AXIS HAD ALREADY PAID IT TWICE, both "accepted and inert"**: `enforce` was not transported
+to the MCP channel (the word that REFUSES an action, mute EXACTLY where the founding incident lives
+— the accidental Stripe payment click), then `defaults.mcp` was short-circuited by a source that
+FILLED a default. **Both found by ARMING them for real, never by a test.**
+✅ **`cadence-spec.js` + `cadence-differential.test.js` close it**: 11,346 exhaustive cases (cascade
+· delivery/drift · memory/alternation/filter), 4 engine sabotages as negative-check.
+📐 **AND IT PAID ON ITS FIRST RUN — 43 divergence classes, ONE defect**: `threshold` had a DIFFERENT
+validity rule per cascade stage (② demanded `>= 1`, ① and ③ accepted any integer) ⇒ `0` got through,
+and `smart` with threshold 0 evaluates `drift >= 0` = ALWAYS true = **a second way to say `dumb`**,
+silently, for the whole fleet. 🛑 "The upstream validators refuse 0" is NOT a defence: `config-gate`
+is a TEST, not a runtime guard — nothing validates `ctxroute-config.json` when the hook reads it.
+**The engine never trusts its input.**
+⚠️ **WHAT THIS MEANS FOR ANY FUTURE WORK**: the two halves are now symmetric, so **shipping a
+cadence behaviour includes teaching it to `cadence-spec.js`**, exactly as shipping a matching
+operator includes `language-spec.js`. A behaviour outside its model is a behaviour whose semantics
+nobody verifies — and that sentence has now been paid for on BOTH halves.
+⚠️ A model stays OUTSIDE `mutate` (mutating a model measures its differential's domain coverage, not
+its quality); its judge is the sabotages. But its SUITE belongs in the Stryker config when it
+exercises mutated code — the cadence differential kills `gate.js` mutants.
+
 ## AGENT POSTURE (known LLM biases ON THIS PROJECT — each has already caused a real error, corrected 18/07/2026)
 You are an LLM: your statistical reflexes pull toward what the industry does. This project is PRECISELY what the industry does not do. Your active biases here:
 1. **"Use case" bias**: you think in features ("inject docs on files"); the maintainer thinks in LANGUAGE (any event → any knowledge). Antidote: at every brick, ask yourself "is this the special case or the generalization?" — ALWAYS ship the generalization (real error: MCP tool grain forgotten on skills).
