@@ -65,7 +65,12 @@ function rulesOfDecl(data, doc) {
 /**
  * Corpus -> ordered flat rules, ready for matchingDocs().
  * @param {Array<{doc: string, text: string}>} docs - raw content of each .md
- * @returns {Array<{pattern, doc, scope?, exclude?}>}
+ * @returns {Array<{pattern, doc, scope?, exclude?, keys?}>}
+ *   ⚠️ `keys` is ALWAYS present (possibly undefined) — see `rulesOfDecl`. Omitting it from
+ *   this contract is what turned the CI red on 19/08/2026: `tsc` infers the rule's shape
+ *   FROM HERE, so every consumer reading `r.keys` became a type error while the runtime
+ *   was perfectly correct. A JSDoc is a VERIFIED CONTRACT, and this is the third lying one
+ *   caught on this operator alone (textValues, injects, and now this).
  */
 function rulesFromCorpus(docs) {
   if (!Array.isArray(docs)) return [];
