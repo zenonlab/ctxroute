@@ -69,6 +69,20 @@ function skillRules(config) {
       //    already handles scope+exclude, so we expose BOTH (no withheld capability).
       if (Array.isArray(entry.scope)) rule.scope = entry.scope;
       if (Array.isArray(entry.exclude)) rule.exclude = entry.exclude;
+      // 🔴 `keys` WAS MISSING HERE — SHIPPED 19/08, INERT ON 8 SKILLS OUT OF 8 (fixed the
+      //    same day). The other three dimensions (`rules`, `servers`, `tool`) hand the
+      //    WHOLE entry to `file.shouldSkip`, so they honoured it; this one REBUILDS a
+      //    rule field by field, so it only carries what is listed right here. Any
+      //    operator absent from this list is born INERT — accepted by the schema,
+      //    ignored by the engine — which is class ㊴, and `match` is the form the entire
+      //    fleet uses. ⇒ sealed by `operator-consumption-gate.test.js`, which PROBES
+      //    every operator on every dimension instead of trusting this list.
+      // ⚠️ ASSIGNED UNCONDITIONALLY, and that is the POINT: `keyDecision` is TOTAL (a
+      //    string, a null, an absent key all yield "no decision", hence no narrowing).
+      //    A shape guard here decided NOTHING — Stryker proved it, surviving as an
+      //    EQUIVALENT mutant. Same doctrine as the sibling lines above: matchingDocs is
+      //    the sole validation authority, a second guard is a mutant we cannot kill.
+      rule.keys = entry.keys;
       rules.push(rule);
     }
   }

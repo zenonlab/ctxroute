@@ -70,17 +70,66 @@ const contient = (u, motif) => norm(u).includes(norm(motif));
  *    because a word appears in a comment (㊿).
  * ⚠️ Removed from BOTH filters, never from just one: their duality is theorem ㊼.
  */
-function params(toolInput, profondeurMax) {
+function params(toolInput, profondeurMax, garde) {
+  const passe = garde || defautFiltre;
   const out = [];
   const visiter = (v, key, d) => {
     if (typeof v === 'string') {
-      if (!DEFAULT_PROFILE.contentKeys.includes(key)) out.push(v);
+      if (passe(key)) out.push(v);
     } else if (v && typeof v === 'object' && d < profondeurMax) {
       for (const [k, x] of Object.entries(v)) visiter(x, Array.isArray(v) ? key : k, d + 1);
     }
   };
   visiter(toolInput, null, 0);
   return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ④ `keys` — WHICH KEYS ARE VISIBLE (19/08/2026). The other operators say WHAT
+//    to look for; this one says WHERE to look. It is ORTHOGONAL to OR/AND/NOT:
+//    it adds no connective, it chooses the UNIVERSE the three others read.
+//
+// 🛑 THE RULE IS THE SAME ON EVERY AXIS, AND THAT UNIFORMITY *IS* THE SEMANTICS:
+//      absent        ⇒ the default universe;
+//      all `-name`   ⇒ the default universe MINUS those names (it REMOVES);
+//      otherwise     ⇒ EXACTLY the names listed (it REPLACES — hence it may WIDEN).
+//    Written this way, "REPLACES" is ABSOLUTE: a whitelist naming a payload key
+//    reaches it, on the TRIGGER as on the FILTERS. Any axis where that stopped
+//    being true would give one declaration two meanings depending on where it is
+//    read — the silent ambiguity this language refuses everywhere else.
+// ⚠️ ㊿ (payload keys excluded) is the DEFAULT universe of the filters, never a
+//    floor: it was a global arbitration, and `keys` exists precisely so an entry
+//    can overrule a global default FOR ITSELF, in writing, visibly.
+// ═══════════════════════════════════════════════════════════════════════
+
+const KEY_REMOVE = '-';
+/** The filters' DEFAULT universe: every key except the payload ones (㊿). */
+const defautFiltre = (key) => !DEFAULT_PROFILE.contentKeys.includes(key);
+
+/** The declaration for ONE axis: flat list = the three axes, object = one per axis. */
+function declAxe(keysDecl, axis) {
+  const d = Object(keysDecl) === keysDecl && !Array.isArray(keysDecl) ? keysDecl[axis] : keysDecl;
+  return Array.isArray(d) ? d : null;
+}
+
+/** A predicate over the keys, for a FILTER axis (`scope`, `exclude`). */
+function garde(keysDecl, axis) {
+  const decl = declAxe(keysDecl, axis);
+  if (!decl) return defautFiltre;
+  const retraits = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
+  if (retraits.length !== decl.length) return (key) => decl.includes(key);
+  const bannies = retraits.map((k) => String(k).slice(KEY_REMOVE.length));
+  return (key) => defautFiltre(key) && !bannies.includes(key);
+}
+
+/** A LIST of keys, for the TRIGGER axis (its default universe IS a list). */
+function universeTrigger(keysDecl, defauts) {
+  const decl = declAxe(keysDecl, 'match');
+  if (!decl) return defauts;
+  const retraits = decl.filter((k) => String(k).startsWith(KEY_REMOVE));
+  if (retraits.length !== decl.length) return decl;
+  const bannies = retraits.map((k) => String(k).slice(KEY_REMOVE.length));
+  return defauts.filter((k) => !bannies.includes(k));
 }
 
 /**
@@ -112,13 +161,17 @@ function keyValues(value, keys, profondeurMax, key, out) {
  *    exactly where ㊼ had lodged itself: a negative evaluated fragment by fragment
  *    let things through via the invented fragment.
  */
-function candidates(toolName, toolInput) {
+function candidates(toolName, toolInput, keysDecl) {
+  const clesChemins = universeTrigger(keysDecl, DEFAULT_PROFILE.pathKeys);
+  const clesCommandes = universeTrigger(keysDecl, DEFAULT_PROFILE.commandKeys);
   const out = [];
   // ⚠️ The dialect comes from the PROFILE — the spec describes the SEMANTICS (∃/∀), not
   //    the harness's names. Both consume the same DECLARED DATA: without that,
   //    the differential would prove a divergence of LIST, not of meaning.
-  out.push(...keyValues(toolInput, DEFAULT_PROFILE.pathKeys, 20));
-  if (typeof toolInput.cwd === 'string') out.push(toolInput.cwd);
+  out.push(...keyValues(toolInput, clesChemins, 20));
+  // ⚠️ NO `cwd` special case: it is a DECLARED path key of the profile (19/08/2026),
+  //    hence read by `keyValues` above like any other — and therefore NARROWABLE by
+  //    `keys`. A parameter the operator cannot address is a boundary nobody declared.
   if (DEFAULT_PROFILE.patchTools.includes(toolName)) {
     const patch = toolInput.input || toolInput.patch || toolInput.command || '';
     const re = /\*\*\* (?:Update|Add|Delete) File:\s*(.+)/g;
@@ -127,13 +180,15 @@ function candidates(toolName, toolInput) {
   }
   // ⚠️ ㊽: a shell gesture is recognised by its SHAPE (presence of a `command`), never
   //    by the tool's NAME — otherwise PowerShell and SSH stay invisible (18 % measured).
-  if (typeof toolInput.command === 'string') {
-    out.push(toolInput.command);
-    const cd = toolInput.command.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
-    if (cd) {
-      const after = toolInput.command.split(/&&|;/).slice(1).join(' ');
-      for (const word of after.trim().split(/\s+/)) out.push(cd[1] + '/' + word);
-    }
+  // The commands come from the DECLARED KEYS, never from a hard-coded `command`:
+  // that is what makes them narrowable by `keys` exactly like the paths.
+  for (const commande of keyValues(toolInput, clesCommandes, 20)) {
+      out.push(commande);
+      const cd = commande.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
+      if (cd) {
+        const after = commande.split(/&&|;/).slice(1).join(' ');
+        for (const word of after.trim().split(/\s+/)) out.push(cd[1] + '/' + word);
+      }
   }
   return out;
 }
@@ -168,7 +223,11 @@ const excludedNow = (exclude, univers) =>
 
 /**
  * THE DECISION — does a rule inject on this gesture?
- * @param {{pattern:string, scope?:Array, exclude?:Array}} rule
+ * @param {{pattern:string, scope?:Array, exclude?:Array, keys?:Array|Object}} rule
+ *   ⚠️ `keys` = the axis WHERE to look (19/08/2026): a flat list applies to the three
+ *   axes, an object `{match, scope, exclude}` gives each its own universe. A JSDoc that
+ *   omits it is a LYING CONTRACT — `check:types` is what catches that, and it already
+ *   caught it twice on this operator.
  * @param {{toolName:string, toolInput:object}} geste
  * @param {{profondeurMax:number}} bornes — the admitted flattening depth.
  *   ⚠️ AN ACCEPTED BOUND, not a shameful limit: the MCP spec allows
@@ -177,14 +236,19 @@ const excludedNow = (exclude, univers) =>
  */
 function injects(rule, geste, bornes) {
   const toolInput = geste.toolInput || {};
-  const cands = candidates(geste.toolName || '', toolInput);
-  const vals = params(toolInput, (bornes && bornes.profondeurMax) || 20);
+  const profondeur = (bornes && bornes.profondeurMax) || 20;
+  const cands = candidates(geste.toolName || '', toolInput, rule.keys);
   if (!declenche(rule.pattern, cands)) return false;
+  // ⚠️ ONE UNIVERSE PER AXIS: `scope` and `exclude` no longer necessarily read the same
+  //    values. That WEAKENS the duality of ㊼ (they stop being exact duals over a SINGLE
+  //    universe) — an ASSUMED consequence of `keys`, and it is the AUTHOR who assumes it,
+  //    visibly, in their entry. What the engine used to do in silence was the defect.
+  const vals = params(toolInput, profondeur, garde(rule.keys, 'exclude'));
   // The CONTEXT = the candidate(s) through which the rule bit, plus the
   // tool name on the `tool` axis. Union with the params: that is the universe of the ∀¬.
   const univers = vals.concat(cands.filter((c) => contient(c, rule.pattern)));
   if (excludedNow(rule.exclude, univers)) return false;
-  return scopeSatisfied(rule.scope, vals);
+  return scopeSatisfied(rule.scope, params(toolInput, profondeur, garde(rule.keys, 'scope')));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

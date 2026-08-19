@@ -65,6 +65,9 @@ const sousEnsembles = (xs) => {
   return out;
 };
 
+// The `keys` forms offered to the enumeration (cf. the comment inside the loop).
+const VARIANTES_KEYS = [['-file_path'], ['file_path'], { match: ['-file_path'] }, { scope: ['-file_path'] }, { exclude: ['-file_path'] }];
+
 // ALL the expressible rules: 1 pattern × every scope × every exclude.
 function toutesLesRegles() {
   const out = [];
@@ -75,6 +78,18 @@ function toutesLesRegles() {
         if (scope.length) r.scope = scope;
         if (exclude.length) r.exclude = exclude;
         out.push(r);
+        // ⚠️ `keys` (19/08/2026) — the axis "WHERE to look". It is offered here for ONE
+        //    reason: this file's rule is that the generator must carry EVERY FORM of the
+        //    language, and it was the amputation of ㊺① that once made a false green.
+        // 📐 MEASURED RESULT: the set is UNCHANGED. That is not a coincidence and it is
+        //    not luck — this harness places every atom in the SAME key (the path), so
+        //    narrowing the key universe can only make a rule blind, never let it express
+        //    a NEW truth table. `keys` widens the UNIVERSE, this file measures BOOLEAN
+        //    EXPRESSIVENESS: two orthogonal axes, exactly like ㊼ before it.
+        // 🛑 The value is precisely that this is now COMPUTED. Asserting "an operator on
+        //    the universe cannot change the boolean scope" is plausible, and this repo has
+        //    already shipped a plausible sentence that was false for three weeks.
+        for (const keys of VARIANTES_KEYS) out.push({ ...r, keys });
       }
     }
     // ⚠️ ㊺① — the GROUPED form of `scope` (AND of ORs). WITHOUT it, the enumeration

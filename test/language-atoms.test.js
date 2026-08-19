@@ -180,6 +180,51 @@ const CASES = [
     justification: '㊿ — the same filter universe as the docs (a single filter function, never two)',
     withIt: () => decideSkill({ match: ['base'], scope: ['aaa'] }, { toolName: 'X', toolInput: { file_path: '/x/base', content: 'aaa' } }),
     withoutIt: () => decideSkill({ match: ['base'], scope: ['aaa'] }, { toolName: 'X', toolInput: { file_path: '/x/base', content: 'zzz' } }) },
+  // ── OPERATOR keys × THE THREE AXES (19/08/2026) ───────────────────────
+  // 🔴 This whole block was MISSING the day `keys` shipped: the operator lived in the
+  //    engine, in the validator and in the schema, and in NO judge. The table is what
+  //    says an operator EXISTS on an axis — without these rows, an axis could have been
+  //    inert forever (and one was: `skill/match`, 8 fleet entries out of 8).
+  // ⚠️ The atom lives ONLY in the key being narrowed: that is what makes the flip
+  //    attributable to `keys` and to nothing else.
+  { id: 'keys/match/blacklist-removes-a-key', visible: true,
+    withIt: () => decideFile({ pattern: 'aaa' }, { toolName: 'Bash', toolInput: { command: 'echo aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'aaa', keys: ['-command'] }, { toolName: 'Bash', toolInput: { command: 'echo aaa' } }) },
+  { id: 'keys/match/whitelist-replaces-the-universe', visible: true,
+    withIt: () => decideFile({ pattern: 'aaa', keys: ['file_path'] }, { toolName: 'X', toolInput: { file_path: '/x/aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'aaa', keys: ['file_path'] }, { toolName: 'Bash', toolInput: { command: 'echo aaa' } }) },
+  { id: 'keys/scope/own-axis', visible: true,
+    withIt: () => decideFile({ pattern: 'base', scope: ['aaa'] }, { toolName: 'Bash', toolInput: { command: 'base aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'base', scope: ['aaa'], keys: { scope: ['-command'] } }, { toolName: 'Bash', toolInput: { command: 'base aaa' } }) },
+  { id: 'keys/exclude/own-axis', visible: true,
+    withIt: () => !decideFile({ pattern: 'base', exclude: ['aaa'] }, { toolName: 'X', toolInput: { file_path: '/x/base', other: 'aaa' } }),
+    withoutIt: () => !decideFile({ pattern: 'base', exclude: ['aaa'], keys: { exclude: ['-other'] } }, { toolName: 'X', toolInput: { file_path: '/x/base', other: 'aaa' } }) },
+  { id: 'keys/axes-are-independent', visible: true,
+    // narrowing `scope` must leave `exclude` intact — the object form exists for that
+    withIt: () => !decideFile({ pattern: 'base', exclude: ['aaa'], keys: { scope: ['-other'] } }, { toolName: 'X', toolInput: { file_path: '/x/base', other: 'aaa' } }),
+    withoutIt: () => !decideFile({ pattern: 'base', exclude: ['aaa'], keys: { exclude: ['-other'] } }, { toolName: 'X', toolInput: { file_path: '/x/base', other: 'aaa' } }) },
+  { id: 'keys/scope/whitelist-reaches-a-payload-key', visible: true,
+    // 🔴 FALSE UNTIL 19/08/2026: the whitelist widened the TRIGGER and left the FILTERS
+    //    blind, so ONE declaration meant two things depending on the axis reading it —
+    //    780 divergences measured. ㊿ is the DEFAULT universe of the filters, never a
+    //    floor: `keys` exists so an entry can overrule a global default FOR ITSELF.
+    withIt: () => decideFile({ pattern: 'base', scope: ['aaa'], keys: { scope: ['content'] } }, { toolName: 'X', toolInput: { file_path: '/x/base', content: 'aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'base', scope: ['aaa'] }, { toolName: 'X', toolInput: { file_path: '/x/base', content: 'aaa' } }) },
+  { id: 'keys/match/cwd-is-addressable', visible: true,
+    // 🔴 FALSE UNTIL 19/08/2026: `cwd` was pushed as a special case, hence OUTSIDE every
+    //    key universe — the one parameter that says "I am WORKING here" was the one the
+    //    operator could not reach.
+    withIt: () => decideFile({ pattern: 'aaa' }, { toolName: 'X', toolInput: { cwd: '/w/aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'aaa', keys: ['-cwd'] }, { toolName: 'X', toolInput: { cwd: '/w/aaa' } }) },
+  { id: 'keys/skill/match-dimension', visible: true,
+    // 🔴 THE DEFECT OF 19/08: alive on `rules`/`servers`/`tool`, INERT on `match` — the
+    //    only form the fleet uses. `skillRules` rebuilds its rule field by field.
+    withIt: () => decideSkill({ match: ['aaa'] }, { toolName: 'Bash', toolInput: { command: 'echo aaa' } }),
+    withoutIt: () => decideSkill({ match: ['aaa'], keys: ['-command'] }, { toolName: 'Bash', toolInput: { command: 'echo aaa' } }) },
+  { id: 'keys/declared-alone-narrows-nothing', visible: false,
+    justification: '`keys` chooses WHERE the others look; alone it filters nothing — the validator refuses it, and the engine stays inert (same status as a lone `scope`)',
+    withIt: () => decideFile({ pattern: 'aaa', keys: ['file_path'] }, { toolName: 'X', toolInput: { file_path: '/x/aaa' } }),
+    withoutIt: () => decideFile({ pattern: 'aaa' }, { toolName: 'X', toolInput: { file_path: '/x/aaa' } }) },
 ];
 
 test('⚙️ TABLE OF ATOMS: each cell tells the truth, each blind cell is JUSTIFIED', () => {

@@ -66,12 +66,15 @@ function extractFilePaths(toolName, toolInput, profil) {
   //    was INVISIBLE **even if its key was declared**. This is ㊵ never applied
   //    to the trigger — the filters, for their part, already went down since 12/08.
   const filePaths = keyValues(toolInput, p.pathKeys, MAX_DEPTH);
-  // ⚠️ `cwd` (18/07/2026): candidate path supplied ONLY by sources/skill.js
-  //    (perimeter by current directory — MEASURED signal common to the hook
-  //    contracts of Claude Code and Codex). INERT for file docs: no real
-  //    tool puts `cwd` in tool_input and the gateway only injects it on the
-  //    skill side — protect-files parity intact BY CONSTRUCTION.
-  if (typeof toolInput.cwd === 'string') filePaths.push(toolInput.cwd);
+  // 🔴 THE `cwd` SPECIAL CASE WAS REMOVED ON 19/08/2026 — it is a DECLARED path key of the
+  //    profile now. Pushed here, it lived OUTSIDE every key universe, so `keys` could not
+  //    reach it in either form: the operator that decides "which parameter keys are
+  //    visible" was blind to the single parameter that says "I am WORKING here" rather
+  //    than "I am QUOTING this". Behaviour unchanged by default (it was already a
+  //    candidate, and still is) — it became NARROWABLE, which is what it always claimed.
+  // ⚠️ Supplied ONLY by sources/skill.js (18/07/2026): a MEASURED signal, common to the
+  //    hook contracts of Claude Code AND Codex. File docs never receive it in practice —
+  //    protect-files parity holds by absence of the field, no longer by a hard-coded branch.
 
   if (p.patchTools.includes(toolName)) {
     // Stryker disable next-line StringLiteral: EQUIVALENT mutant proven (16/07/2026) — the fallback
@@ -148,8 +151,19 @@ const MAX_SIZE = 262144;
  *   USED by explain.js: a MUTE bound would recreate the defect we fix here
  *   (a scope that fails without a visible reason is indistinguishable from an absent scope).
  */
-function textValues(value, depth, etat, key) {
+
+function textValues(value, depth, etat, key, decision) {
   const acc = etat || { chunks: [], keys: [], size: 0, truncated: null };
+  // ⚠️ `contenusAdmis` = the payload keys an EXPLICIT whitelist re-opens for ONE rule.
+  //    ㊿ is the DEFAULT universe of the filters, never a floor: `keys` exists so an
+  //    entry can overrule a global default FOR ITSELF, in writing. Empty by default,
+  //    so the shared traversal stays exactly what it was — and stays CHEAP.
+  // ⚠️ `decision` = the axis DECISION of the rule being evaluated, or nothing for the
+  //    shared traversal. 🛑 NEITHER a list NOR a default predicate: an empty list and a
+  //    `() => false` are both EQUIVALENT MUTANTS (Stryker fills the list with a name no
+  //    key bears; it turns the `false` into `undefined` — same falsy value). Optional
+  //    chaining carries the whole thing with no constant to mutate: remove the `?.` and
+  //    the shared traversal throws, so the mutant dies instead of surviving.
   // 🛑 ㊿ (15/08/2026) — THE PAYLOAD CONTENT IS OUT OF THE FILTERS' UNIVERSE. A param that
   //    CARRIES content (`old_string`, `content`…) DESIGNATES nothing: reading it
   //    made `scope`/`exclude` decide on the text one TYPES. **Measured: 55
@@ -183,7 +197,9 @@ function textValues(value, depth, etat, key) {
       //    return at the head of the function: the return value of a RECURSIVE call
       //    is read by nobody, so that guard would be an EQUIVALENT mutant
       //    (measured on 15/08/2026: 2 survivors). We avoid it by CONSTRUCTION.
-      if (!DEFAULT_PROFILE.contentKeys.includes(sousCle)) textValues(v, (depth || 0) + 1, acc, sousCle);
+      if (!DEFAULT_PROFILE.contentKeys.includes(sousCle) || decision?.garde(sousCle)) {
+        textValues(v, (depth || 0) + 1, acc, sousCle, decision);
+      }
     }
   }
   // ⚠️ `chunks` = THE form consumed by the filters (per-value, 53bis).
@@ -327,9 +343,25 @@ function shouldSkip(rule, context, toolInput) {
   // ⚠️ The triggering CONTEXT carries no parameter key (it is a candidate path, not a
   //    param): it is therefore treated like any keyless value — kept by a blacklist,
   //    dropped by a whitelist. Exempting it would make `keys` lie by half.
+  // ⚠️ A WHITELIST **REPLACES** the universe, and that is ABSOLUTE — on the filters as on
+  //    the trigger. 🔴 It was NOT, until 19/08/2026: `keys: ["content"]` widened the
+  //    TRIGGER and left `scope`/`exclude` blind, so ONE declaration had TWO meanings
+  //    depending on the axis reading it, in silence. **780 divergences measured** by the
+  //    exhaustive differential the day the model learned the operator. Worse: the open
+  //    half was the DANGEROUS one (a trigger CREATES injections) and the closed half the
+  //    SAFE one (a filter can never inject on its own).
+  // ⚠️ Re-traversed ONLY for a rule that NAMES a payload key — the 852 rules of the fleet
+  //    keep the shared traversal, so this costs them nothing. Same pattern as the trigger
+  //    (`cheminsR`/`commandesR`), same reason: the general case must not pay for the rare one.
   const garde = (axis) => {
     const d = keyDecision(rule.keys, axis);
-    return d ? brut.chunks.filter((_, i) => d.garde(brut.keys[i])).map(norm) : brut.chunks.map(norm);
+    if (!d) return brut.chunks.map(norm);
+    // ⚠️ A WHITELIST re-traverses with its OWN predicate as the admission rule — the two
+    //    are the SAME question ("which keys does this entry read?"), so asking it twice
+    //    would be two truths that diverge. A BLACKLIST keeps the shared traversal: it only
+    //    ever REMOVES from the default, so it can need nothing the default did not collect.
+    const src = d.enleve ? brut : textValues(toolInput, 0, null, undefined, d);
+    return src.chunks.filter((_, i) => d.garde(src.keys[i])).map(norm);
   };
   const valeurs = garde('scope');
   if (Array.isArray(rule.exclude)) {
@@ -341,7 +373,14 @@ function shouldSkip(rule, context, toolInput) {
     //    was a REAL bug caught by the test the same hour: the two axes are declared
     //    separately precisely so they can differ, and sharing one universe made the
     //    `exclude` axis silently inert — an operator that accepts a value and ignores it.
-    const univers = garde('exclude').concat(norm(context));
+    // ⚠️ The context is a LIST since 19/08/2026 (every biting candidate), and stays
+    //    ONE STRING on the `tool`/`servers` axes (the tool name). `concat` accepts both
+    //    without a single conditional: an array is spread, a scalar is appended —
+    //    totality by CONSTRUCTION, where a `Array.isArray` guard would be one more
+    //    branch to keep alive for nothing.
+    const univers = garde('exclude').concat(
+      Array.isArray(context) ? context.map(norm) : norm(context),
+    );
     if (rule.exclude.some((ex) => univers.some((u) => u.includes(norm(ex))))) return true;
   }
   // ⚠️ `scope` absent OR EMPTY array = "no filter": without the length
@@ -432,15 +471,23 @@ function matchingDocs(rules, payload) {
       ? keyValues(toolInput, triggerKeys(rule.keys, DEFAULT_PROFILE.commandKeys), MAX_DEPTH)
       : commandes;
 
-    for (const fp of cheminsR) {
-      if (norm(fp).includes(normPattern) && !shouldSkip(rule, fp, toolInput)) add(rule);
-    }
-
+    // 🛑 THE TRIGGERING CONTEXT IS **ALL** THE CANDIDATES THAT BIT, NEVER THE CURRENT ONE
+    //    ALONE (19/08/2026). Evaluated candidate by candidate, `exclude` was existential
+    //    again — ONE candidate free of the excluded pattern re-authorised everything, so
+    //    the negation depended on HOW the gesture was written. That is ㊼ WORD FOR WORD,
+    //    and it came back through the door `keys` opened: as long as the params carried
+    //    the whole command, the complete universe hid the defect; `keys: {exclude:
+    //    ["-command"]}` removes it and the hole reappears. **192 divergences measured**
+    //    by the exhaustive differential. A "for all" cannot be bypassed BY CONSTRUCTION —
+    //    that is the whole point, and it is why the decision is taken ONCE, not per candidate.
+    const mordants = [];
+    for (const fp of cheminsR) if (norm(fp).includes(normPattern)) mordants.push(fp);
     for (const commande of commandesR) {
       for (const cand of bashCandidates(commande)) {
-        if (norm(cand).includes(normPattern) && !shouldSkip(rule, cand, toolInput)) add(rule);
+        if (norm(cand).includes(normPattern)) mordants.push(cand);
       }
     }
+    if (mordants.length && !shouldSkip(rule, mordants, toolInput)) add(rule);
   }
 
   return matched;

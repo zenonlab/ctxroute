@@ -25,6 +25,14 @@ FACTS, never on guessed intent).
   refused (ambiguity, not capability, is the danger).
 - **`exclude`**: ∀¬ over all values ∪ the triggering context — the exact dual
   of `scope`. One motif present anywhere in the gesture ⇒ no injection.
+- **`keys`** (orthogonal — it adds no connective): chooses WHICH parameter
+  keys the three operators above may read at all. Flat list = the same
+  universe for the three axes · `{match, scope, exclude}` = one per axis.
+  A `-name` REMOVES a key from the default universe; a bare name REPLACES
+  that universe entirely, so an entry may also WIDEN — reading a key the
+  profile does not declare, payload keys included. "Replaces" is absolute
+  and identical on the three axes: one declaration, one meaning.
+  It never triggers on its own, and declaring it alone is refused.
 - A motif matches **inside a single value**, never across two adjacent ones.
 - Global target filter: `filterMode`/`filterList` (whitelist/blacklist over
   tool names, MCP server names, or `*`), cascading `defaults.{source}` >

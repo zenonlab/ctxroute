@@ -55,9 +55,17 @@
 
 const DEFAULT_PROFILE = {
   // Parameters that DESIGNATE a path. Documented contract of the harnesses.
-  // ⚠️ `cwd` is NOT here: it is merged into the payload by the `skill`
-  //    source only (inherited asymmetry, declared in skill-source.md).
-  pathKeys: ['file_path', 'remotePath', 'path'],
+  // ⚠️ `cwd` IS HERE SINCE 19/08/2026 — it used to be pushed as a SPECIAL CASE inside
+  //    `extractFilePaths`, hence OUTSIDE every key universe. Consequence measured that
+  //    day: `keys` could not reach it, in EITHER form (`["-cwd"]` inert, a whitelist
+  //    inert too), while the operator's whole contract is "which parameter keys are
+  //    visible". So the one parameter that distinguishes "I am WORKING here" from "I am
+  //    QUOTING it" was the one it could not address — the very distinction `keys` was
+  //    written for. A capability that stops at an undeclared boundary is the class this
+  //    file exists to abolish: the dialect is DATA, and a hard-coded exception is not data.
+  // ⚠️ Default behaviour UNCHANGED (`cwd` was already a candidate); what changes is that
+  //    it is now DECLARED, hence narrowable like the rest. Supplied only by `sources/skill.js`.
+  pathKeys: ['file_path', 'remotePath', 'path', 'cwd'],
   // Tools whose PAYLOAD IS a patch (paths inside the text).
   // `apply_patch` = Codex CLI ≥ 0.144 (official doc re-read on 19/07/2026).
   patchTools: ['apply_patch'],

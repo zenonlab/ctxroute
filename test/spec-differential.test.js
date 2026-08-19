@@ -76,10 +76,32 @@ function gestes() {
       //    hole the engine's `join(' ')` concatenation carried until now.
       out.push({ toolName: 'X', toolInput: { file_path: `/x/${a}`, u: `x ${a}`, v: `${b} y` } });
       out.push({ toolName: 'X', toolInput: { file_path: `/x/${a}`, u: `x ${a} ${b} y` } });
+      // ⚠️ PAYLOAD CARRIERS (`keys`, 19/08/2026): without a gesture holding a `content`,
+      //    the WIDENING of a whitelist towards a payload key is UNREACHABLE and the
+      //    differential judges it not at all. A domain that does not reach a capability
+      //    does not measure it — the lesson of the depth hole of 14/08.
+      out.push({ toolName: 'Write', toolInput: { file_path: `/x/${a}`, content: `${b}` } });
+      out.push({ toolName: 'Write', toolInput: { content: `${a}/${b}` } });
     }
   }
   return out;
 }
+
+// The `keys` forms confronted. ⚠️ `content` is DELIBERATELY there: it is the key
+// that ㊿ removes from the filters' DEFAULT universe, so it is the only one able to
+// reveal an axis where "a whitelist REPLACES" would have stopped being true.
+const VARIANTES_KEYS = [
+  ['-command'],
+  ['-file_path'],
+  ['file_path'],
+  ['command'],
+  ['content'],
+  { match: ['-command'] },
+  { scope: ['-command'] },
+  { exclude: ['-command'] },
+  { match: ['file_path'], scope: ['content'] },
+  { scope: ['content'], exclude: ['content'] },
+];
 
 // ── THE DOMAIN OF THE RULES — everything that can be written on these atoms.
 function rules() {
@@ -99,6 +121,14 @@ function rules() {
         if (scope.length) r.scope = scope;
         if (exclude.length) r.exclude = exclude;
         out.push(r);
+        // ⚠️ `keys` (19/08/2026) — the axis "WHERE to look". Both forms, and the THREE
+        //    axes: a flat list applies to all of them, an object gives each its own.
+        //    A whitelist REPLACES the universe (hence it may WIDEN, `content` included),
+        //    a list of `-name` REMOVES from it. Omitting these forms would measure a
+        //    language that is no longer ours — exactly what the completeness file forbids.
+        for (const keys of VARIANTES_KEYS) {
+          out.push({ ...r, keys });
+        }
       }
       // ㊺① — the GROUPED form is part of the language: omitting it here would measure
       // a semantics that is not ours.

@@ -37,6 +37,13 @@ working in it. Flat list = the same universe for the three axes; object = one pe
 prefixed with `-` REMOVES a key; without the prefix the list REPLACES the universe, so an entry
 may also read a key the profile never declared.
 
+⚠️ **"REPLACES" is ABSOLUTE, and on all three axes** — including the payload keys the filters
+exclude by default (㊿ is their DEFAULT universe, never a floor). It was NOT, for one day: a
+whitelist widened the trigger and left `scope`/`exclude` blind, so one declaration meant two
+things depending on which axis read it. 780 divergences, found by the model, not by a test.
+And `cwd` — the parameter that separates "I work here" from "I quote this" — is a declared key
+like any other, so `["-cwd"]` reaches it.
+
 ⚠️ It NARROWS, it never triggers: declared alone it is refused, like `scope`. And what the
 validator refuses is the AMBIGUOUS (a list half whitelist, half blacklist), never the unusual —
 giving `scope` and `exclude` different universes is allowed, visible in the entry, and yours to
