@@ -140,7 +140,11 @@ const MAX_SIZE = 262144;
  *    that is the original semantics, only the depth has changed.
  * 🛑 NO cycle detection: a payload comes from `JSON.parse` (network/stdin), which
  *    NEVER produces one. Adding one would be DEAD CODE. The depth bound suffices.
- * @returns {{ chunks: string[], truncated: null|'depth'|'size' }} — `truncated` is
+ * @returns {{ chunks: string[], keys: (string|undefined)[], truncated: null|'depth'|'size' }} —
+ *   `keys[i]` is the parameter key that carried `chunks[i]` (`undefined` at the root: a
+ *   value reached without passing through a named key belongs to no key). That parallel
+ *   array is what lets the `keys` operator narrow the universe WITHOUT a second traversal.
+ *   `truncated` is
  *   USED by explain.js: a MUTE bound would recreate the defect we fix here
  *   (a scope that fails without a visible reason is indistinguishable from an absent scope).
  */
