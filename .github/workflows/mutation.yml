@@ -52,6 +52,7 @@ on:
       # score — the workflow must therefore see it. Sealed by mutation-workflow-gate.
       - 'test/keys-operator.test.js'
       - 'test/operator-consumption-gate.test.js'
+      - 'test/observable-reach-gate.test.js'
       - 'test/spec-differential.test.js'
       - 'src/language-spec.js'
       - 'src/cadence-spec.js'

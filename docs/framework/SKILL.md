@@ -108,6 +108,38 @@ until it is exercised, or declared out of scope with its reason (+ an inverse ch
 justification). **The prose ALREADY said "shipping an operator includes its judges" — and `keys`
 shipped outside anyway.** A rule that only prose guards is not a rule.
 
+## 🛑 EXPRESSIVENESS IS A PRODUCT, AND ONLY ONE FACTOR WAS EVER MEASURED (19/08/2026)
+
+**THE EIGHT DEFECTS OF THIS PROJECT ARE THE SAME DEFECT.** ㊵ · 51 · ㊴ · ㊽ · ㊿ · 53bis · `keys` ·
+`cwd` — **eight out of eight are holes in WHAT THE LANGUAGE CAN SEE.** Not one is a hole in how it
+COMBINES what it sees. Read that list again before designing anything here: it predicts where the
+next one will be.
+
+📐 **expressiveness = combinators × observables.**
+`language-completeness` proves the FIRST factor: over a **FIXED** universe, the expressible set is
+exactly `{f | f(∅)=false}`. That axis has **NEVER** bitten.
+🔴 **AND THE RESULT WAS QUOTED WITHOUT ITS HYPOTHESIS** — "complete for a fixed universe" became
+"complete". A TRUE theorem, a FALSE sentence. It is the same fault as the "OR+AND+NOT ⇒ anything"
+of July, committed one level up — **with its own warning already written in the file**. A hypothesis
+that only prose carries does not hold.
+✅ **The second factor now has its judge**: `observable-reach-gate.test.js`. A universe is COMPLETE
+when the language can DISCRIMINATE on every fact the harness delivers, **positively AND negatively**,
+or when the cell is blind WITH ITS REASON. Test: ∃ D with `decide(D, gesture WITH o) ≠ decide(D,
+gesture WITHOUT o)`. The observable list is **DERIVED from `conformance({})`** — a capability added
+to the contract lands in the table by itself and stays RED.
+🛑 **NEVER quote either file alone as "the language is complete."** Proving one factor and concluding
+on the product is exactly the fault above.
+⚠️ **AND THERE IS NO ABSOLUTE COMPLETENESS**: a harness's universe is an EMPIRICAL fact about a third
+party — it is never derived, only DECLARED (contract + profile) then CONFRONTED (`doctor --harness`
+on a real payload, real transcripts). Everything after the declaration is mathematics; the
+declaration itself is a measurement, and it must be re-measured.
+✅ **IT PAID BEFORE THE NEED, which is the whole point**: it found that the tool NAME is reachable
+NEGATIVELY (`exclude` sees it, as the context) but **NOT POSITIVELY by substring** ⇒ "every tool whose
+name contains `delete`" can only be ENUMERATED, and an enumeration is born stale (㊽). Decision open,
+REFACTOR-PLAN 59 — and it drags ㊼ with it: the doc says `scope` and `exclude` are duals **over one
+universe**, the code gives `exclude` the context and `scope` not. **Model and prose contradict each
+other; that is the real defect to close.**
+
 ## AGENT POSTURE (known LLM biases ON THIS PROJECT — each has already caused a real error, corrected 18/07/2026)
 You are an LLM: your statistical reflexes pull toward what the industry does. This project is PRECISELY what the industry does not do. Your active biases here:
 1. **"Use case" bias**: you think in features ("inject docs on files"); the maintainer thinks in LANGUAGE (any event → any knowledge). Antidote: at every brick, ask yourself "is this the special case or the generalization?" — ALWAYS ship the generalization (real error: MCP tool grain forgotten on skills).

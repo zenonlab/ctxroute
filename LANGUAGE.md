@@ -11,10 +11,21 @@ A **declarative, deliberately non-Turing-complete DSL** for programming
 traceable context-injection workflows: you DESCRIBE when a piece of knowledge
 must reach an agent's gesture (a tool call), the machine delivers it —
 predictable and explainable. The domain is finite, so its expressiveness is
-**proven by exhaustive enumeration**, not hoped: the expressible set is exactly
-`{f | f(empty gesture) = false}` — complete, up to the load-bearing constraint
-that nothing injects on a gesture that contains nothing (knowledge rides on
-FACTS, never on guessed intent).
+**proven by exhaustive enumeration**, not hoped.
+
+Expressiveness here is a **product of two factors**, and both are measured:
+
+- **Combinators**, over a fixed observable universe: the expressible set is exactly
+  `{f | f(empty gesture) = false}` — complete, up to the load-bearing constraint
+  that nothing injects on a gesture that contains nothing (knowledge rides on
+  FACTS, never on guessed intent).
+- **Observables**: the language can discriminate on every fact the harness
+  contract delivers, positively and negatively — or the cell is declared blind
+  with its reason.
+
+⚠️ Neither factor may be quoted alone as "the language is complete": proving one
+and concluding on the product is a dropped hypothesis, and it is a fault this
+project has actually committed.
 
 ## The closed boolean base — three operators, never a fourth
 

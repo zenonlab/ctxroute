@@ -170,8 +170,22 @@ test('SCOPE ⑤: EXACT CHARACTERISATION — the sayable = EVERYTHING that is fal
   //    it ARRIVED with ㊺① on 14/08/2026. A COUNT (128/256) says nothing:
   //    the CHARACTERISATION is needed, otherwise we do not know WHAT is missing.
   // ✅ MEASURED: the reachable set is EXACTLY { f | f(empty gesture) = false },
-  //    0 missing and 0 extra. The language is therefore COMPLETE, up to ONE
+  //    0 missing and 0 extra — **FOR A FIXED OBSERVABLE UNIVERSE**, up to ONE
   //    STRUCTURAL constraint: nothing is injected on a gesture that contains nothing.
+  // 🔴 THAT HYPOTHESIS IS NOT DECORATION, AND DROPPING IT WAS A REAL FAULT
+  //    (named 19/08/2026). This harness places every atom in the SAME key, so it
+  //    measures the COMBINATORS over a fixed universe. Expressiveness is a PRODUCT:
+  //        expressiveness = combinators × observables
+  //    Quoting this result as "the language is COMPLETE" proves the first factor and
+  //    concludes on the product. The theorem is TRUE; the sentence was not.
+  // 🛑 AND THE WARNING WAS ALREADY IN THIS FILE ("measures BOOLEAN EXPRESSIVENESS,
+  //    never an operator's UNIVERSE") — it was written, and the generalisation was
+  //    made anyway. It is the SAME fault as the "OR+AND+NOT ⇒ anything" of July,
+  //    committed one level up. **A hypothesis that only prose carries does not hold.**
+  // ⇒ THE SECOND FACTOR HAS ITS OWN JUDGE: `observable-reach-gate.test.js` proves the
+  //    language can DISCRIMINATE on every fact of the harness contract, positively and
+  //    negatively, or that the cell is blind WITH ITS REASON. Neither file may be
+  //    quoted alone as "the language is complete".
   // 🛑 THAT CONSTRAINT IS INTENDED, NOT A HOLE — it is the project's load-bearing wall
   //    ("we only inject on FACTS", §3bis of the mental model). A language that
   //    could say "inject when NOTHING happens" would violate its reason for being.

@@ -28,6 +28,7 @@ export default defineConfig({
       //    a module believed mutated and measured on nothing (62 survivors, measured).
       'test/keys-operator.test.js',
       'test/operator-consumption-gate.test.js',
+      'test/observable-reach-gate.test.js',
       // ⚠️ The judge of `language-spec.js` is the EXHAUSTIVE differential: a mutant
       //    of the spec must be killed by the confrontation with the engine. It is
       //    deterministic (total enumeration, zero randomness) — it belongs here.
