@@ -11,6 +11,46 @@
 ⚠️ **55 (15/08/2026)**: in a doc's frontmatter, `scope`/`exclude` parse as JSON FIRST — the grouped form `[["a"],["b"]]` is therefore written as inline JSON and reaches the engine WHOLE (before: parseList mangled it into VALID flat literals = a silently dead rule). Bare flat form `[a, b]` unchanged.
 
 ## MENTAL MODEL (the WHY — single source, ex-PHILOSOPHY.md merged 18/07/2026)
+0. **THE GOAL — read this before anything else: KILL THE WORK.** Not speed it up. The end state is
+   *learn once, NEVER re-explain*. Every repetitive human gesture is a **defect of the system**, not
+   a task. That is why "we'll purge later", "remember to", "be careful" are FORBIDDEN here: each one
+   puts the human back inside the loop this exists to remove.
+0bis. **WHY A LANGUAGE AND NOT A TOOL — the reason, not the label.** A tool covers the cases someone
+   foresaw. Each new need then brings the maintainer BACK: a session, an explanation, them. A
+   language lets whoever HAS the need express it **in DATA**, and the maintainer is never called
+   again. ⇒ **The engine must not move when a need appears. If it moves, we shipped a tool.**
+0ter. 🛑 **THE TEST THE LANGUAGE IS JUDGED BY — apply it to every capability question.**
+   Not *"does it do what we needed?"* but **"did it do it BEFORE we knew we needed it?"**
+   🔴 MEASURED FAILURE: `keys` (19/08/2026). The need — *an entry must distinguish "I am WORKING
+   here" from "I am QUOTING this"* — existed since July, and the language could NOT express it, so
+   the ENGINE had to change. By its own criterion, that is a language failure, not a missing gate.
+   ⇒ **When a need is inexpressible, the reflex is NEVER "modify the engine".** It is: *which
+   OBSERVABLE, or which COMBINATOR, is missing?* — and the answer goes in the tables
+   (`observable-reach-gate` / `language-completeness`), which is what makes it findable ONCE.
+0quater. **WHAT IT ACTUALLY IS, said precisely**: a **routing table for KNOWLEDGE, addressed by the
+   GESTURE**. Not "a doc injector". Anything an organisation knows becomes conditional on an ACT —
+   the compliance rule at the moment of the deploy, the price list at the moment of the quote, the
+   client constraint at the moment of the email. **Zero training, zero human reminder.** Practical
+   consequence for the business: onboarding a new client or domain = **dropping `.md` files**, no
+   code. That is what "take any contract with your eyes closed" means, concretely.
+0quinquies. 💰 **THE AMBITION IS COMMERCIAL, NOT ONLY ARCHITECTURAL (maintainer, 19/08/2026 — this
+   was NEVER written before).** §2ter states the multi-harness standard as an architectural
+   constraint; it is a **market goal**. The defensible position is exactly the one already chosen:
+   be the **LANGUAGE, portable ACROSS harnesses** — a vendor will ship rules for ITS OWN product
+   (Cursor rules, AGENTS.md are weak versions) and **none will ever ship portability**. That is the
+   moat. ⚠️ It follows that the ADOPTER-facing surface is a product surface, not documentation
+   politeness: `LANGUAGE.md`, `HARNESS-CONTRACT.md`, `doctor --harness`, and the cost of the first
+   run all decide adoption. **Known weakness, stated: ~16 processes per tool call (~5.3 s, 96 % node
+   startup) is the FIRST objection any evaluator will raise, and "it is node's fault" will not
+   answer it.** The `http` handler + daemon path is the answer and it is UNEXPLORED.
+0sexies. ⚖️ **WHY THE RIGOUR IS NOT ZEAL — the stake, in money.** A **SILENT** defect costs a human
+   DAY to find; that day is precisely what the system promises never to cost again, so a silent
+   defect does not degrade the product — **it destroys its premise**. And a **SCALE** defect does
+   not slow anything down: it **closes a contract worth tens of k€** (target = large accounts,
+   thousands of pages per site, hundreds of sites). ⇒ the goal is **not zero bugs, it is zero
+   SILENT bugs**: a loud failure (named refusal, fail-closed, red gate) is perfectly acceptable —
+   a system that keeps LOOKING healthy while being wrong is not.
+
 1. **What this is**: a **declarative language (DSL) for programming TRACEABLE context-injection workflows**. Not yet another engine: a language. You DESCRIBE when a piece of knowledge must appear; the machine injects it, predictable and explainable.
 2. **Single primitive**: DECIDABLE event → injection. ⚠️ **The engine's SOURCES are exactly the `id`s of the `source-adapters.js` registry: `file` · `mcp` · `skill` · `tool`** — they alone go through matcher + gate + cadence. Extending = 1 pure source + 1 adapter, the core NEVER moves.
 2bis. ⚠️ **`docs/session/` IS NOT A SOURCE** (corrected 04/08/2026 — this line claimed the opposite and led to an INERT config key being written). It is a separate injection path: `session-inject.js` (SessionStart/PostCompact) delivers these docs ONCE per context, without consulting `gate.decide`. They therefore have **no cadence** — setting one would be accepted and have no effect.
