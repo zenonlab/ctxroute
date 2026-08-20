@@ -16,6 +16,7 @@
 import { test, afterAll, expect } from 'vitest';
 import assert from 'node:assert';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -94,6 +95,55 @@ test('REAL EVENT: a directory watch survives the rename a git checkout performs'
   await new Promise((r) => setTimeout(r, 400));
   watcher.close();
   assert.ok(fired > 0, 'the directory watch MUST see a rename-over — the whole stale-code guard rests on it');
+});
+
+// ── ②bis A CLIENT THAT HANGS UP MUST NOT TAKE THE SERVICE DOWN ──
+// 🔴 READ THIS BEFORE CITING IT: this does NOT reproduce an observed crash.
+//    The claim it was written for — "writing to a socket the client already
+//    closed throws, so an abort kills the daemon" — was a DEDUCTION, and
+//    measurement on Node 22.15.1/Windows REFUTED it: without any guard, the
+//    server survived and both requests were answered.
+// ✅ WHAT IT IS WORTH ANYWAY, and why it stays: the property "one client
+//    hanging up must never cost the OTHER agents their injection" is real and
+//    permanent, while the runtime behavior that currently satisfies it is
+//    undocumented and free to change at the next upgrade. This pins the
+//    property, not the implementation — and the spawn lane cannot even have
+//    this class of defect, since a crash there costs one short-lived process.
+// ⚠️ The shape is ordinary, not exotic: an agent stopped mid-action, a harness
+//    giving up on a timeout.
+test('an aborted request must not kill the daemon — it keeps serving the next one', async () => {
+  const { createServer } = require_('../src/hooks/http-server.js');
+  const srv = createServer();
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+
+  const ask = (body) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/pretool',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } },
+    (res) => { let t = ''; res.on('data', (c) => { t += c; }); res.on('end', () => resolve(t)); });
+    req.on('error', reject);
+    req.end(body);
+  });
+
+  // A healthy exchange first: without it, a server that was already broken
+  // would make the rest of this test pass by accident.
+  const before = await ask(JSON.stringify({ tool_name: 'Bash', tool_input: {} }));
+  assert.strictEqual(typeof before, 'string', 'the server must answer BEFORE the abort, or this test proves nothing');
+
+  // Now the abort: announce a body, send half of it, hang up.
+  await new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/pretool',
+      headers: { 'content-type': 'application/json', 'content-length': 500 } });
+    req.on('error', () => {});      // the abort surfaces here; it is expected
+    req.write('{"tool_name":"Bash"');
+    setTimeout(() => { req.destroy(); resolve(); }, 50);
+  });
+  await new Promise((r) => setTimeout(r, 150));   // let the server observe it
+
+  // The verdict: is it still there? Not "does it look alive" — we ASK it.
+  const after = await ask(JSON.stringify({ tool_name: 'Bash', tool_input: {} }));
+  assert.strictEqual(typeof after, 'string', 'the daemon died on an aborted request — it would take every agent with it');
+  srv.close();
 });
 
 // ── ③ NO LEAK — MEASURED IN A CHILD PROCESS WITH REAL GARBAGE COLLECTION ──

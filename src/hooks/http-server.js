@@ -51,6 +51,50 @@
 //    boundary.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// STRUCTURAL AUDIT OF ACCUMULATION — done by READING, 2026-08-20.
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 A LEAK IS NOT PROVEN ABSENT BY A TEST. The suite exercises thousands of
+//    requests in seconds and can only catch the coarse ones — the kind that
+//    retain hundreds of bytes on the HAPPY path. The vicious ones retain a few
+//    bytes on a RARE event (an abort, an error, a restart) and surface after
+//    WEEKS of uptime, which no test run will ever reach. The only real
+//    assurance is that the code cannot accumulate BY CONSTRUCTION. Hence this
+//    list: the known classes, each checked against this file, so the next agent
+//    inherits the audit instead of redoing it.
+//    ① UNBOUNDED COLLECTION keyed by something that grows (session, request):
+//       none here, and none in the engine either — zero module-level mutable
+//       state across the 19 modules this process loads.
+//    ② LISTENERS PILING UP ON A LONG-LIVED EMITTER: every `on()` below is bound
+//       to a PER-REQUEST object that dies with the request. The two exceptions
+//       are registered ONCE at startup (`server.on('error')`, the watchers).
+//    ③ TIMERS NEVER CLEARED: none. `deadline.arm()` is deliberately not called.
+//    ④ A PROMISE THAT MAY NEVER SETTLE and ⑤ AN UNHANDLED REJECTION KILLING THE
+//       PROCESS: guarded in `readBody` and in the request handler.
+//       🔴 **AND THE GUARDS ARE NOT THERE BECAUSE EITHER WAS OBSERVED — THE
+//       MEASUREMENT REFUTED BOTH.** Reproduced on Node **22.15.1/Windows**
+//       WITHOUT the guards: an aborted request still settles, writing to the
+//       destroyed socket does NOT throw, and the server survives. Whoever reads
+//       this must not repeat "an abort used to kill the daemon": it did not.
+//       What the guards buy is INDEPENDENCE from that behavior, which is an
+//       undocumented implementation detail of one runtime version, on a process
+//       meant to run for months across upgrades. Settling on `close` (which
+//       always fires, and fires last) makes "every request settles exactly
+//       once" true BY CONSTRUCTION rather than by Node's current tolerance.
+//       ⚠️ That is the honest reason, and it is the only one that may be cited.
+//    ⑥ BUFFERS HELD PAST THEIR USE: released at settle time, not at `end`.
+//    ⑦ SOCKETS HELD FOREVER: bounded by Node's own `keepAliveTimeout` (5 s),
+//       `headersTimeout` and `requestTimeout`. We do NOT restate those numbers:
+//       they are the runtime's, a second copy would be a second truth. They are
+//       also the ONLY legitimate delays here — they bound "connected but
+//       silent", which is the undecidable case, never a liveness verdict.
+// ⚠️ WHAT THIS AUDIT DOES NOT CLOSE, stated rather than hidden: growth on DISK.
+//    The state store gains a file per session scope and nothing evicts old ones.
+//    That is an engine-wide question, not one the HTTP lane creates — the spawn
+//    lane has it too — but a service running for months is what makes it VISIBLE.
+//    Do not treat it as covered by anything in this file.
+// ═══════════════════════════════════════════════════════════════════════
+
 'use strict';
 
 const http = require('http');
@@ -90,18 +134,40 @@ const NO_OUTPUT = {};
 function readBody(req) {
   return new Promise((resolve) => {
     let size = 0;
-    const parts = [];
+    let parts = [];
     let over = false;
+    // 🛑 SETTLE EXACTLY ONCE, AND SETTLE ALWAYS — by construction, not by luck.
+    //    A promise able to stay pending forever is the archetype of the leak no
+    //    test finds: no test client aborts, each occurrence costs a few
+    //    kilobytes, and it only shows after weeks of uptime.
+    // 🔴 HONEST STATUS: on Node 22.15.1 an aborted request DOES settle without
+    //    this — measured, the claim that it did not was wrong. `close` is here
+    //    because it ALWAYS fires and fires LAST, which makes the invariant hold
+    //    on any runtime and any version, instead of resting on behavior nobody
+    //    documented. Do not describe it as a fix for an observed hang.
+    const settle = (value) => {
+      if (parts === null) return;   // already settled — later events are noise
+      const body = value === undefined ? Buffer.concat(parts).toString('utf8') : value;
+      parts = null;                 // drop the buffers BEFORE handing control back
+      resolve(body);
+    };
     req.on('data', (c) => {
-      if (over) return;
+      if (over || parts === null) return;
       size += c.length;
-      if (size > MAX_BODY_BYTES) { over = true; return; }
+      // ⚠️ Past the bound we stop KEEPING, we do not stop listening: draining
+      //    the stream is what lets the socket close normally. And the buffers
+      //    already held are released at once, instead of waiting for `end`.
+      if (size > MAX_BODY_BYTES) { over = true; parts = []; return; }
       parts.push(c);
     });
-    req.on('end', () => resolve(over ? null : Buffer.concat(parts).toString('utf8')));
+    req.on('end', () => settle(over ? null : undefined));
     // ⚠️ FAIL-OPEN like every path of this framework: a broken socket yields
     //    "no payload", never a thrown error that would take the daemon down.
-    req.on('error', () => resolve(null));
+    req.on('error', () => settle(null));
+    // ⚠️ `close` ALWAYS fires, on every outcome, and it fires LAST. It is the
+    //    guarantee that no request can leave a pending promise behind — the
+    //    other two handlers are the normal paths, this one is the floor.
+    req.on('close', () => settle(null));
   });
 }
 
@@ -210,17 +276,42 @@ function createServer(deps = {}) {
     outputFn: deps.outputFn || output,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
   };
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     readBody(req).then((body) => {
       const answer = body === null ? NO_OUTPUT : handle(body, req.url, wired);
       const payload = JSON.stringify(answer);
+      // ⚠️ Answering a socket the client already closed is pointless work, and
+      //    on some runtimes an error. 🔴 MEASURED on Node 22.15.1: it does NOT
+      //    throw there — the earlier claim that an abort could kill the daemon
+      //    was a deduction, and the measurement refuted it. Kept because the
+      //    cheap check makes the outcome the same on every version, never
+      //    because a crash was observed.
+      if (res.writableEnded || res.destroyed) return;
       res.writeHead(200, {
         'content-type': 'application/json',
         'content-length': Buffer.byteLength(payload),
       });
       res.end(payload);
+    }).catch(() => {
+      // ⚠️ THE FLOOR, and it must stay empty. Whatever went wrong on ONE
+      //    request, the service keeps serving the others. A daemon that dies on
+      //    an edge case is strictly worse than the spawn lane it replaces,
+      //    where a crash cost exactly one short-lived process.
+      try { res.destroy(); } catch { /* already gone, which is the desired end state */ }
     });
   });
+  // ⚠️ A `server` without an `error` listener turns EVERY socket-level error
+  //    into an uncaught exception. 🛑 EADDRINUSE is the ONE case we let kill us,
+  //    deliberately: it means a second instance is starting, the kernel has
+  //    already refused the port, and the OS is the authority that must prevent
+  //    duplicates — not a PID file, not a liveness probe, not us. Every OTHER
+  //    error is survivable and must not take the service down.
+  server.on('error', (err) => {
+    // ⚠️ `code` lives on `ErrnoException`, not on `Error` — `tsc` is right to
+    //    ask, and a JSDoc that hid it would be a lying contract.
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === 'EADDRINUSE') throw err;
+  });
+  return server;
 }
 
 // ⚠️ EXIT CODE OF A STALE-CODE RESTART — non-zero ON PURPOSE, and the reason is
