@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a temporal call. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🛑 STRICT SEPARATION, DO NOT BLUR IT: this file DETECTS, it never exempts.
+#    The policy (which motive is admissible, which file may hold how many,
+#    the ratchet) lives in `time-budget.json` + `test/time-budget-gate.test.js`.
+#    Adding a `files:`/`ignores:` here would silently hide occurrences from
+#    the budget — an exemption nobody would ever read again.
+#
+# ⚠️ AST, NEVER REGEX (fleet doctrine): a `setTimeout` quoted in a comment or
+#    in a string is a FALSE POSITIVE. Measured in this very repository —
+#    `test/session-store.test.js` carries an `Atomics.wait` inside a template
+#    literal (the source of a child script): a regex counts it, the AST does
+#    not, and the AST is right about THIS file (the call belongs to another
+#    program). That blind cell is DECLARED in `docs/framework/time-budget.md`.
+#
+# ⚠️ EVERY `pattern:` BELOW IS AN ATOM, and the gate DERIVES its witness table
+#    from this list: an atom added tomorrow stays RED until someone proves,
+#    with a real line of code, that it detects something. Never add an atom
+#    without adding its witness to `time-budget.json`.
+#
+# ⚠️ WHAT IS DELIBERATELY OUT OF SCOPE, WITH ITS REASON (measured 2026-08-20,
+#    40 occurrences): an option key named `timeout`/`testTimeout`/`hookTimeout`
+#    is a BOUND, not a WAIT — it makes nothing slower, it only refuses to wait
+#    for ever. The doctrine budgets what SPENDS wall-clock time. Widening the
+#    rule to those keys would enrol 40 legitimate bounds into the budget, and
+#    a noisy gate is a gate people stop reading.
+id: temporal-call
+language: JavaScript
+severity: error
+message: >-
+  TEMPORAL CALL — declare it in `time-budget.json` with its motive.
+  Only `distant` (no reachable authority) and `undecidable` (alive-vs-frozen,
+  the halting problem) are admissible. In LOCAL the kernel KNOWS (process
+  exit, closed socket, EADDRINUSE): a delay is a BUG.
+rule:
+  any:
+    - pattern: setTimeout($$$)
+    - pattern: setInterval($$$)
+    - pattern: $T.setTimeout($$$)
+    - pattern: $T.setInterval($$$)
+    - pattern: Atomics.wait($$$)
+    - pattern: sleep($$$)
+    - pattern: $T.sleep($$$)

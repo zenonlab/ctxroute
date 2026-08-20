@@ -1,0 +1,55 @@
+{
+  "_doc": "TEMPORAL BUDGET — every temporal call of the repository, DECLARED with its motive (2026-08-20). SINGLE SOURCE, consumed by `test/temporal-budget-gate.test.js`. DETECTION is NOT here: it lives in `rules/temporal-call.yml` (ast-grep). Strict separation — the rule detects without exemption, this file plus its test carry the POLICY and the ratchet.",
+  "_doc_name": "Named `temporal`, never `budget` alone: in this repository `budget.js` already means the EMISSION budget (characters per frame). Two different quantities must never share a word.",
+  "_doc_why": "LOCAL, THE KERNEL KNOWS: a process exit, a closed socket, an `EADDRINUSE` are FACTS the OS delivers. Waiting a fixed number of milliseconds instead of asking the authority that KNOWS is not caution, it is a BUG that fires on a loaded machine. A delay is admissible only when no authority can be asked.",
+  "_doc_motives": "Exactly TWO motives are admissible and the test refuses any other word: `distant` = no authority is reachable (a third-party host, a network peer: nobody local can answer) and `undecidable` = alive-versus-frozen, i.e. the halting problem (nothing can tell whether the awaited event will ever happen).",
+  "_doc_ratchet": "The declared `count` must EQUAL the measured one. Higher means the ratchet is stale, so LOWER IT (a declaration nobody uses widens the budget for free, in silence — same doctrine as a stale layer justification). Lower means a new temporal call appeared: prove its motive, or remove the call. A file absent from `budget` is held at ZERO.",
+  "_doc_blind_cell": "DECLARED, not hidden: a temporal call written INSIDE a template literal (the source of a child script — real case, `test/session-store.test.js` line 95, an `Atomics.wait`) is invisible to the AST, because for the parser it is a STRING and not a call. That is the correct verdict about THIS file (the call belongs to another program, which is not in this perimeter) and it is also a way out that nobody may take deliberately. No cheap mechanical fix exists: parsing every string as a program would turn every code sample in every comment into a defect.",
+  "motives": {
+    "distant": "No authority is reachable — whatever knows lives on another machine and may never answer.",
+    "undecidable": "Alive-versus-frozen: nothing local can decide whether the awaited event will ever occur (halting problem)."
+  },
+  "budget": {
+    "src/deadline.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "The anti-zombie deadline. The harness does NOT always send EOF on stdin (Claude Code Windows bug anthropics/claude-code#68626), so the hook waits for an `end` event that may never come, and no local authority can say whether it will. The timer BOUNDS that infinity, it optimises nothing. Threshold 30 s, measured under load — see `deadline.md`."
+    },
+    "src/lock.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "Sleeping back-off between two attempts at the cross-process lock. The holder is another PROCESS: running, frozen, or dead without having released — undecidable from here. Chosen SLEEPING (Atomics.wait) rather than a tight loop, because burning a core would slow down the very holder we wait for. What BOUNDS the wait is the lock's own fail-open timeout, never this back-off."
+    },
+    "test/deadline.test.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "Watchdog that SIGKILLs the spawned hook. This suite exists precisely to prove the hook dies when stdin never ends: what is awaited is, by construction, possibly infinite. Without this timer a red test would hang the runner for ever."
+    },
+    "test/vendor-deadline.test.js": {
+      "count": 2,
+      "motive": "undecidable",
+      "why": "The same watchdog as `deadline.test.js`, applied to the vendored copy shipped to the hook fleet: a hook under test may legitimately never exit, which is the very defect being measured."
+    },
+    "test/http-daemon-lifecycle.test.js": {
+      "count": 4,
+      "motive": "undecidable",
+      "why": "Waits for the KERNEL to have OBSERVED an event (a watch being armed, a peer socket seen as closed) before asserting on the daemon's reaction. The kernel holds the fact but exposes no signal for 'you have now observed it', so 'has it noticed yet?' is not decidable from the test process. Any NEW wait added to this suite must first prove that no observable exists (an event, an exit code, a bound port): these four are a ceiling, not a licence."
+    }
+  },
+  "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `pattern:` atom of `rules/temporal-call.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",
+  "witnesses": {
+    "setTimeout($$$)": "const t = setTimeout(() => { child.kill('SIGKILL'); resolve({ dead: false }); }, 30000);",
+    "setInterval($$$)": "const h = setInterval(() => poll(), 1000);",
+    "$T.setTimeout($$$)": "await timers.setTimeout(50);",
+    "$T.setInterval($$$)": "const h = timers.setInterval(() => poll(), 1000);",
+    "Atomics.wait($$$)": "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);",
+    "sleep($$$)": "await sleep(200);",
+    "$T.sleep($$$)": "await helpers.sleep(200);"
+  },
+  "_doc_witness_origin": "`setTimeout` and `Atomics.wait` are copied from the REAL occurrences of this repository (`vendor-deadline.test.js`, `lock.js`). The other five atoms have ZERO occurrence here and are PREVENTIVE: their witnesses are the canonical forms of the escape hatches they close (`timers/promises`, a homemade `sleep`). Said plainly rather than passed off as encountered forms.",
+  "_doc_floors": "ANTI-VACUITY — a gate that analyses nothing goes green, this repository's worst defect class. The perimeter is DERIVED from `git ls-files` (151 JavaScript files measured on 2026-08-20) and held above a floor, and the total number of temporal calls found is held above a floor too. Both floors sit deliberately far below the measurement: they catch a BLIND scan, they are not a second ratchet.",
+  "floors": {
+    "perimeterFiles": 100,
+    "temporalCalls": 5
+  }
+}
