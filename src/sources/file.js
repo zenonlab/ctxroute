@@ -457,13 +457,21 @@ function composerKeysParAxe(entree, defaut) {
 //    inherits whole. An empty list is "not declared" on both sides — historical semantics of the
 //    loader, kept to the byte, so a doc writing `scope: []` inherits its category's.
 function heriterFiltres(entree, defauts) {
-  const d = (defauts && typeof defauts === 'object' && !Array.isArray(defauts)) ? defauts : {};
+  const d = (defauts && !Array.isArray(defauts)) ? defauts : {};
   // 🔴 THE ARRAY GUARD IS ON BOTH SIDES, and its absence on the entry was a REAL asymmetry
-  //    found by a shape case: an ARRAY passes `typeof === 'object'`, so `e.keys` picked up
+  //    found by a shape case: an ARRAY exposes `keys`, so `e.keys` picked up
   //    `Array.prototype.keys` — a FUNCTION handed to the cascade as if it were a declaration.
   //    Harmless downstream (`keyDecision` refuses it) and dirty everywhere: a value that means
   //    nothing must never travel. Symmetry is the rule, an asymmetry is a declared exception.
-  const e = (entree && typeof entree === 'object' && !Array.isArray(entree)) ? entree : {};
+  // 🛑 A `typeof … === 'object'` conjunct USED TO SIT HERE AND WAS REMOVED (2026-08-20) — it was
+  //    the file's LAST TWO MUTATION SURVIVORS, and it was REDUNDANT, not untested. Proven before
+  //    touching anything, on 27 shapes (primitives, functions, symbols, bigint, Date, RegExp,
+  //    Map/Set/Promise, null-prototype): what the cascade reads downstream — `.keys`, `.scope`,
+  //    `.exclude` — is IDENTICAL with and without it, because a primitive simply has none of them.
+  //    ⇒ ELIMINATED BY CONSTRUCTION, never killed by a test. Writing a test for a guard that
+  //    changes no outcome would freeze dead code for ever, which this repo forbids explicitly.
+  //    ⚠️ The `!Array.isArray` half is NOT redundant and stays: an array really does expose `keys`.
+  const e = (entree && !Array.isArray(entree)) ? entree : {};
   const choisir = (a, b) => ((Array.isArray(a) && a.length) ? a : ((Array.isArray(b) && b.length) ? b : undefined));
   const out = { keys: composerKeysParAxe(e.keys, d.keys) };
   const sc = choisir(e.scope, d.scope);
