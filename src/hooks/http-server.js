@@ -111,6 +111,78 @@ const HOST = '127.0.0.1';
 //    range, and it stays fixed: it is written in the wiring on the other side.
 const DEFAULT_PORT = 8787;
 
+// ═══════════════════════════════════════════════════════════════════════
+// SOCKET ACTIVATION — the OS owns the listening socket, we inherit it.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 THE DEFECT IT REMOVES, and it is auto-inflicted. `watchOwnCode` makes this
+//    process exit as soon as its own code changes — which is exactly what an
+//    agent WORKING on this repository does, ten times in two minutes. While the
+//    supervisor brings a fresh instance back, nothing is listening, so every
+//    OTHER agent's injection is lost IN SILENCE (measured: with no daemon the
+//    tool simply runs, no error surfaces, the agent never learns it acted
+//    without its knowledge). Worse, a long enough burst hits systemd's
+//    StartLimitBurst and the unit lands in `failed`, where systemd deliberately
+//    stops restarting it: the whole fleet loses the lane, permanently.
+// ✅ WHEN THE OS OWNS THE SOCKET, THAT WINDOW CANNOT EXIST. The listening socket
+//    is created and held by the supervisor, never by us; while no instance is
+//    running the connections QUEUE in the kernel's backlog instead of being
+//    refused, and the arrival of one is what starts the next instance. There is
+//    no restart loop left to rate-limit, and stale code becomes impossible by
+//    construction: every instance is born after the change.
+//
+// 📐 THE CONTRACT, from sd_listen_fds(3), systemd 261~rc1, page 2026-05-24:
+//    "#define SD_LISTEN_FDS_START 3" and the descriptors are "3, 4, 5, 6, ...,
+//    if any"; internally sd_listen_fds() "checks whether the $LISTEN_PID
+//    environment variable equals the daemon PID. If not, it returns
+//    immediately". systemd.socket(5), same version and date, on Accept=: "If no,
+//    all listening sockets themselves are passed to the started service unit,
+//    and only one service unit is spawned for all connections."
+// 🛑 `Accept=yes` IS THE ONE SETTING THAT WOULD UNDO THIS WHOLE FILE. It spawns
+//    "a service instance for each incoming connection" — i.e. one node startup
+//    per frame, the ~330 ms this lane exists to delete, paid again with a
+//    supervisor on top. The unit says `Accept=no` in writing for that reason.
+//
+// ✅ ZERO INFERENCE, ZERO PROBE. We do not test whether fd 3 looks like a socket,
+//    we do not sniff, we do not ask "am I under a supervisor?". The presence of
+//    the two variables IS the OS telling us, in a documented protocol, that it
+//    handed us a socket. Absent them, nothing changes: we bind the port exactly
+//    as before.
+// 🛑 `LISTEN_PID` MUST BE COMPARED TO OUR OWN PID, AND IT IS NOT A FORMALITY.
+//    Environment variables are INHERITED: a process started by a socket-activated
+//    parent sees that parent's LISTEN_FDS/LISTEN_PID. Listening on somebody
+//    else's descriptor would be a silent, unreproducible bug — the daemon would
+//    answer on a socket it was never given. That is precisely why the protocol
+//    carries the pid at all.
+//
+// ⚠️ WE DO NOT UNSET THE VARIABLES, unlike sd_listen_fds(unset_environment=1).
+//    That flag exists so CHILD processes do not inherit them; this daemon spawns
+//    none. Mutating `process.env` from a required module would instead be an
+//    invisible side effect on every test that imports this file.
+// ⚠️ ONLY THE FIRST DESCRIPTOR IS USED, and the unit declares exactly one
+//    `ListenStream=`. If a future unit ever declared several, this would take
+//    the first and ignore the rest — stated, not silently handled.
+//
+// ⚠️ LINUX ONLY, AND THE OTHER TWO ARE DECLARED RATHER THAN SIMULATED.
+//    • macOS: launchd has the same capability (`Sockets` in the plist) but the
+//      descriptors are retrieved through `launch_activate_socket`, a C function
+//      of the XPC framework — there is no environment protocol. MEASURED
+//      2026-08-20 on Node 22.15.1: scanning the 54 builtin modules for any
+//      export matching /launch|activate_socket|listen_fds/ returns NOTHING, and
+//      "launchd" appears nowhere in the `net` documentation. ⇒ UNREACHABLE from
+//      pure JS; a native addon is refused. The plist keeps the eager-restart
+//      model and says so.
+//    • Windows: there is no equivalent, and the Node side settles it anyway —
+//      net(1), Node v22 doc: "Listening on a file descriptor is not supported on
+//      Windows." (WAS/net.tcp activation exists but only hosts managed WCF
+//      applications under IIS, never a bare node.exe.)
+// ⇒ On both, `inheritedFd` returns null and the port path runs, unchanged.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ⚠️ sd_listen_fds(3), verbatim: "#define SD_LISTEN_FDS_START 3". Not a guess and
+//    not a coincidence — 0/1/2 are stdin/stdout/stderr, so the first passed
+//    descriptor is necessarily the fourth.
+const SD_LISTEN_FDS_START = 3;
+
 // ⚠️ Refuse a body that could not possibly be a hook payload BEFORE buffering it
 //    all. A daemon lives for months: an unbounded read is a memory leak waiting
 //    for its trigger. The real payloads measured on this fleet stay far under
@@ -382,9 +454,69 @@ function watchOwnCode(watch, cache, onChange) {
   return watchers;
 }
 
+/**
+ * The socket-activation protocol, read and NOTHING else — no I/O, no probe, no
+ * inference. Read the block above `SD_LISTEN_FDS_START` before touching it.
+ *
+ * 🛑 THE PID COMPARISON IS THE WHOLE POINT OF THE PROTOCOL. These variables are
+ *    INHERITED; without this check a process whose parent was socket-activated
+ *    would listen on a descriptor nobody gave it.
+ * ⚠️ Everything that is not exactly an integer is a NO, in both variables: a
+ *    malformed environment means "I do not know what I was handed", and the only
+ *    safe answer is to fall back to the port. `Number()` alone would accept
+ *    "3.5", " 3 " and "0x3"; the pattern refuses them.
+ *
+ * @param {Record<string, string|undefined>} env the environment to read
+ * @param {number} pid this process's own pid
+ * @returns {number|null} the inherited listening descriptor, or null when the OS
+ *   passed us nothing — which is the normal case on every unsupervised run.
+ */
+function inheritedFd(env, pid) {
+  const entier = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
+  const owner = entier(env.LISTEN_PID);
+  // ⚠️ Someone else's descriptor, or no protocol at all: identical answer.
+  if (owner === null || owner !== pid) return null;
+  const count = entier(env.LISTEN_FDS);
+  if (count === null || count < 1) return null;
+  return SD_LISTEN_FDS_START;
+}
+
+/**
+ * Puts the server to work — on the INHERITED descriptor when the OS passed one,
+ * on the port otherwise.
+ *
+ * ⚠️ THE PORT CALL IS BYTE-FOR-BYTE THE ONE THAT WAS THERE BEFORE. When nothing
+ *    is passed, this function is a no-op wrapper: an adopter running
+ *    `node http-server.js` by hand sees exactly the previous behaviour.
+ * 🛑 EADDRINUSE STILL KILLS US ON THE PORT PATH, and on the fd path it CANNOT
+ *    happen — we never bind. Duplicate prevention does not disappear, it MOVES
+ *    to the supervisor that owns the socket (`Accept=no` ⇒ "only one service
+ *    unit is spawned for all connections"). It is still the OS, never a PID file
+ *    and never an "is it already running?" test.
+ *
+ * @param {import('http').Server} server
+ * @param {Record<string, string|undefined>} env
+ * @param {number} pid
+ * @param {number} port used ONLY when nothing was inherited
+ * @returns {number|null} the descriptor listened on, or null when the port was
+ */
+function listenOn(server, env, pid, port) {
+  const fd = inheritedFd(env, pid);
+  if (fd === null) {
+    server.listen(port, HOST);
+    return null;
+  }
+  // ⚠️ `server.listen(handle)` with an object carrying an `fd` member is the
+  //    documented Node surface for an already-bound descriptor (net(1), v22).
+  //    The host and port are NOT ours to choose here: the socket is already
+  //    bound by the supervisor, and the unit is where its address is written.
+  server.listen({ fd });
+  return fd;
+}
+
 module.exports = {
-  createServer, handle, frameFromUrl, watchOwnCode,
-  HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE,
+  createServer, handle, frameFromUrl, watchOwnCode, inheritedFd, listenOn,
+  HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE, SD_LISTEN_FDS_START,
 };
 
 // ⚠️ The service's LIFECYCLE belongs to the OS — a systemd user unit, a Windows
@@ -396,7 +528,11 @@ module.exports = {
 //    real defect and the OS is the authority that prevents it.
 if (require.main === module) {
   const port = Number(process.env.CTXROUTE_HTTP_PORT) || DEFAULT_PORT;
-  createServer().listen(port, HOST);
+  // ⚠️ The port is read even when a descriptor is inherited, and it is then
+  //    IGNORED — the supervisor's unit is the single place the address lives.
+  //    Reading it unconditionally keeps this line free of any branch about which
+  //    world we are in; `listenOn` is the one place that decides.
+  listenOn(createServer(), process.env, process.pid, port);
   // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
   //    itself pulled in. Watching before would miss the modules loaded lazily
   //    on the first require — the exact half most likely to be edited.

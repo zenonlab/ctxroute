@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════════
+# systemd USER SOCKET for the ctxroute HTTP injection gate.
+# NOT INSTALLED. Copy to ~/.config/systemd/user/ctxroute-http.socket,
+# next to ctxroute-http.service, then: systemctl --user enable --now
+# ctxroute-http.socket   (the SOCKET is what gets enabled, never the service)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔴 WHY THIS FILE EXISTS — it repairs a SELF-INFLICTED OUTAGE, not a hypothesis.
+#    The daemon exits 90 the moment its own code changes on disk. That is what
+#    an agent WORKING on this repository causes: a refactor is ten edits in two
+#    minutes, hence ten exits. Without this file the service is restarted eagerly
+#    and, in every window between death and rebirth, NOTHING IS LISTENING — so
+#    every other agent's injection is lost IN SILENCE (measured: with no daemon
+#    the tool simply runs, no error surfaces, the agent never learns it acted
+#    without its knowledge). And a long enough burst hits the start limit, where
+#    systemd deliberately stops restarting: the whole fleet loses the lane.
+#
+# ✅ WHEN SYSTEMD OWNS THE SOCKET, THAT WINDOW CANNOT EXIST. The listening socket
+#    is created here, by systemd, and it stays open across every death of the
+#    service. Connections arriving while no instance runs QUEUE in the kernel
+#    backlog instead of being refused, and the arrival of one is what starts the
+#    next instance. Stale code becomes impossible by construction — every
+#    instance is born after the change — and there is no restart loop left to
+#    rate-limit.
+#
+# 📐 Everything below comes from systemd.socket(5), systemd 261~rc1, page dated
+#    2026-05-24 (read 2026-08-20). Nothing here is folklore.
+# ═══════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=ctxroute HTTP injection gate socket (local loopback, user scope)
+
+[Socket]
+# ⚠️ LOOPBACK, and the address now lives HERE — this is the single place it is
+#    written on Linux. The harness hook URL on the other side carries the same
+#    number: two ends, one value. `http-server.js` does not choose it any more
+#    when it is activated; it is handed an already-bound socket.
+# 🛑 Never widen this to 0.0.0.0. There is no authentication and there must never
+#    need to be one: the socket IS the boundary, and it returns this fleet's
+#    private knowledge to whoever connects.
+ListenStream=127.0.0.1:8787
+
+# ═══════════════════════════════════════════════════════════════════════
+# 🛑 Accept=no — THE ONE SETTING THAT WOULD UNDO THE ENTIRE HTTP LANE
+# ═══════════════════════════════════════════════════════════════════════
+# 📐 systemd.socket(5), verbatim: "If yes, a service instance is spawned for each
+#    incoming connection and only the connection socket is passed to it. If no,
+#    all listening sockets themselves are passed to the started service unit, and
+#    only one service unit is spawned for all connections."
+# ⇒ `Accept=yes` is the inetd model: ONE PROCESS PER CONNECTION. This lane exists
+#    precisely to delete the ~330 ms of node startup that the spawn lane pays per
+#    frame — with `Accept=yes` we would pay it again, per frame, with a
+#    supervisor added on top. The same manual says as much: for performance-
+#    sensitive services `Accept=no` is preferable "since only the initial
+#    connection incurs activation costs".
+# ⚠️ It is ALSO where duplicate prevention now lives: "only one service unit is
+#    spawned for all connections". On the port path the kernel refused a second
+#    instance with EADDRINUSE; here systemd does. It is still the OS — never a
+#    PID file, never an "is it already running?" test.
+# 🛑 `no` is already the default. It is WRITTEN because this file depends on it,
+#    and because a reader who flips it would silently reintroduce the exact cost
+#    the lane was built to remove.
+Accept=no
+
+# ═══════════════════════════════════════════════════════════════════════
+# THE TRIGGER RATE — raised, and the reason is our own wiring
+# ═══════════════════════════════════════════════════════════════════════
+# 📐 systemd.socket(5): the interval defaults to 2 s and the burst to "200 for
+#    Accept=yes sockets, 20 otherwise", and — this is the part that decides the
+#    values below — "If the limit is hit, the socket unit is placed into a
+#    failure mode, and will not be connectible anymore until restarted."
+# 🔴 THAT FAILURE IS TOTAL AND MANUAL: the socket stops accepting, so the whole
+#    fleet loses the lane until a human restarts it. Exactly the state this file
+#    exists to make unreachable.
+# ⚠️ THE STOCK 20 IS REACHABLE BY DESIGN, not by pathology: an action declares 16
+#    frames, i.e. up to 16 connections. If the daemon stands down between them —
+#    which is precisely what a `git pull` makes it do — each one activates. One
+#    ordinary action would sit at 16 of the 20 allowed.
+# ⚠️ 200 is not invented either: it is systemd's own burst for the other Accept=
+#    mode, and 10 s spans several actions. A limit is kept (a genuinely broken
+#    build must fail LOUDLY rather than spin forever), only moved past the
+#    legitimate burst.
+TriggerLimitIntervalSec=10s
+TriggerLimitBurst=200
+
+# 🛑 FlushPending= IS DELIBERATELY ABSENT, AND IT IS THE MOST DANGEROUS KEY THIS
+#    FILE COULD CARRY. systemd.socket(5): "May only be used when Accept=no. If
+#    yes, the socket's buffers are cleared after the triggered service exited"
+#    — which drops the connections waiting in the backlog. Those queued
+#    connections ARE the repair: they are the injections that survive a
+#    stale-code exit. Setting it to yes would restore the silent outage while
+#    the unit still looked perfectly configured. Never add it.
+
+[Install]
+# ⚠️ THE SOCKET IS WHAT GETS ENABLED — the service must NOT be, which is why it
+#    carries no [Install] section any more. Enabling the service would start the
+#    daemon eagerly at login and defeat on-demand activation.
+# ⚠️ `sockets.target` is the user manager's own target for socket units, the
+#    counterpart of the `default.target` the service used to be wanted by.
+WantedBy=sockets.target

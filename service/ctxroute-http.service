@@ -15,17 +15,39 @@
 [Unit]
 Description=ctxroute HTTP injection gate (local loopback, user scope)
 
-# ⚠️ RESTART RATE LIMIT, RAISED ON PURPOSE — read before lowering it.
+# ⚠️ SOCKET-ACTIVATED — READ `ctxroute-http.socket` BEFORE THIS FILE. systemd
+#    owns the listening socket; this unit is started ON DEMAND, when a connection
+#    arrives, and it inherits that socket as file descriptor 3. That is what
+#    makes the stale-code exit free: while no instance runs, connections QUEUE in
+#    the kernel backlog instead of being refused.
+# ⚠️ `Requires=` and not `Wants=`: without the socket this unit would fall back to
+#    binding the port itself. That fallback is real and correct (an adopter can
+#    still run `node http-server.js` by hand) but it must not happen BY ACCIDENT
+#    under systemd, where it would give two different behaviours to one unit.
+#    The ordering needs no line: systemd.service(5) — "Socket activated services
+#    are automatically ordered after their activating .socket units via an
+#    automatic After= dependency."
+Requires=ctxroute-http.socket
+
+# ⚠️ START RATE LIMIT, RAISED ON PURPOSE — read before lowering it.
 #    The daemon exits 90 whenever its own code changes on disk. A `git pull`
 #    rewrites SEVERAL files, and each rename can fire the watch, so a legitimate
-#    update produces a BURST of restarts. With the stock 5-in-10s the unit would
-#    land in `failed` after an ordinary pull and stay dead — a service that dies
-#    on a normal maintenance gesture is worse than no service.
+#    update makes the daemon stand down several times; each following connection
+#    starts it again. With the stock 5-in-10s the unit would refuse to start
+#    after an ordinary pull — a service that dies on a normal maintenance gesture
+#    is worse than no service.
+# ⚠️ THE LIMIT IS WHAT CAN REFUSE A START, NOT THE `failed` STATE. systemctl(1):
+#    a failed unit's status is recorded "until the service is stopped/re-started",
+#    while `reset-failed` is needed only "if a unit's start limit … is hit and the
+#    unit refuses to be started again". ⇒ exiting 90 into `failed` does not stop
+#    the next connection from starting a fresh instance; exceeding THIS does.
+# ⚠️ 16 frames = up to 16 activations for ONE action, so the burst is sized in
+#    actions, not in restarts.
 # 🛑 Do NOT set StartLimitIntervalSec=0: that disables the limit entirely and a
 #    genuinely broken build would respawn forever. Reaching `failed` is the LOUD
 #    failure we want; we only move the threshold past the legitimate burst.
 StartLimitIntervalSec=60
-StartLimitBurst=20
+StartLimitBurst=100
 
 [Service]
 # ⚠️ `exec` and not `simple`: with `simple` systemd considers the service started
@@ -42,27 +64,40 @@ Type=exec
 #    and the same reason applies to a unit file.
 ExecStart=/usr/bin/node %h/ctxroute/src/hooks/http-server.js
 
-# ⚠️ THE PORT TRAVELS BY ENVIRONMENT, because that is what a WIRING can express:
-#    the hook URL on the other side carries the same number. Changing it here
-#    means changing it in the harness declaration too — two ends, one number.
+# ⚠️ THE PORT IS IGNORED WHEN THE SOCKET IS PASSED, and it is kept anyway. Under
+#    socket activation the address is written ONCE, in `ctxroute-http.socket`;
+#    this value only serves the case where the daemon is started without it (by
+#    hand, or on a machine where the socket unit was not installed). Keeping the
+#    two in sync is therefore free — and letting them disagree is invisible.
+# 🛑 If you move the port, move it in the .socket FIRST: that is the one the
+#    harness hook URL must match.
 Environment=CTXROUTE_HTTP_PORT=8787
 
 # ═══════════════════════════════════════════════════════════════════════
-# RESTART — and the ONE line that would silently disarm it
+# NO RESTART — AND THAT IS THE WHOLE POINT OF THE SOCKET UNIT
 # ═══════════════════════════════════════════════════════════════════════
-# 📐 systemd.service(5), verbatim: "If set to on-failure, the service will be
-#    restarted when the process exits with a non-zero exit code, is terminated by
-#    a signal […], when an operation (such as service reload) times out, and when
-#    the configured watchdog timeout is triggered."
-#    ⇒ exit 90 IS a non-zero exit ⇒ the stale-code restart works here. That is
-#    exactly why the code refuses to exit 0 when it stands down.
-Restart=on-failure
-
-# ⚠️ A DELAY, DECLARED. Not a liveness verdict and not a probe: it is the pause
-#    between a death and the next start. 100ms (the stock value) would restart
-#    inside the same filesystem event burst of a `git pull`; one second lets the
-#    write settle. Nothing is inferred from it.
-RestartSec=1s
+# 🔴 THIS LINE READ `Restart=on-failure` UNTIL 2026-08-20, AND IT WAS THE BURST.
+#    An eager restart brings a fresh instance back one second after each
+#    stale-code exit — straight into the same `git pull` that is still rewriting
+#    files, which makes it exit again. Ten edits produced ten restarts, and the
+#    START LIMIT is what ends that story: the unit refuses to start, and the
+#    fleet loses the lane until a human intervenes.
+# ✅ WITH THE SOCKET UNIT THERE IS NOTHING TO RESTART. systemd holds the
+#    listening socket; the daemon stands down, the connections QUEUE, and the
+#    next one starts a fresh instance — once, when there is actually work. The
+#    number of starts stops depending on how fast files change and starts
+#    depending on how often an agent acts.
+# 📐 systemd.service(5): "If set to no (the default), the service will not be
+#    restarted." It is written rather than left implicit because it is a
+#    DECISION here, not an omission.
+# ⚠️ THE EXIT CODE STAYS NON-ZERO, and 90 stays 90. It is what the other two
+#    OSes restart on, and 0 would say "the job is done" — which is a lie: the
+#    daemon stood down because it refused to serve stale code.
+# 🛑 If you ever put `Restart=on-failure` back, you have re-armed the burst.
+#    The one case that would justify it is a systemd that refuses to activate a
+#    unit sitting in `failed` — see the "what could NOT be verified" section of
+#    service/README.md, and measure it before believing it.
+Restart=no
 
 # 🔴 WHY THE EXIT CODE IS 90 AND NOT 75 — THIS UNIT IS THE REASON.
 #    75 was the first choice (it is `EX_TEMPFAIL`, the sysexits name for "try
@@ -121,8 +156,12 @@ TimeoutStopSec=5s
 LogRateLimitIntervalSec=30s
 LogRateLimitBurst=200
 
-[Install]
-# ⚠️ `default.target` is the user manager's own target: the service starts when
-#    THIS user's systemd instance starts, i.e. at login. Never multi-user.target
-#    (that one belongs to the system manager and does not exist here).
-WantedBy=default.target
+# ═══════════════════════════════════════════════════════════════════════
+# 🛑 NO [Install] SECTION — AND ITS ABSENCE IS THE DESIGN
+# ═══════════════════════════════════════════════════════════════════════
+# It used to carry `WantedBy=default.target`, i.e. "start at login". Under
+# socket activation that is exactly what must NOT happen: the SOCKET is enabled
+# and started at login, the service is started by the first connection. Enabling
+# this unit would bring the daemon up eagerly, and every stale-code exit would
+# again leave a window with nobody listening.
+# ⇒ `systemctl --user enable --now ctxroute-http.socket`, never `.service`.

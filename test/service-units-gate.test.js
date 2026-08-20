@@ -64,6 +64,7 @@ const { EXIT_STALE_CODE } = require('../src/hooks/http-server.js');
 //    scanned here: `mirror-sync-gate` already compares it byte for byte, and a
 //    second judge of the same fact would be a twin that drifts.
 const CORPUS = [
+  'service/ctxroute-http.socket',
   'service/ctxroute-http.service',
   'service/com.ctxroute.http.plist',
   'service/ctxroute-http.task.xml',
@@ -208,6 +209,18 @@ test('ANTI-INERT — the two rules see a real defect and stay silent on the real
     false,
     'FALSE POSITIVE on the comment that explains the rule: the only way to green this\n'
     + 'would be to delete the explanation, which is how a gate teaches the wrong lesson');
+
+  // ⚠️ SAME PAIR FOR THE SOCKET UNIT'S TWO RULES, on the forms the real file uses:
+  //    both units explain at length WHY `Accept=yes` and `FlushPending=` are
+  //    forbidden, so a substring check would flag its own rationale.
+  assert.strictEqual(hasActiveDirective('FlushPending=yes\n', 'FlushPending'), true,
+    'an active FlushPending= goes unseen — the queued connections it drops are the whole repair');
+  assert.strictEqual(hasActiveDirective('# 🛑 FlushPending= IS DELIBERATELY ABSENT\n', 'FlushPending'), false,
+    'FALSE POSITIVE on the comment forbidding it');
+  assert.strictEqual(/^Accept\s*=\s*no\s*$/m.test('Accept=yes\n'), false,
+    'the Accept check accepts `yes` — it would certify one node process per frame');
+  assert.strictEqual(/^Accept\s*=\s*no\s*$/m.test('#    …the inetd model, Accept=no is preferable\n'), false,
+    'the Accept check is satisfied by prose — a comment would green a missing directive');
 });
 
 test('SEEN RED — a stale exit code is caught even though that number stays quotable', () => {
@@ -280,9 +293,48 @@ test('the systemd unit carries NO active SuccessExitStatus= — the warning is n
     + 'stays dead after every `git pull`, and `systemctl status` shows green.\n'
     + 'If you copied it from the manual\'s Example 1: that example is the reason 75 was\n'
     + 'abandoned. Delete the line.');
-  assert.ok(/^Restart\s*=\s*on-failure\s*$/m.test(unit),
-    '`Restart=on-failure` is gone — nothing restarts the daemon on a non-zero exit,\n'
-    + 'which is the only reason the exit code is non-zero in the first place.');
+  // 🔴 THE LINE THAT USED TO BE ASSERTED HERE WAS `Restart=on-failure`, AND IT WAS
+  //    THE BURST (2026-08-20). An eager restart puts a fresh instance back into
+  //    the `git pull` that is still rewriting files, so ten edits became ten
+  //    restarts and the start limit ended the story. Under socket activation
+  //    nothing needs restarting: systemd holds the socket, the connections queue,
+  //    and the next one starts a fresh instance.
+  // ⚠️ `no` is systemd's documented DEFAULT — it is required in WRITING because
+  //    here it is a decision, and because a silent return to `on-failure` would
+  //    re-arm the exact defect with every file still looking correct.
+  assert.ok(/^Restart\s*=\s*no\s*$/m.test(unit),
+    '`Restart=no` is gone from the service. If it became `on-failure` again, the stale-code\n'
+    + 'burst is back: each exit brings an instance straight back into the running `git pull`.\n'
+    + 'The daemon is meant to be started BY A CONNECTION — see service/ctxroute-http.socket.');
+  assert.ok(hasActiveDirective(unit, 'Requires'),
+    'the service no longer requires its socket unit — started alone it would bind the port\n'
+    + 'itself, giving one unit two different behaviours depending on how it was started.');
+});
+
+test('the socket unit carries the settings the whole lane depends on', () => {
+  const sock = readCorpus().get('service/ctxroute-http.socket') || '';
+
+  // 🛑 `Accept=yes` would spawn ONE PROCESS PER CONNECTION — the ~330 ms of node
+  //    startup per frame that this entire lane exists to delete, paid again with
+  //    a supervisor on top. It is also what guarantees a single instance.
+  assert.ok(/^Accept\s*=\s*no\s*$/m.test(sock),
+    'ACTIVE `Accept=no` IS GONE FROM THE SOCKET UNIT. With `Accept=yes`, systemd spawns a\n'
+    + 'service instance per connection: the HTTP lane would cost MORE than the spawn lane it\n'
+    + 'replaces, and nothing would guarantee a single daemon any more.');
+  assert.ok(hasActiveDirective(sock, 'ListenStream'),
+    'the socket unit listens on nothing — there is no address for systemd to hold.');
+  assert.ok(/^ListenStream\s*=\s*127\.0\.0\.1:/m.test(sock),
+    'the socket is not bound to loopback. This endpoint returns the fleet\'s private knowledge\n'
+    + 'and has no authentication: the socket IS the boundary.');
+
+  // 🛑 FlushPending=yes clears the socket's buffers when the service exits — i.e.
+  //    it DROPS the queued connections, which are precisely the injections that
+  //    survive a stale-code exit. The outage would come back while every file
+  //    still looked correct.
+  assert.strictEqual(hasActiveDirective(sock, 'FlushPending'), false,
+    'ACTIVE `FlushPending=` IN THE SOCKET UNIT. systemd.socket(5): "the socket\'s buffers are\n'
+    + 'cleared after the triggered service exited" — the connections waiting in the backlog are\n'
+    + 'the whole repair. Delete the line.');
 });
 
 test('each unit still declares the restart mechanism its OS actually honours', () => {

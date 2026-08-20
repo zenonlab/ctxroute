@@ -34,6 +34,28 @@
 -->
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
 
+  <!--
+    ═══════════════════════════════════════════════════════════════════════
+    🔴 NO SOCKET ACTIVATION ON WINDOWS — AND IT IS SETTLED TWICE OVER
+    ═══════════════════════════════════════════════════════════════════════
+    On Linux a socket unit lets the OS hold the listening socket, so the daemon
+    can stand down on a code change without any connection being refused. Nothing
+    here can do that:
+    ① Task Scheduler has no notion of a socket. Its action contract is a command
+       line (see the Exec element below) — there is no element that would create,
+       hold or hand over a descriptor.
+    ② Node closes the question even if something did. Official net documentation
+       (Node v22): "Listening on a file descriptor is not supported on Windows."
+       So there is no API on this platform to listen on an inherited handle.
+    ⚠️ The nearest Windows mechanism is WAS / net.tcp activation, and it does NOT
+       apply: it activates MANAGED WCF applications hosted under IIS, never a bare
+       node.exe. Bending it into shape would mean the third-party supervisor this
+       file already refuses further down.
+    ⇒ Windows keeps the eager model: logon trigger + restart on the completion
+       event. The gap is DECLARED, never simulated — the daemon does have a
+       silent window here between an exit 90 and its next start.
+  -->
+
   <RegistrationInfo>
     <Description>ctxroute HTTP injection gate (local loopback, user scope)</Description>
     <URI>\ctxroute-http</URI>

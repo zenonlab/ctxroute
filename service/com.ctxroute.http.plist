@@ -56,6 +56,36 @@
         <string>8787</string>
     </dict>
 
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      🔴 SOCKET ACTIVATION: THE CAPABILITY EXISTS HERE AND WE CANNOT REACH IT
+      ═══════════════════════════════════════════════════════════════════
+      On Linux the socket unit removes the whole restart burst: systemd owns the
+      listening socket, so a stale-code exit costs nothing and connections wait
+      in the backlog. launchd has the SAME capability — the `Sockets` key, whose
+      shape Apple documents ("Creating Launch Daemons and Agents", updated
+      2016-09-13): a `Listeners` dictionary with `SockServiceName` / `SockType` /
+      `SockFamily`.
+      🛑 WHAT WE CANNOT DO IS PICK THE SOCKET UP. Apple's own instruction is
+         "check in with launchd as part of your daemon initialization", and the
+         modern check-in is `launch_activate_socket` — a C function of the XPC
+         framework. There is NO environment protocol here: nothing equivalent to
+         systemd's $LISTEN_FDS/$LISTEN_PID, so nothing a JavaScript process can
+         read.
+      📐 MEASURED 2026-08-20, Node 22.15.1: the 54 builtin modules were scanned
+         for any export matching /launch|activate_socket|listen_fds/ — ZERO. The
+         `net` documentation never mentions launchd. A native addon would close
+         the gap and is REFUSED: this framework must install from a plain clone.
+      ⇒ THE `Sockets` KEY IS DELIBERATELY ABSENT. Declaring it would make launchd
+         hold a socket that this daemon can never accept from — the port would
+         still be bound by the process, and the plist would describe something
+         that is not happening. A capability we do not have is DECLARED, never
+         simulated.
+      ⇒ macOS therefore keeps the EAGER model below (RunAtLoad + KeepAlive), the
+         one Linux just left. That asymmetry is normal: a thin unit per OS,
+         never a lowest common denominator.
+    -->
+
     <!-- ⚠️ Start at load, i.e. at login for an agent in ~/Library/LaunchAgents. -->
     <key>RunAtLoad</key>
     <true/>
