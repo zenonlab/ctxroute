@@ -1,0 +1,128 @@
+# ═══════════════════════════════════════════════════════════════════════
+# systemd USER unit for the ctxroute HTTP injection gate.
+# NOT INSTALLED. Copy to ~/.config/systemd/user/ctxroute-http.service,
+# edit the two paths below, then: systemctl --user enable --now ctxroute-http
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ USER unit, NEVER a system one. The daemon reads the USER's documents and
+#    the USER's state directory. A system unit would run as root, outside that
+#    home, and would be wrong on every path it touches.
+#
+# 📐 Every value below comes from systemd.service(5), systemd 261~rc1, page
+#    dated 2026-05-24 (read 2026-08-20). Nothing here is folklore.
+# ═══════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=ctxroute HTTP injection gate (local loopback, user scope)
+
+# ⚠️ RESTART RATE LIMIT, RAISED ON PURPOSE — read before lowering it.
+#    The daemon exits 90 whenever its own code changes on disk. A `git pull`
+#    rewrites SEVERAL files, and each rename can fire the watch, so a legitimate
+#    update produces a BURST of restarts. With the stock 5-in-10s the unit would
+#    land in `failed` after an ordinary pull and stay dead — a service that dies
+#    on a normal maintenance gesture is worse than no service.
+# 🛑 Do NOT set StartLimitIntervalSec=0: that disables the limit entirely and a
+#    genuinely broken build would respawn forever. Reaching `failed` is the LOUD
+#    failure we want; we only move the threshold past the legitimate burst.
+StartLimitIntervalSec=60
+StartLimitBurst=20
+
+[Service]
+# ⚠️ `exec` and not `simple`: with `simple` systemd considers the service started
+#    the moment it FORKS, so a binary that cannot even be executed still reports
+#    success. `exec` waits for the execve to succeed — the failure becomes visible
+#    instead of silent.
+Type=exec
+
+# ⚠️ ABSOLUTE PATHS, MANDATORY — systemd does not search PATH and does not expand
+#    a shell. Edit BOTH: `%h` is systemd's own specifier for this user's home, so
+#    only the part after it describes where the repository actually sits.
+# 🛑 NEVER route this through a shell, `env` or `npx`. This repository forbids
+#    `shell: true` on every layer (cmd vs /bin/sh behave differently per machine),
+#    and the same reason applies to a unit file.
+ExecStart=/usr/bin/node %h/ctxroute/src/hooks/http-server.js
+
+# ⚠️ THE PORT TRAVELS BY ENVIRONMENT, because that is what a WIRING can express:
+#    the hook URL on the other side carries the same number. Changing it here
+#    means changing it in the harness declaration too — two ends, one number.
+Environment=CTXROUTE_HTTP_PORT=8787
+
+# ═══════════════════════════════════════════════════════════════════════
+# RESTART — and the ONE line that would silently disarm it
+# ═══════════════════════════════════════════════════════════════════════
+# 📐 systemd.service(5), verbatim: "If set to on-failure, the service will be
+#    restarted when the process exits with a non-zero exit code, is terminated by
+#    a signal […], when an operation (such as service reload) times out, and when
+#    the configured watchdog timeout is triggered."
+#    ⇒ exit 90 IS a non-zero exit ⇒ the stale-code restart works here. That is
+#    exactly why the code refuses to exit 0 when it stands down.
+Restart=on-failure
+
+# ⚠️ A DELAY, DECLARED. Not a liveness verdict and not a probe: it is the pause
+#    between a death and the next start. 100ms (the stock value) would restart
+#    inside the same filesystem event burst of a `git pull`; one second lets the
+#    write settle. Nothing is inferred from it.
+RestartSec=1s
+
+# 🔴 WHY THE EXIT CODE IS 90 AND NOT 75 — THIS UNIT IS THE REASON.
+#    75 was the first choice (it is `EX_TEMPFAIL`, the sysexits name for "try
+#    again later") and it was a TRAP, found while writing this file on
+#    2026-08-20. systemd gives 75 a NAMED alias, and systemd's OWN manual carries
+#    as Example 1: "Exit status 75 (TEMPFAIL), 250, and the termination signal
+#    SIGKILL are considered clean service terminations."
+#    ⇒ Copying a manual's example into your unit is the NORMAL way to read a
+#    manual. With 75, that ordinary gesture would have declared our restart
+#    signal a CLEAN termination: `Restart=on-failure` reads "job done", the
+#    daemon stays down after every code change, and the unit shows GREEN while
+#    serving nobody.
+# 🛑 The fix was NOT to write "never use SuccessExitStatus=" here and hope. Prose
+#    is not a rule — it drifts, and this repository has paid for that. 90 sits
+#    outside every alias systemd defines and outside that example, so the
+#    copy-paste can no longer reach us: the error is impossible BY CONSTRUCTION
+#    rather than discouraged. Read `EXIT_STALE_CODE` in src/hooks/http-server.js.
+# ⚠️ SuccessExitStatus= therefore stays absent, and a gate now enforces its
+#    absence (`test/service-units-gate.test.js`) — the warning became a machine.
+#    Default clean set (non-oneshot): exit 0 plus SIGHUP/SIGINT/SIGTERM/SIGPIPE.
+
+# ═══════════════════════════════════════════════════════════════════════
+# CLEAN STOP
+# ═══════════════════════════════════════════════════════════════════════
+# ⚠️ systemd sends KillSignal (default SIGTERM) and the process dies on node's
+#    default handler — we register none, on purpose: there is nothing to flush.
+#    In-flight requests are answered in microseconds or lost; the hook lane is
+#    fail-open by contract, so a lost answer costs an injection, never an action.
+#
+# ⚠️ TimeoutStopSec IS THE ONLY DELAY IN THIS FILE THAT BOUNDS A WAIT, and its
+#    motive is DECLARED: ALIVE-BUT-WEDGED — the undecidable case. The request
+#    path is synchronous and `lock.js` busy-waits, so a process CAN be running,
+#    holding no useful state, and not reaching its signal handler. Distinguishing
+#    "wedged" from "about to finish" is the halting problem; a bound is the only
+#    honest answer. It is NOT a liveness verdict about a healthy process.
+TimeoutStopSec=5s
+
+# ═══════════════════════════════════════════════════════════════════════
+# THE JOURNAL IS BOUNDED BY journald — NEVER BY US
+# ═══════════════════════════════════════════════════════════════════════
+# ⚠️ stdout/stderr go to the journal (systemd's default for service processes).
+#    We write NO log file, so there is no homemade rotation to get wrong: the
+#    ceiling and the rotation are journald's own, and they exist BY DEFAULT —
+#    journald.conf(5), systemd 261~rc1, 2026-05-24: SystemMaxUse defaults to 10%
+#    of the filesystem capped at 4G, SystemMaxFiles to 100, MaxFileSec rotates
+#    after one month. A machine running for years cannot fill its disk from here.
+# 🛑 Do NOT add StandardOutput=file:… — that is an unrotated file and it would
+#    reintroduce, by hand, the growth journald already solves.
+#
+# ⚠️ WHAT WE ADD IS A RATE BOUND, PER UNIT, because the disk ceiling alone is a
+#    ceiling and never a slope: a crash loop can burn a month of retention in an
+#    hour and EVICT everyone else's logs. journald's stock rate is 10000 messages
+#    per 30s for the whole system; a unit that normally says NOTHING has no
+#    business consuming that. These two keys override journald.conf for this unit
+#    only (systemd.exec(5)).
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+[Install]
+# ⚠️ `default.target` is the user manager's own target: the service starts when
+#    THIS user's systemd instance starts, i.e. at login. Never multi-user.target
+#    (that one belongs to the system manager and does not exist here).
+WantedBy=default.target

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  launchd USER AGENT for the ctxroute HTTP injection gate.
+  NOT INSTALLED. Copy to ~/Library/LaunchAgents/com.ctxroute.http.plist,
+  edit the two paths below, then: launchctl bootstrap gui/$(id -u) <path>
+  ═══════════════════════════════════════════════════════════════════════
+
+  ⚠️ AGENT, NEVER A DAEMON — and Apple states the difference in exactly the terms
+     that decide it for us. TN2083: "An agent is a process that runs in the
+     background on behalf of a particular user. Agents are useful because they
+     can do things that daemons can't, like reliably access the user's home
+     directory". This service reads the user's documents: it is an agent.
+     "A third party launchd agent should be installed by adding a property list
+     file to the ~/Library/LaunchAgents directory (to be invoked just for this
+     user)". Login is the trigger: "When a user logs in, a per-user launchd is
+     started" (Creating Launch Daemons and Agents).
+
+  🔴 SOURCE STATUS, STATED AND NOT HIDDEN. Apple's web copies of this material
+     are ARCHIVED: "Creating Launch Daemons and Agents" last updated 2016-09-13,
+     and TN2083 carries "This document is no longer being updated", its examples
+     dating from Mac OS X 10.5. Apple's launchd.plist(5) is not published at a
+     current URL; the AUTHORITY for the installed system is `man launchd.plist`
+     ON THE TARGET MAC. Every key below is one Apple documented; none of their
+     DEFAULT values is restated here, precisely because those are what an archived
+     page is least trustworthy about. Read the man page before you install.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<plist version="1.0">
+<dict>
+
+    <key>Label</key>
+    <string>com.ctxroute.http</string>
+
+    <!--
+      ⚠️ ABSOLUTE PATHS, MANDATORY. Edit BOTH entries: the node binary (on Apple
+         silicon Homebrew installs it under /opt/homebrew/bin, on Intel under
+         /usr/local/bin — check, do not assume) and the repository location.
+      🛑 NEVER wrap this in `sh -c`. A shell would change the process launchd
+         supervises and this repository forbids shell indirection on every layer.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/Users/CHANGE_ME/ctxroute/src/hooks/http-server.js</string>
+    </array>
+
+    <!--
+      ⚠️ THE PORT TRAVELS BY ENVIRONMENT — same number as the harness hook URL on
+         the other side. Two ends, one value.
+    -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CTXROUTE_HTTP_PORT</key>
+        <string>8787</string>
+    </dict>
+
+    <!-- ⚠️ Start at load, i.e. at login for an agent in ~/Library/LaunchAgents. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      RESTART ON FAILURE — and why the key reads `false`
+      ═══════════════════════════════════════════════════════════════════
+      🛑 `SuccessfulExit` is NOT "should it succeed": it selects WHICH exit gets
+         a respawn. TN2083 documents the positive form —
+         `KeepAlive = { SuccessfulExit = true }` = "Run on demand as long as you
+         exit successfully", i.e. restart only after a ZERO exit. We need the
+         MIRROR of that: restart only when the process exits NON-ZERO.
+      ⇒ exit 90 (stale code detected) brings the agent back; a deliberate exit 0
+         would not. That asymmetry is the whole reason `http-server.js` refuses to
+         stand down with a zero status — read EXIT_STALE_CODE there.
+      ⚠️ 90 IS NOT AN ARBITRARY NUMBER, and launchd is not where it was decided:
+         the first choice, 75, collided with systemd's `TEMPFAIL` alias and with
+         an example in systemd's own manual (see the .service file). launchd has
+         no such alias table, so this key would have worked either way — the
+         number is shared across the three OSes on purpose, and it is DERIVED
+         from the code by `test/service-units-gate.test.js`, never re-typed.
+      🛑 NEVER replace this dictionary with a bare <true/>. Plain KeepAlive
+         restarts on EVERY exit, including one the operator asked for, and the
+         only way left to stop the agent would be to unload it — a supervisor
+         that fights the operator gets uninstalled.
+    -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      CLEAN STOP
+      ═══════════════════════════════════════════════════════════════════
+      ⚠️ Nothing to declare, and that is the point. launchd signals the job to
+         quit: "When the user logs out, it sends a SIGTERM signal to all of the
+         user agents that it started" (Creating Launch Daemons and Agents), and
+         SIGKILL follows if it does not go. The process dies on node's default
+         SIGTERM handling; we install no handler because there is nothing to
+         flush. Stop by hand = `launchctl bootout gui/$(id -u)/com.ctxroute.http`.
+      ⚠️ ExitTimeOut and ThrottleInterval are DELIBERATELY UNSET: launchd's own
+         defaults apply and this file will not restate numbers it could not read
+         at a current official source. Consequence to expect, not a defect: after
+         a code change the agent comes back after launchd's respawn throttle,
+         not instantly.
+
+      ═══════════════════════════════════════════════════════════════════
+      THE LOG IS BOUNDED BY macOS — NEVER BY US
+      ═══════════════════════════════════════════════════════════════════
+      🛑 StandardOutPath / StandardErrorPath ARE DELIBERATELY ABSENT, and adding
+         them is the single most likely mistake against this file. A plist log
+         path is a plain file that launchd NEVER rotates and NEVER caps: on a
+         machine running for years that is a monotonic writer, i.e. a dated
+         outage, and this project treats an uncapped writer as an architecture
+         bug rather than an operations chore.
+      ✅ Leaving them out is not "losing the logs": TN2083, "If you don't supply
+         these properties […] In Mac OS X 10.5 and later, launchd will capture any
+         output to these streams and redirect it to ASL" — the system log, which
+         macOS caps and rolls over on its own. Read it with `log show --predicate
+         'process == "node"'`. The OS already owns this problem; we do not
+         reimplement it.
+    -->
+
+</dict>
+</plist>

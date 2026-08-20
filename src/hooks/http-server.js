@@ -320,7 +320,19 @@ function createServer(deps = {}) {
 //    `RestartOnFailure`); an exit 0 reads as "the job is done" and Windows would
 //    simply never bring it back. Refusing to serve stale code IS an abnormal
 //    termination, so we say so in the only vocabulary all three OSes share.
-const EXIT_STALE_CODE = 75;
+// 🔴 **90, AND NOT 75 — THE FIRST CHOICE WAS A TRAP, MEASURED 2026-08-20.**
+//    75 is `EX_TEMPFAIL`, and systemd gives that number a NAMED ALIAS. Worse,
+//    systemd's OWN manual carries, as Example 1: *"Exit status 75 (TEMPFAIL),
+//    250, and the termination signal SIGKILL are considered clean service
+//    terminations."* Anyone copying that example into the unit — which is
+//    exactly what copying a manual's example means — would silently turn our
+//    stale-code restart into "job done": daemon dead, unit GREEN.
+// 🛑 The fix is NOT a warning telling people never to write `SuccessExitStatus`.
+//    Prose is not a rule. 90 sits OUTSIDE every alias range systemd defines and
+//    outside that example, so the copy-paste cannot reach it. The error is
+//    impossible by construction instead of discouraged.
+// ⚠️ Stay under 125: from there the shells assign their own meanings.
+const EXIT_STALE_CODE = 90;
 
 /**
  * 🛑 THE DEFECT A DAEMON HAS AND A SPAWNED HOOK CANNOT HAVE — read this before

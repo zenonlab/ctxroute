@@ -56,9 +56,29 @@ const ARBO = path.join(HERE, '..', 'FILE-MAP.md');
 //    it does not get. `--exclude-standard` honours .gitignore: IGNORED drafts
 //    do not go red (the measured noise that had made the idea be dropped on
 //    08/08 — the answer was not "give up" but "honour the ignore").
+// 🔴 **THE PERIMETER WAS THE `test/` FOLDER, NOT THE REPOSITORY — MEASURED 2026-08-20.**
+//    `git ls-files` run with `cwd` inside a subdirectory lists THAT subdirectory,
+//    relative to it. So this gate, which announces "every module of the repo",
+//    was judging **94 test files and ZERO module**; part ③ was judging **0 files
+//    at all**. It had been that way since the src-layout migration moved the
+//    engine under `src/` — every file there matched neither `!includes('/')`
+//    nor `startsWith('sources/')`.
+// 🛑 THE ANTI-VACUITY FLOOR DID NOT SAVE US, AND THAT IS THE REAL LESSON. Part ①
+//    counts `targets.length > 20` and there were 94 — the floor was satisfied by
+//    the WRONG corpus. **A floor measures a QUANTITY, never an IDENTITY**: it
+//    catches a perimeter that collapsed to nothing, never one that aims
+//    somewhere else. Do not conclude a gate is alive because its floor passes.
+// ✅ The root is now MEASURED by the authority that knows it (`git rev-parse
+//    --show-toplevel`), never inferred from where the test file happens to sit —
+//    the same repair `leak-gate.test.js` received this morning, in a class that
+//    was fixed in ONE file instead of being swept everywhere it lives.
+const REPO_ROOT = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: HERE, encoding: 'utf8',
+}).trim();
+
 const trackedFiles = () => {
   const git = (args) =>
-    execFileSync('git', args, { cwd: HERE, encoding: 'utf8' })
+    execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
@@ -79,10 +99,20 @@ test('① every module and every suite of the repo gets an injectable doc', () =
 
   // DERIVED perimeter: the .js at the root and in sources/ (the code and its
   // suites). Excludes .example/config — their doc is carried otherwise.
+  // ⚠️ MODULES **AND** SUITES, as the title says. Before the root was repaired
+  //    this list held ONLY the suites — the modules were never required to have
+  //    a doc at all, and `http-server.js` shipped with one purely by goodwill.
   const targets = trackedFiles().filter(
-    (f) => f.endsWith('.js') && (!f.includes('/') || f.startsWith('sources/'))
+    (f) => f.endsWith('.js')
+      && (!f.includes('/') || f.startsWith('src/') || f.startsWith('tools/') || f.startsWith('test/'))
   );
+  // 🛑 A FLOOR MEASURES A QUANTITY, NEVER AN IDENTITY — 2026-08-20, paid here.
+  //    This very assertion passed on 94 TEST files while judging zero modules.
+  //    So the floor is kept AND doubled with a check on the SHAPE of the corpus:
+  //    both families must really be present, or the perimeter has drifted again.
   assert.ok(targets.length > 20, 'suspicious perimeter (too few files): blind gate');
+  assert.ok(targets.some((f) => f.startsWith('src/')), 'NO module in the perimeter — the gate would judge only its own suites');
+  assert.ok(targets.some((f) => f.endsWith('.test.js')), 'NO suite in the perimeter — half the corpus has vanished');
 
   const nus = targets.filter((f) => docsPour(rules, f).length === 0);
   assert.deepStrictEqual(nus, [],
@@ -114,8 +144,14 @@ test('③ every `.js` of the repo is analysed by dependency-cruiser (`includeOnl
   const conf = JSON.parse(fs.readFileSync(path.join(HERE, '..', '.dependency-cruiser.json'), 'utf8'));
   const re = new RegExp(conf.options.includeOnly);
   const targets = trackedFiles().filter(
-    (f) => f.endsWith('.js') && !f.endsWith('.test.js') && (!f.includes('/') || f.startsWith('sources/'))
+    (f) => f.endsWith('.js') && !f.endsWith('.test.js')
+      && (!f.includes('/') || f.startsWith('src/') || f.startsWith('tools/'))
   );
+  // 🛑 THIS PART HAD NO FLOOR AT ALL, AND IT WAS JUDGING **ZERO** FILES
+  //    (measured 2026-08-20). `deepStrictEqual([], [])` is the perfect green:
+  //    it passes loudest when it measures nothing. The part whose own doc calls
+  //    it "the most treacherous" was itself the inert one.
+  assert.ok(targets.length > 20, `only ${targets.length} module(s) in the perimeter — an empty scan passes this part by construction`);
   const invisibles = targets.filter((f) => !re.test(f));
   assert.deepStrictEqual(invisibles, [],
     'These modules are NOT in `includeOnly`: dependency-cruiser does not see them.\n' +

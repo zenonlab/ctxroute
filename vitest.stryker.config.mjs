@@ -54,6 +54,7 @@ export default defineConfig({
       //    but fast-check is excluded from this runner; each law has its case here.
       'test/scope-reach-pure.test.js',
       'test/derived-observables.test.js',
+      'test/temporal-budget-pure.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // ⚠️ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive
