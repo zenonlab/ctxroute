@@ -188,3 +188,46 @@ test('the duplicate window found by the spec is carried by a DEDICATED run', () 
   const fix = matrix.runs.find((r) => r.expect.green && (r.invariants || []).includes('AtMostOnceDelivery'));
   assert.ok(fix, 'the candidate fix must keep its own GREEN run — a defect stated without a reachable exit is a note, not a debt');
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE SCRATCH DIRECTORY IS NAMED BY US, NOT BY THE CLOCK (2026-08-20)
+//
+// 🔴 THE FLAKY THIS CLOSES, MEASURED IN CI THE DAY IT WAS WRITTEN. Left to
+//    itself TLC names its metadata directory from the CURRENT TIME **to the
+//    second** (`states/26-08-20-17-04-50`). Eleven checks run back to back; on a
+//    fast enough machine two of them START IN THE SAME SECOND, and the second
+//    dies with `TLCRuntimeException: that directory already exists` — WITHOUT
+//    naming any invariant. The spec gate then read "red on null" and reported a
+//    MODEL DRIFT: a false accusation against the specification, produced by a
+//    clock. The worst shape of failure, since it blames the wrong thing.
+// 🛑 TLC's own message is the confession — *"Trying to run TLC again will
+//    probably fix this problem."* We do not retry: we remove the ambiguity, by
+//    naming the directory after the thing that is ALREADY unique, the run's
+//    configuration. `-metadir` is documented in the INSTALLED version's `-help`.
+// ⚠️ SECOND EFFECT, and it is the space doctrine: the directory is now STABLE, so
+//    a run OVERWRITES its predecessor instead of stacking one folder per
+//    execution. The old behaviour had quietly produced 464 files / 3.9 MB of
+//    scratch — an UNBOUNDED writer. The bound is now structural (one directory
+//    per declared run), not a purge somebody has to remember.
+// 🛑 This is a STATIC check on purpose: it holds with or without Java, on a clean
+//    clone, and it fails the moment someone removes the flag. Checking the folder
+//    instead would pass by vacuity on any machine that has never run TLC.
+// ═══════════════════════════════════════════════════════════════════════
+test('the TLC launcher names its scratch directory ITSELF (no clock, no unbounded stacking)', () => {
+  const lanceur = lire(path.join(ROOT, 'specs', 'tla', 'run-tlc.mjs'));
+  const appel = lanceur.slice(lanceur.indexOf('function runTlc'));
+
+  assert.ok(/["']-metadir["']/.test(appel),
+    '`-metadir` has disappeared from the TLC invocation. Without it TLC names its scratch '
+    + 'directory from the clock TO THE SECOND: two runs starting in the same second collide, '
+    + 'the second dies naming NO invariant, and this gate reports a model drift that does not '
+    + 'exist. It also stacks one directory per execution, for ever.');
+
+  // DERIVED, never a literal: the path must be built from the run's cfg, which is
+  // what makes it unique per run AND stable across runs. A hard-coded directory
+  // would make the eleven runs share one scratch space — a different bug.
+  const apresDrapeau = appel.slice(appel.indexOf('-metadir'));
+  assert.ok(/\bcfg\b/.test(apresDrapeau.slice(0, 120)),
+    'the `-metadir` path does not derive from `cfg`. It must be named after the RUN, otherwise '
+    + 'either the eleven runs share one directory, or the clock is back in the loop.');
+});

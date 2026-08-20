@@ -72,8 +72,26 @@ function writeCfg(run) {
   return { invs, props: run.properties || [] };
 }
 
+// 🔴 `-metadir` IS NOT AN OPTIMISATION, IT CLOSES A FLAKY — MEASURED IN CI ON
+//    2026-08-20. Left to itself TLC names its scratch directory from the CURRENT
+//    TIME **to the second** (`states/26-08-20-17-04-50`). We run eleven checks in
+//    a row; on a fast enough machine two of them START IN THE SAME SECOND, the
+//    second one hits `TLCRuntimeException: that directory already exists` and dies
+//    WITHOUT naming any invariant. The gate then read "red on null" and reported a
+//    model drift — a false accusation against the spec, produced by a clock.
+// 🛑 TLC's own message is the confession: *"Trying to run TLC again will probably
+//    fix this problem."* A tool that tells you to retry is a tool whose result
+//    depends on when you asked. We do not retry: we REMOVE the ambiguity, by
+//    naming the directory ourselves after the thing that is already unique — the
+//    configuration. Option documented in the INSTALLED version (`-help`):
+//    "specify the directory in which to store metadata; defaults to
+//    SPEC-directory/states if not specified".
+// ⚠️ SECOND EFFECT, deliberate: the per-run directory is now STABLE, so a run
+//    OVERWRITES its predecessor instead of stacking one timestamped folder per
+//    execution. That is what had quietly produced 464 files / 3.9 MB of scratch —
+//    an unbounded writer, which the space doctrine forbids by construction.
 function runTlc(cfg) {
-  const r = spawnSync("java", ["-cp", JAR, "tlc2.TLC", "-deadlock", "-config", `${cfg}.cfg`, `${MODULE}.tla`], {
+  const r = spawnSync("java", ["-cp", JAR, "tlc2.TLC", "-deadlock", "-metadir", path.join("states", cfg), "-config", `${cfg}.cfg`, `${MODULE}.tla`], {
     cwd: DIR,
     encoding: "utf8",
     timeout: 600_000,
