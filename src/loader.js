@@ -26,7 +26,9 @@
 'use strict';
 
 const { parse, validate } = require('./frontmatter');
-const lib = require('./lib-pure');
+// ⚠️ The filter cascade is resolved WHERE its ADJUST/REPLACE decision lives (`sources/file.js`).
+//    A second reading of the same rule elsewhere is how ㊱ and ㊳ were born.
+const { heriterFiltres } = require('./sources/file.js');
 
 // One declaration -> its flat rules { pattern, doc, scope?, exclude?, keys? }.
 // ⚠️ Reproduces EXACTLY the inverse semantics of migrate.declaration():
@@ -59,7 +61,7 @@ function rulesOfDecl(data, doc, defauts) {
   if (Array.isArray(data.rules)) {
     return data.rules.map((r) => {
       /** @type {{pattern: any, doc: string, keys?: any, scope?: Array, exclude?: Array, rank?: number}} */
-      const out = { pattern: r.pattern, doc, ...lib.heriterFiltres(r, defauts) };
+      const out = { pattern: r.pattern, doc, ...heriterFiltres(r, defauts) };
       // PER-ENTRY rank (interleaved docs): the rule carries its exact JSON index.
       if (typeof r.rank === 'number') out.rank = r.rank;
       return out;
@@ -68,7 +70,7 @@ function rulesOfDecl(data, doc, defauts) {
   if (data.match === undefined) return [];
   const patterns = Array.isArray(data.match) ? data.match : [data.match];
   return patterns.map((p) => {
-    const out = { pattern: String(p), doc, ...lib.heriterFiltres(data, defauts) };
+    const out = { pattern: String(p), doc, ...heriterFiltres(data, defauts) };
     return out;
   });
 }

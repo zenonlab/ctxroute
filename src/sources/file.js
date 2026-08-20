@@ -364,6 +364,116 @@ function keyDecision(keysDecl, axis) {
   };
 }
 
+// ── THE PER-SOURCE DEFAULT OF THE FILTERS, AND ITS COMPOSITION ─────────
+// 🔴 WHY THIS TIER EXISTS. On 19/08 `keys` was denied a `defaults.{source}` tier with a written
+//    reason — "the global key universe already exists, it is `harness-profile.js`" plus the KNOB
+//    TEST verdict "the data ALREADY expresses the distinction". **Both were refuted the next day,
+//    by measurement**: making every doc of a category stop reading ONE observable meant writing it
+//    on 300+ entries, i.e. an ENUMERATION, born stale (class ㊽) — the very thing this repo forbids
+//    everywhere else. And the profile is the wrong knob: GLOBAL to every source at once, it cannot
+//    say "skills stop reading this, file docs keep it".
+// 🛑 A FILTER IS AN OPERATOR LIKE ANY OTHER — it lives where its peers live, so the tier carries
+//    `scope`, `exclude` AND `keys` TOGETHER. Treating `keys` as a special case IS what produced
+//    the 19/08 exception. ⚠️ `match` is DELIBERATELY out, asymmetry DECLARED: it is the only
+//    operator that CREATES an injection, so a category-wide default would fabricate rules for docs
+//    that declare none. A filter can only narrow — worst case, silence.
+// ⚠️ IT LIVES HERE AND NOT IN `lib-pure`, and that is not filing: the ADJUST/REPLACE decision is
+//    `keyDecision`, right above. A cascade resolved away from its decision needs a SECOND reading
+//    of the same rule, and two readings of one rule diverge — this project has paid that bill
+//    twice already (㊱, ㊳).
+// 🔴 THE COMPOSITION IS WHAT KEEPS THE TIER FROM RECREATING THE CLASS IT KILLS. Without it, an
+//    entry wanting to ADJUST what its category decided would have to re-enumerate the whole
+//    universe by hand — the same enumeration, one level up. Rule, decidable by LOOKING, and
+//    IDENTICAL to the one governing `keys` against the profile (one rule, two levels, never two
+//    dialects): the entry names at least one `-` ⇒ it ADJUSTS the universe its category
+//    resolved · only bare names ⇒ it REPLACES it, category included.
+// ⚠️ ORDERED: the CATEGORY applies first, the ENTRY on top — so an addition by the entry beats a
+//    removal by the category (`ajouts` wins over `bannies` in `keyDecision`). That is the only
+//    reading where the entry keeps the last word, the law every other setting here obeys.
+// 🛑 A REPLACE default under an ADJUST entry CANNOT be expressed by concatenating the two lists:
+//    the entry's `-` would then adjust the PROFILE instead of the category. We RESOLVE the
+//    category's universe first and hand the result over. Concatenating "because it is shorter"
+//    reintroduces a silent gap between what an author writes and what the engine reads.
+// ⚠️ HONEST LIMIT, WRITTEN NOT HIDDEN: a PURE ADDITION ("the category's default plus this key,
+//    nothing else changed") stays inexpressible — a form with no `-` reads as REPLACE, at BOTH
+//    levels. Pre-existing property of the operator, uniform, NOT introduced here. Closing it
+//    means a new form, hence a measurement first.
+// ⚠️ A THUNK, never a module-level const: a literal evaluated at load time is a STATIC mutant
+//    that no test can be attributed to, so it survives for ever and the score lies about it.
+const AXES_KEYS = () => ['match', 'scope', 'exclude'];
+
+// 🛑 ADJUST + ADJUST COMPOSE BY CONCATENATION, AND THAT IS NOT A SHORTCUT — IT IS THE ONLY
+//    CORRECT FORM. Resolving the pair into a bare LIST looks tidier and is a TRAP: a resolved
+//    list reads as REPLACE, and the universe of the FILTERS is not the declared keys, it is
+//    EVERY parameter minus the payload ones (㊿). Resolving would therefore make `scope` and
+//    `exclude` blind to every undeclared parameter — a remote MCP's `args.foo` — SILENTLY.
+//    Concatenation keeps the form ADJUST, so each axis keeps adjusting ITS OWN universe.
+//    (Written after making that exact mistake, one minute before shipping it.)
+// ⚠️ ORDER IS LOAD-BEARING: category first, entry second. `keyDecision` lets `ajouts` win over
+//    `bannies`, so an addition by the entry beats a removal by its category — the entry keeps
+//    the last word, like every other setting of this engine.
+// 🛑 ONLY the "REPLACE default under an ADJUST entry" case needs resolving, and there it is
+//    EXACT: the category already replaced the universe with an explicit list, so the entry
+//    adjusts THAT list. Concatenating there would let the entry's `-` adjust the PROFILE
+//    instead of the category — a silent gap between what an author writes and what runs.
+function composerKeys(entree, defaut) {
+  // ⚠️ NO `=== undefined` GUARDS HERE, and that is deliberate: `keyDecision` is TOTAL, so an
+  //    absent side already falls into the two `!d` branches below with the SAME result.
+  //    Stryker proved it — both guards survived as EQUIVALENT mutants. We ELIMINATE dead ground,
+  //    we never test it: a guard kept for comfort is a mutant nobody can ever kill.
+  const dE = keyDecision(entree, null);
+  if (!dE) return defaut;        // an entry naming nothing narrows nothing: the category stands.
+  if (!dE.ajuste) return entree; // REPLACE: "only these", category included.
+  const dD = keyDecision(defaut, null);
+  if (!dD) return entree;
+  if (dD.ajuste) return dD.decl.concat(dE.decl);
+  return dD.ajouts.filter((k) => !dE.bannies.includes(k)).concat(dE.ajouts);
+}
+
+// ⚠️ PER AXIS, always: `keys` carries ONE universe (flat list) or ONE PER AXIS (object). Mixing
+//    them would let a category default meant for `scope` leak into the TRIGGER — "one
+//    declaration, two meanings", the defect measured at 780 divergences on 19/08.
+function composerKeysParAxe(entree, defaut) {
+  if (entree === undefined) return defaut;
+  if (defaut === undefined) return entree;
+  // ⚠️ `Array.isArray` DIRECTLY: the two guards above already excluded `undefined`, so an extra
+  //    `v === undefined ||` was dead ground — Stryker proved it by surviving. We eliminate.
+  const plat = Array.isArray;
+  if (plat(entree) && plat(defaut)) return composerKeys(entree, defaut);
+  const out = {};
+  for (const axe of AXES_KEYS()) {
+    const e = Array.isArray(entree) ? entree : (entree && entree[axe]);
+    const d = Array.isArray(defaut) ? defaut : (defaut && defaut[axe]);
+    const r = composerKeys(e, d);
+    if (r !== undefined) out[axe] = r;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+// ⚠️ TOTAL: a malformed `defaults` block degrades to "no default", never throws. A config is
+//    hand-editable and NOTHING validates it at runtime (`config-gate` is a TEST, not a runtime
+//    guard) — the engine never trusts its input.
+// ⚠️ `scope`/`exclude` do NOT compose: they are VALUES, not universes. The entry wins whole, or
+//    inherits whole. An empty list is "not declared" on both sides — historical semantics of the
+//    loader, kept to the byte, so a doc writing `scope: []` inherits its category's.
+function heriterFiltres(entree, defauts) {
+  const d = (defauts && typeof defauts === 'object' && !Array.isArray(defauts)) ? defauts : {};
+  // 🔴 THE ARRAY GUARD IS ON BOTH SIDES, and its absence on the entry was a REAL asymmetry
+  //    found by a shape case: an ARRAY passes `typeof === 'object'`, so `e.keys` picked up
+  //    `Array.prototype.keys` — a FUNCTION handed to the cascade as if it were a declaration.
+  //    Harmless downstream (`keyDecision` refuses it) and dirty everywhere: a value that means
+  //    nothing must never travel. Symmetry is the rule, an asymmetry is a declared exception.
+  const e = (entree && typeof entree === 'object' && !Array.isArray(entree)) ? entree : {};
+  const choisir = (a, b) => ((Array.isArray(a) && a.length) ? a : ((Array.isArray(b) && b.length) ? b : undefined));
+  const out = { keys: composerKeysParAxe(e.keys, d.keys) };
+  const sc = choisir(e.scope, d.scope);
+  const ex = choisir(e.exclude, d.exclude);
+  if (sc) out.scope = sc;
+  if (ex) out.exclude = ex;
+  return out;
+}
+
+
 // The TRIGGER's shape: a list of key names, derived from the SAME decision.
 function triggerKeys(keysDecl, defauts) {
   const d = keyDecision(keysDecl, 'match');
@@ -584,6 +694,10 @@ function matchingDocs(rules, payload) {
 
 module.exports = {
   matchingDocs,
+  heriterFiltres,
+  composerKeys,
+  composerKeysParAxe,
+  keyDecision,
   norm,
   extractFilePaths,
   shouldSkip,

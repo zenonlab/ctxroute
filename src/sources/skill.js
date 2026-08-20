@@ -23,7 +23,7 @@
 
 'use strict';
 
-const { matchingDocs, shouldSkip } = require('./file');
+const { matchingDocs, shouldSkip, heriterFiltres } = require('./file');
 // ⚠️ `targets` COMES FROM THE `tool` SOURCE — never rewritten here. It is THE function that
 //    knows the `*` wildcard and its "non-empty tool name" guard; a 2nd copy
 //    would diverge at the first special value added (anti-duplication law).
@@ -63,7 +63,7 @@ function skillRules(config) {
       //    ignored). Re-checking here = duplicated guards = equivalent mutants.
       //    `{...null}` = {}: a null entry becomes a rule without a pattern,
       //    skipped downstream — totality without a conditional.
-      for (const r of entry.rules) rules.push({ ...r, doc: DOC_PREFIX + name, ...lib.heriterFiltres(r, defauts) });
+      for (const r of entry.rules) rules.push({ ...r, doc: DOC_PREFIX + name, ...heriterFiltres(r, defauts) });
       continue;
     }
     const match = Array.isArray(entry.match) ? entry.match : [];
@@ -74,7 +74,7 @@ function skillRules(config) {
       //    :undefined would change the shape for no reason — matchingDocs ignores
       //    absence). COMPLETE PARITY with file docs: the reused matcher
       //    already handles scope+exclude, so we expose BOTH (no withheld capability).
-      const filtres = lib.heriterFiltres(entry, defauts);
+      const filtres = heriterFiltres(entry, defauts);
       if (filtres.scope) rule.scope = filtres.scope;
       if (filtres.exclude) rule.exclude = filtres.exclude;
       // 🔴 `keys` WAS MISSING HERE — SHIPPED 19/08, INERT ON 8 SKILLS OUT OF 8 (fixed the

@@ -18,7 +18,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 import { validate } from '../src/frontmatter.js';
-import { matchingDocs, shouldSkip } from '../src/sources/file.js';
+import { matchingDocs, shouldSkip, composerKeys, composerKeysParAxe, keyDecision, heriterFiltres } from '../src/sources/file.js';
+
+// ⚠️ Read through the ENGINE's own decision, never a twin: a helper that re-implements
+//    ADJUST/REPLACE would prove itself instead of the engine.
+const garde = (decl, cle) => keyDecision(decl, null).garde(cle);
 
 const doc = (extra) => ({ doc: 'd', pattern: 'projet-x', ...extra });
 const cmd = (command) => ({ toolName: 'Bash', toolInput: { command } });
@@ -190,4 +194,150 @@ test('a WHITELIST on a FILTER axis keeps the named key — and only it', () => {
   assert.ok(!shouldSkip({ scope: ['deploy'], keys: { scope: ['command'] } }, '/p/a.js', input));
   // …the same scope restricted to `file_path`: the word is NOT there → the rule is skipped.
   assert.ok(shouldSkip({ scope: ['deploy'], keys: { scope: ['file_path'] } }, '/p/a.js', input));
+});
+
+// ═══ THE CATEGORY DEFAULT, AND HOW AN ENTRY COMPOSES WITH IT ═══════════
+// 🔴 WHY THIS BLOCK EXISTS. `defaults.{source}` was REFUSED to `keys` on 19/08 with a written
+//    reason; the refusal was measured wrong the next day — without that tier, making every doc
+//    of a category stop reading ONE observable means writing it on 300+ entries, i.e. an
+//    ENUMERATION born stale (class ㊽). And the tier alone is not enough: without COMPOSITION
+//    it recreates the same enumeration one level up, since an entry wanting to adjust what its
+//    category decided would have to restate the whole universe.
+// 🛑 ONE RULE, TWO LEVELS, never two dialects: at least one `-` ⇒ ADJUST · only bare names ⇒
+//    REPLACE. Read against the profile, and read against the category, identically.
+
+test('the category default applies when the entry says nothing — that is the whole point of the tier', () => {
+  assert.deepStrictEqual(composerKeys(undefined, ['-command']), ['-command']);
+});
+
+test('an entry that ADJUSTS composes with its category, it does not replace it', () => {
+  // ⚠️ CONCATENATION, and it is the only correct form: a resolved LIST would read as REPLACE,
+  //    and the universe of the FILTERS is not the declared keys but EVERY param minus the
+  //    payload ones (㊿) — resolving would make `scope`/`exclude` blind to a remote MCP's
+  //    `args.foo`, SILENTLY. The form must stay ADJUST so each axis adjusts ITS OWN universe.
+  assert.deepStrictEqual(composerKeys(['-commandPaths'], ['-command']), ['-command', '-commandPaths']);
+});
+
+test('the ENTRY keeps the last word: its addition beats its category removal', () => {
+  // ⚠️ ORDER IS LOAD-BEARING (category first, entry second): `keyDecision` lets `ajouts` win
+  //    over `bannies`. Inverting the order would make a category silently override an entry —
+  //    the opposite of every other setting of this engine.
+  const compose = composerKeys(['-autre', 'commandPaths'], ['-commandPaths']);
+  assert.ok(garde(compose, 'commandPaths'), 'the entry re-added the key its category had removed');
+  assert.ok(!garde(compose, 'autre'), 'and its own removal still holds');
+});
+
+test('an entry that REPLACES wins whole — category included', () => {
+  assert.deepStrictEqual(composerKeys(['cwd'], ['-command']), ['cwd']);
+});
+
+test('an ADJUST entry under a REPLACE category adjusts THAT list, never the profile', () => {
+  // 🛑 The one case that cannot be concatenated: the category already replaced the universe, so
+  //    the entry's `-` must bite on ITS list. Concatenating would let it adjust the PROFILE —
+  //    a silent gap between what an author writes and what the engine reads.
+  assert.deepStrictEqual(composerKeys(['-cwd'], ['file_path', 'cwd']), ['file_path']);
+});
+
+test('composition is PER AXIS — a `scope` default never leaks into the TRIGGER', () => {
+  // 🔴 That leak has a measured price: 780 divergences on 19/08, "one declaration, two meanings
+  //    depending on the axis reading it".
+  assert.deepStrictEqual(
+    composerKeysParAxe({ match: ['-commandPaths'] }, { match: ['-command'], scope: ['-cwd'] }),
+    { match: ['-command', '-commandPaths'], scope: ['-cwd'] },
+  );
+});
+
+test('PARITY — no category default, no composition: the entry is untouched, byte for byte', () => {
+  // ⚠️ The fleet has no `defaults.{source}.keys` today, so this path must cost exactly nothing.
+  const entree = { match: ['-command', '-commandPaths'] };
+  assert.strictEqual(composerKeysParAxe(entree, undefined), entree, 'the very same object, not a copy');
+});
+
+test('an entry naming NOTHING never narrows: the category stands (fail-open on garbage)', () => {
+  // ⚠️ A hand-edited config is never validated. An engine that guesses must guess in the
+  //    direction that does NOT inject — but "names nothing" is not a restriction, it is an
+  //    absence, so the category keeps deciding.
+  for (const rien of [[], 'x', 42, null]) {
+    assert.deepStrictEqual(composerKeys(rien, ['-command']), ['-command'], `entry ${JSON.stringify(rien)}`);
+  }
+});
+
+// ── TOTALITY OF THE CASCADE — every guard has its case ─────────────────
+// 🛑 These are not "coverage" cases. This function runs inside a hook on EVERY tool call and a
+//    config is HAND-EDITABLE, never validated at runtime (`config-gate` is a test, not a runtime
+//    guard). A throw here is not an exception: it is the whole fleet losing its docs. Each guard
+//    below therefore has a case that FAILS if the guard flips — which is what makes the mutation
+//    score mean something instead of decorating it.
+
+test('AXES — the composed object carries exactly the three matching axes, never more', () => {
+  // ⚠️ Derived from the same list the engine loops on: a 4th axis appearing here without a
+  //    universe of its own would be accepted and INERT, the family of defect this repo names ㊴.
+  assert.deepStrictEqual(
+    Object.keys(composerKeysParAxe({ match: ['-a'], scope: ['-b'], exclude: ['-c'] },
+      { match: ['-d'], scope: ['-e'], exclude: ['-f'] })).sort(),
+    ['exclude', 'match', 'scope'],
+  );
+});
+
+test('TOTALITY — a missing side is returned untouched, on both functions and both sides', () => {
+  assert.deepStrictEqual(composerKeys(['-x'], undefined), ['-x'], 'no category: the entry stands');
+  assert.deepStrictEqual(composerKeys(undefined, undefined), undefined, 'nothing on either side stays nothing');
+  // ⚠️ IDENTITY, not equality, on BOTH sides: an absent side must be handed back UNTOUCHED.
+  //    Asserting deep equality would let a rebuilt object pass — and a rebuild silently drops
+  //    everything outside the three axes, which is how a shape changes for nothing.
+  const seul = { match: ['-a'] };
+  assert.strictEqual(composerKeysParAxe(undefined, seul), seul, 'no entry: the category object itself');
+  assert.strictEqual(composerKeysParAxe(seul, undefined), seul, 'no category: the entry object itself');
+  // ⚠️ FLAT + FLAT stays FLAT: taking the per-axis path here would turn one universe into three,
+  //    and `keys: ["-command"]` would stop meaning "the same universe for the three axes".
+  assert.deepStrictEqual(composerKeysParAxe(['-a'], ['-b']), ['-b', '-a']);
+});
+
+test('MIXED FORMS — a flat side and an object side go through the PER-AXIS path', () => {
+  // 🛑 The flat form means "the same universe for the three axes". Composing it with an object
+  //    by the flat path would silently apply ONE axis's default to all three — "one declaration,
+  //    two meanings", measured at 780 divergences.
+  assert.deepStrictEqual(composerKeysParAxe(['-a'], { match: ['-b'], scope: ['-c'] }),
+    { match: ['-b', '-a'], scope: ['-c', '-a'], exclude: ['-a'] });
+  assert.deepStrictEqual(composerKeysParAxe({ match: ['-a'] }, ['-b']),
+    { match: ['-b', '-a'], scope: ['-b'], exclude: ['-b'] });
+});
+
+test('a category naming NOTHING lets the entry through — absence is not a restriction', () => {
+  assert.deepStrictEqual(composerKeys(['-a'], []), ['-a'], 'an empty category list decides nothing');
+  assert.deepStrictEqual(composerKeys(['-a'], 'garbage'), ['-a'], 'a non-list category is inert, never a throw');
+});
+
+test('heriterFiltres — the three filters, inherited or overridden, and NEVER a throw', () => {
+  assert.deepStrictEqual(heriterFiltres(undefined, undefined), { keys: undefined }, 'nothing in, nothing out');
+  assert.deepStrictEqual(heriterFiltres(null, null), { keys: undefined }, 'garbage in, still nothing out');
+  assert.deepStrictEqual(heriterFiltres({}, ['not', 'an', 'object']), { keys: undefined },
+    'a `defaults` that is a LIST is inert — an engine that guesses must guess towards NOT injecting');
+  assert.deepStrictEqual(heriterFiltres({}, { scope: ['x'], exclude: ['y'] }), { keys: undefined, scope: ['x'], exclude: ['y'] },
+    'an entry declaring nothing INHERITS its category — that is the whole point of the tier');
+  assert.deepStrictEqual(heriterFiltres({ scope: ['mien'], exclude: ['mien'] }, { scope: ['x'], exclude: ['y'] }),
+    { keys: undefined, scope: ['mien'], exclude: ['mien'] }, 'the entry wins WHOLE: a filter is a VALUE, never a universe');
+  assert.deepStrictEqual(heriterFiltres({ scope: [], exclude: [] }, { scope: ['x'], exclude: ['y'] }),
+    { keys: undefined, scope: ['x'], exclude: ['y'] }, 'an EMPTY list is "not declared" — historical loader semantics, kept to the byte');
+  assert.deepStrictEqual(heriterFiltres({ scope: ['a'] }, {}), { keys: undefined, scope: ['a'] },
+    'no category at all: the entry passes through unchanged, which is the fleet of today');
+});
+
+test('heriterFiltres — the shapes a HAND-EDITED config really produces, none of them a throw', () => {
+  // 🛑 Each case below pins ONE guard. Not padding: this function runs inside a hook on every
+  //    tool call, over a file nothing validates at runtime, so every shape a human can type must
+  //    have a DEFINED answer — and "defined" must be proven, never assumed.
+  assert.deepStrictEqual(heriterFiltres('chaine', 'chaine'), { keys: undefined },
+    'a string on both sides: inert, never a property read on a primitive');
+  assert.deepStrictEqual(heriterFiltres(['liste'], ['liste']), { keys: undefined },
+    'a LIST where a block is expected: inert — a list is not a category default');
+  // ⚠️ TWO EMPTY LISTS separates "not declared" from "declared empty". An empty array is TRUTHY,
+  //    so posing it would change the rule SHAPE for nothing — the kind of detail that turns a
+  //    differential red for a non-reason.
+  assert.deepStrictEqual(heriterFiltres({ scope: [], exclude: [] }, { scope: [], exclude: [] }),
+    { keys: undefined }, 'empty on both sides poses NOTHING');
+  assert.deepStrictEqual(heriterFiltres({ scope: [] }, { scope: ['x'] }), { keys: undefined, scope: ['x'] },
+    'empty entry, non-empty category: the category decides');
+  assert.deepStrictEqual(heriterFiltres({ scope: ['a'] }, { scope: [] }), { keys: undefined, scope: ['a'] },
+    'non-empty entry, empty category: the entry decides');
 });
