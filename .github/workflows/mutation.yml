@@ -29,6 +29,7 @@ on:
       - 'src/canary.js'
       - 'src/leak-pure.js'
       - 'src/docfacts.js'
+      - 'src/scope-reach-pure.js'
       - 'src/sources/file.js'
       - 'src/sources/tool.js'
       - 'src/sources/mcp.js'
@@ -69,6 +70,7 @@ on:
       - 'test/deps-criticality-pure.test.js'
       - 'test/budget.test.js'
       - 'test/docfacts.test.js'
+      - 'test/scope-reach-pure.test.js'
       # ── the mutation config itself + the deps ──
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'

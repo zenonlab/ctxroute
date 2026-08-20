@@ -38,6 +38,7 @@
     "src/budget.js",
     "src/leak-pure.js",
     "src/docfacts.js",
+    "src/scope-reach-pure.js",
     "src/harness-conformance.js"
   ],
   "incremental": true,

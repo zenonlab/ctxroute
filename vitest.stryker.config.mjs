@@ -50,6 +50,9 @@ export default defineConfig({
       'test/cadence-differential.test.js',
       'test/budget.test.js',
       'test/docfacts.test.js',
+      // ⚠️ DETERMINISTIC half only — the LAWS of the scanner live in the same file
+      //    but fast-check is excluded from this runner; each law has its case here.
+      'test/scope-reach-pure.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // ⚠️ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive

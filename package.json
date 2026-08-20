@@ -37,7 +37,8 @@
     "test:fleet": "vitest run --config vitest.heavy.config.mjs hooks-fleet-gate.test.js deadline-vendor.test.js vendor-deadline.test.js",
     "vendor": "node src/vendor-deadline.js",
     "test:deps": "vitest run deps-criticality-pure.test.js deps-criticality-gate.test.js",
-    "prepare": "git config core.hooksPath .githooks || exit 0"
+    "prepare": "git config core.hooksPath .githooks || exit 0",
+    "scope-reach": "node tools/scope-reach.js"
   },
   "license": "MIT",
   "keywords": [
