@@ -126,6 +126,18 @@ function frameFromUrl(url, parse) {
 }
 
 /**
+ * ⚠️ The injected collaborators, TYPED — not a loose bag. `tsc` refuses property
+ *    access on a bare `object`, and it is right to: in this repo a JSDoc block is
+ *    a VERIFIED CONTRACT, so an untyped seam is a seam nobody checks. Naming the
+ *    three also states what this shell is allowed to reach for — the engine, the
+ *    dialect, the frame parser, and nothing else.
+ * @typedef {object} HttpDeps
+ * @property {typeof run} runFn the shared orchestration core
+ * @property {typeof output} outputFn the harness dialect, borrowed from the spawn lane
+ * @property {(argv: string[]) => {frame: number, nbFrames: number}} parseFrames
+ */
+
+/**
  * Handles ONE hook invocation. Everything after the body read is SYNCHRONOUS,
  * and that is load-bearing, not incidental.
  *
@@ -147,7 +159,7 @@ function frameFromUrl(url, parse) {
  *
  * @param {string} body raw request body
  * @param {string} url request URL, carrying the frame coordinates
- * @param {object} deps injected for testing — the real ones are the defaults
+ * @param {HttpDeps} deps injected for testing — the real ones are the defaults
  * @returns {object} the JSON to send back
  */
 function handle(body, url, deps) {
@@ -189,7 +201,7 @@ function handle(body, url, deps) {
 /**
  * Builds the server WITHOUT listening — so a test can drive it on an ephemeral
  * port and the process lifecycle stays in `main`.
- * @param {object} [deps]
+ * @param {Partial<HttpDeps>} [deps]
  * @returns {import('http').Server}
  */
 function createServer(deps = {}) {
