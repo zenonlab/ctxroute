@@ -228,6 +228,18 @@ test('ADOPT: only well-formed pairs enter, and the ceiling applies', () => {
   //    · an entry of THREE items: without the length half it is silently
   //      accepted, keeping its first two elements. A save we never wrote would
   //      become state we trust.
+  // 🔴 ET LA VALEUR PRIMITIVE — dernier survivant du fichier, mesuré en CI.
+  //    `!v` écarte null/undefined/0/''/false, `Array.isArray` écarte les tableaux,
+  //    mais une CHAÎNE ou un NOMBRE non nuls passeraient sans `typeof v !== 'object'`.
+  //    Un scope dont l'état serait la chaîne "seen" entrerait alors en mémoire, et
+  //    le premier `Object.keys()` dessus rendrait ses INDICES de caractères — un
+  //    état fantôme, silencieux. Ce garde n'est donc PAS redondant, et c'est le
+  //    test qui ne le distinguait pas.
+  const primitives = new Map();
+  assert.equal(adopt([['chaine', 'seen'], ['nombre', 42], ['bool', true], ['ok', { v: 1 }]], primitives, 10), 1,
+    'a non-null PRIMITIVE is not a state: it must be dropped, never stored');
+  assert.deepEqual([...primitives.keys()], ['ok']);
+
   const hostile = new Map();
   assert.equal(adopt([42, 'texte', null, ['a', { v: 1 }, 'surplus'], ['bon', { v: 2 }]], hostile, 10), 1,
     'a non-array entry must be DROPPED, never destructured (it would throw), and a 3-item entry is not a pair');
