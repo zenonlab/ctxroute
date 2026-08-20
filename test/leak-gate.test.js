@@ -22,7 +22,19 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, normalizePath } from '../src/leak-pure.js';
 
-const ICI = path.dirname(fileURLToPath(import.meta.url));
+// 🔴 THE ROOT IS MEASURED, NOT SUPPOSED — and getting it wrong made this gate scan a QUARTER
+//    of the repository for weeks. `path.dirname(import.meta.url)` is the `test/` FOLDER, and
+//    `git ls-files` run from there lists only what is under it: **86 files instead of 229**.
+//    The repo's ONLY blocking gate, born from a real leak, was blind to `src/`, to the root and
+//    to `docs/` — and its anti-vacuity floor (">50 tracked files") passed comfortably on the 86,
+//    so nothing ever screamed. A gate that measures a subset is indistinguishable from one that
+//    measures everything: that is the green-that-sees-nothing this repo calls its worst defect.
+// 🛑 MEASURED BY THE AUTHORITY THAT KNOWS (`git rev-parse --show-toplevel`), never by counting
+//    `..`: a supposed relative path is already a bug, and this file is proof.
+const ICI = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: path.dirname(fileURLToPath(import.meta.url)),
+  encoding: 'utf8',
+}).trim();
 
 // ⚠️ OUTSIDE THE REPO, by necessity: the private terms (first name, accounts)
 //    cannot travel in a public artefact — and BUILDING the list lives in
@@ -220,7 +232,10 @@ test('the gate only looks at what is TRACKED', () => {
   //    and legitimately contain personal data. Scanning them would make the
   //    gate permanently red — hence unreadable, hence dead.
   const trackes = trackedFiles(ICI);
-  assert.ok(trackes.length > 50, 'git ls-files must answer');
+  // ⚠️ FLOOR RAISED TO THE REAL PERIMETER (2026-08-20): at >50 it passed on the 86 files of
+  //    `test/` alone while 143 others were never read. A floor calibrated on a subset VALIDATES
+  //    the subset. It must sit just under the real count, so shrinking the scan reddens at once.
+  assert.ok(trackes.length > 200, `git ls-files answered ${trackes.length} files — the scan is not covering the repository`);
   assert.ok(!trackes.includes('ctxroute-config.json'), 'the user config stays gitignored');
 });
 
