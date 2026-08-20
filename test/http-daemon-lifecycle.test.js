@@ -133,9 +133,13 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
       const marks = [];
       global.gc(); global.gc();
       let previous = process.memoryUsage().heapUsed;
-      // FOUR EQUAL batches. Equal on purpose: only equal batches make their
-      // retained amounts comparable, and it is the COMPARISON that decides.
-      for (let batch = 0; batch < 4; batch += 1) {
+      // SIX EQUAL batches. Equal, because only equal batches make the retained
+      // amounts comparable. SIX, because FOUR is not enough to reach the
+      // plateau — measured 2026-08-20: the marginal is still 150 bytes/request
+      // at batch 4 and only settles around zero from batch 5 onward. A gate
+      // that reads the curve before it flattens judges the warm-up, not the
+      // property, and reddens at random. It did exactly that on CI.
+      for (let batch = 0; batch < 6; batch += 1) {
         for (let i = 0; i < 1000; i++) await once();
         global.gc(); global.gc();
         const now = process.memoryUsage().heapUsed;
@@ -156,7 +160,7 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
 
   // ⚠️ ANTI-VACUITY: four readings must really exist, or the assertions below
   //    would be comparing nothing.
-  assert.strictEqual(out.marks.length, 4, 'the driver must have produced four readings');
+  assert.strictEqual(out.marks.length, 6, 'the driver must have produced six readings');
 
   // 🛑 WHY A SLOPE AND NOT A CEILING — this is the whole point of the test.
   //    An absolute bound ("under 8 MB") answers "is it big TODAY, on THIS
@@ -166,13 +170,28 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
   //    caches, interned strings — retains a lot at first and then almost
   //    nothing. Measuring the slope tells the two apart; measuring a total
   //    cannot, and it drifts from machine to machine.
-  //    MEASURED 2026-08-20 on the real corpus: 344 → 136 → 53 bytes per request.
-  const first = out.marks[0];
-  const last = out.marks[3];
-  assert.ok(last < first / 2,
-    `retention is NOT decelerating (batches: ${out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ')}) — `
-    + 'equal batches retaining equal amounts is the signature of a leak, and this daemon runs for months');
-}, 180000);
+  //    MEASURED 2026-08-20 over TEN batches: 370 → 281 → 181 → 150 → 134 → -1
+  //    → 18 → 65 → 50 → -12 bytes per request. It converges to zero, and the
+  //    state on disk stays at 0 KB — warm-up, not retention.
+  //
+  // 🛑 AVERAGES, NOT SINGLE READINGS — and this cost a red CI on 2026-08-20.
+  //    The first version compared batch 4 against batch 1 with a `< half`
+  //    cliff. On a loaded Windows runner the readings were 361 → 229 → 180 →
+  //    184 KB: converging exactly as expected, and rejected by four kilobytes.
+  //    A gate that reddens on scheduling noise is a gate people stop reading.
+  //    The property is CONVERGENCE, so the tail is compared to the head, and
+  //    each side is an average — one noisy batch can no longer decide alone.
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const head = mean(out.marks.slice(0, 2));
+  const tail = mean(out.marks.slice(-2));
+  const shown = out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ');
+  // ⚠️ ANTI-VACUITY: warm-up must really have cost something, otherwise the
+  //    ratio below is measuring two zeroes and passes by emptiness.
+  assert.ok(head > 20 * 1024, `warm-up retained almost nothing (${shown}) — the driver is probably not doing real work`);
+  assert.ok(tail < head / 2,
+    `retention is NOT converging (batches: ${shown}) — equal batches retaining equal amounts `
+    + 'is the signature of a leak, and this daemon runs for months');
+}, 240000);
 
 // ── ④ SEEN RED — the slope criterion must REJECT an actual leak ──
 test('SEEN RED: the same criterion rejects a server that retains one object per request', async () => {
@@ -204,7 +223,7 @@ test('SEEN RED: the same criterion rejects a server that retains one object per 
       const marks = [];
       global.gc(); global.gc();
       let previous = process.memoryUsage().heapUsed;
-      for (let b = 0; b < 4; b++) {
+      for (let b = 0; b < 6; b++) {
         for (let i = 0; i < 1000; i++) await once();
         global.gc(); global.gc();
         const now = process.memoryUsage().heapUsed;
@@ -220,13 +239,14 @@ test('SEEN RED: the same criterion rejects a server that retains one object per 
       (err, stdout) => (err ? reject(new Error(err.message + stdout)) : resolve(JSON.parse(stdout.trim().split('\n').pop()))));
   });
 
-  assert.strictEqual(out.marks.length, 4, 'the leaky driver must have produced four readings too');
+  assert.strictEqual(out.marks.length, 6, 'the leaky driver must have produced six readings too');
   // ⚠️ EXACTLY the assertion of the test above, inverted. Sharing the criterion
   //    literally is what makes this a proof: if someone weakens it up there to
   //    silence a red, THIS test goes red in the same move.
-  const first = out.marks[0];
-  const last = out.marks[3];
-  assert.ok(!(last < first / 2),
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const head = mean(out.marks.slice(0, 2));
+  const tail = mean(out.marks.slice(-2));
+  assert.ok(!(tail < head / 2),
     `the criterion FAILED TO SEE a deliberate leak (batches: ${out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ')}) — `
     + 'it is therefore proving nothing about the real daemon');
-}, 180000);
+}, 240000);
