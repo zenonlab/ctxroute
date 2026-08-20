@@ -100,6 +100,9 @@
 const http = require('http');
 const { run } = require('../pretool-core');
 const { output } = require('./doc-inject');
+const path = require('path');
+const paths = require('../paths');
+const { createMemoryStore } = require('../memory-store');
 
 // ⚠️ LOOPBACK, hardcoded — read the header. This is NOT a setting: an adopter
 //    who needs to move it has a problem this framework must not solve.
@@ -555,7 +558,20 @@ if (require.main === module) {
   //    IGNORED — the supervisor's unit is the single place the address lives.
   //    Reading it unconditionally keeps this line free of any branch about which
   //    world we are in; `listenOn` is the one place that decides.
-  listenOn(createServer(), process.env, process.pid, port);
+  // 🔑 THE DAEMON OWNS ITS STATE, IN MEMORY — the kernel serialises its callers,
+  //    so nothing needs a lock, a tmp+rename or a retry to take turns.
+  // 🛑 RESTORE BEFORE LISTEN, AND THE ORDER IS THE WHOLE GUARANTEE. At this
+  //    instant the daemon is the only thing that exists: the snapshot read has
+  //    no concurrency to fear. Moving this line after `listenOn` would put back,
+  //    by hand, the exact race this design removes — a client could be served
+  //    from an empty memory while the file was still being read.
+  // ⚠️ WITHOUT IT, EVERY RESTART RE-DELIVERS EVERY `once`. `watchOwnCode` exits
+  //    on any edit of this repository, so a working session restarts the daemon
+  //    repeatedly: a volatile state would reopen the duplicate delivery closed
+  //    this morning, through a brand-new door.
+  const etat = createMemoryStore({ snapshotPath: path.join(paths.stateDir(), 'daemon-state.json') });
+  etat.restore();
+  listenOn(createServer({ store: etat }), process.env, process.pid, port);
   // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
   //    itself pulled in. Watching before would miss the modules loaded lazily
   //    on the first require — the exact half most likely to be edited.

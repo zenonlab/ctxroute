@@ -68,7 +68,10 @@ fs.writeFileSync(DAEMON, `
 const { createServer } = require(${JSON.stringify(path.join(RACINE, 'src', 'hooks', 'http-server.js').replace(/\\/g, '/'))});
 const { createMemoryStore } = require(${JSON.stringify(path.join(RACINE, 'src', 'memory-store.js').replace(/\\/g, '/'))});
 const adresse = process.argv[2];
-const store = createMemoryStore({});             // purely volatile: zero disk
+// A snapshot path may be given as argv[3]: with it the daemon survives its own
+// death, without it the state is purely volatile (zero disk).
+const store = createMemoryStore({ snapshotPath: process.argv[3] || null });
+store.restore();                                 // BEFORE listen — see below
 const srv = createServer({ store });
 srv.listen(adresse, () => process.send('pret'));
 process.on('message', (m) => { if (m === 'stop') { srv.close(); process.exit(0); } });
@@ -86,11 +89,17 @@ ask(payload, { socketPath: adresse, frame: Number(frame), frames: Number(frames)
   (r) => { process.send({ frame: Number(frame), texte: JSON.stringify(r || null) }); });
 `);
 
-function demarrerDaemon(adresse) {
+function demarrerDaemon(adresse, snapshot) {
   return new Promise((pret) => {
-    const d = fork(DAEMON, [adresse], { env: ENV, stdio: 'ignore' });
+    const args = snapshot ? [adresse, snapshot] : [adresse];
+    const d = fork(DAEMON, args, { env: ENV, stdio: 'ignore' });
     d.on('message', (m) => { if (m === 'pret') pret(d); });
   });
+}
+
+/** The daemon's death is an OS EVENT, awaited as such — never a delay. */
+function tuer(d) {
+  return new Promise((mort) => { d.once('exit', mort); d.kill(); });
 }
 
 function frapper(adresse, frame, frames) {
@@ -192,3 +201,38 @@ test('NO DAEMON: the client settles at once, silently, with no timer', { timeout
 // ⚠️ The address itself is proven in `kernel-endpoint.test.js`: it is a PURE
 //    function, so it belongs to the fast lane and to the mutation runner —
 //    this suite spawns real processes and stays out of both.
+
+// ── ⑤ A RESTART MUST NOT RE-DELIVER — the state survives the process ────
+//
+// 🔴 THE DEFECT THIS CLOSES BEFORE IT EXISTS. The kernel serialises what is
+//    ALIVE, but it persists NOTHING through the death of a process: a purely
+//    volatile daemon forgets every `once` the moment it exits. And it exits
+//    OFTEN — `watchOwnCode` kills it on any edit of this repository, so a
+//    single working session restarts it repeatedly. Without a snapshot, that is
+//    the duplicate delivery closed this morning, reopened through a new door.
+// 🛑 RESTORE HAPPENS BEFORE `listen`, and the ORDER is the guarantee: at that
+//    instant the daemon is the only thing that exists, so the read has no
+//    concurrency to fear. That is why the disk can be a SAVE here without ever
+//    becoming a CHANNEL again.
+// ⚠️ ANTI-VACUITY: the first daemon must really deliver, and the second must
+//    really be a different process — otherwise "silence" would prove nothing.
+test('A RESTART DOES NOT RE-DELIVER: the state survives the death of the daemon',
+  { timeout: 30000 }, async () => {
+    const adresse = adresseTest('reprise');
+    const snapshot = path.join(TMP, 'reprise-snapshot.json');
+
+    const un = await demarrerDaemon(adresse, snapshot);
+    const premier = await frapper(adresse, 1, 1);
+    await tuer(un);
+
+    const deux = await demarrerDaemon(adresse, snapshot);
+    const apres = await frapper(adresse, 1, 1);
+    const pid1 = un.pid;
+    await tuer(deux);
+
+    assert.ok(premier.texte.includes('CORPS-UNIQUE'), 'the first daemon must deliver — otherwise this cell proves nothing');
+    assert.notEqual(deux.pid, pid1, 'the two daemons must really be different processes');
+    assert.ok(!apres.texte.includes('CORPS-UNIQUE'),
+      'the document was delivered AGAIN after a restart: the daemon did not restore its state, '
+      + 'so every edit of this repository would re-inject every `once` — the duplicate delivery, back.');
+  });
