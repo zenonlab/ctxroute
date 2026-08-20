@@ -55,6 +55,15 @@ export default defineConfig({
       'test/scope-reach-pure.test.js',
       'test/derived-observables.test.js',
       'test/temporal-budget-pure.test.js',
+      // ⚠️ `memory-store.js` is the I/O shell and is NOT mutated; its DECISIONS
+      //    live in `memory-store-pure.js`, which is — and this suite is what
+      //    kills those mutants. Absent from this list, the LRU and the ceiling
+      //    would be measured by nothing.
+      'test/memory-store.test.js',
+      // ⚠️ The rendezvous address: a PURE function, deterministic, spawn-free.
+      //    The behaviour under real processes lives in `state-daemon.test.js`,
+      //    which spawns and therefore never enters this runner.
+      'test/kernel-endpoint.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // ⚠️ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive

@@ -40,6 +40,19 @@
 const budget = require('./budget');
 const store = require('./session-store');
 
+// 🛑 THE STATE BACKEND IS AN ARGUMENT, NEVER AN AMBIENT SETTING (2026-08-20).
+//    The daemon owns its state IN MEMORY (the kernel serialises the callers, so
+//    nothing needs a lock); a spawned hook keeps the on-disk store. Both must be
+//    reachable from the SAME code, so the choice travels as a PARAMETER.
+// 🔴 AN ENVIRONMENT VARIABLE WAS CONSIDERED AND REFUSED: env vars are INHERITED
+//    by child processes. One leak and a spawned hook would silently read an
+//    empty memory instead of the real state — every `once` re-delivered, no
+//    error anywhere. An ambient switch on a state backend is a silent-bug
+//    generator; an explicit argument cannot leak.
+// ⚠️ Default = the disk store, so every existing caller keeps byte-identical
+//    behaviour and the differentials stay green without a single edit.
+const backend = (s) => s || store;
+
 // ⚠️ EMISSION QUEUE — what does not fit in the N frames of ONE action waits
 //    here and leaves at the NEXT action. Distinct prefix, keyed by the agent
 //    scope, purged by `ctxroute-reset.js` like the other stores.
@@ -64,8 +77,8 @@ const REMAINDER_PREFIX = 'remainder-';
 //    input, otherwise their frames no longer reassemble; ② a doc EDITED between
 //    two actions would make chunks of one version be reassembled with chunks of
 //    another — a silent Frankenstein.
-function loadQueue(scopeId) {
-  const f = store.loadState(REMAINDER_PREFIX, scopeId);
+function loadQueue(scopeId, st) {
+  const f = backend(st).loadState(REMAINDER_PREFIX, scopeId);
   return Array.isArray(f.segments) ? f.segments : [];
 }
 
@@ -73,8 +86,8 @@ function loadQueue(scopeId) {
 //    EMPTIES the queue when everything is finally delivered. Making it
 //    conditional on being non-empty would make the last delivery loop at every
 //    action, forever.
-function persistQueue(scopeId, deferred, emissions) {
-  store.saveState(REMAINDER_PREFIX, scopeId, { segments: deferred, emissions });
+function persistQueue(scopeId, deferred, emissions, st) {
+  backend(st).saveState(REMAINDER_PREFIX, scopeId, { segments: deferred, emissions });
 }
 
 /**
@@ -107,8 +120,8 @@ function persistQueue(scopeId, deferred, emissions) {
  *    context has been emptied, injections from before no longer prove anything
  *    about now.
  */
-function emissionCount(scopeId) {
-  const f = store.loadState(REMAINDER_PREFIX, scopeId);
+function emissionCount(scopeId, st) {
+  const f = backend(st).loadState(REMAINDER_PREFIX, scopeId);
   // ⚠️ Store written BEFORE 07/08/2026: the key does not exist. Absent = 0,
   //    never an error — that is what makes the addition backward-compatible
   //    (expand/contract: the new key appears, nobody breaks).
@@ -144,15 +157,15 @@ function split(segments, budgetMax, nbFrames) {
  *   splitting (to be memoized for the following frames); `plan` = the frame of
  *   the requested index, or `undefined` if the index does not exist.
  */
-function emit({ frais, budgetMax, nbFrames, indice, scopeId }) {
-  const segments = budget.orderSegments(loadQueue(scopeId), frais);
+function emit({ frais, budgetMax, nbFrames, indice, scopeId, store: st = null }) {
+  const segments = budget.orderSegments(loadQueue(scopeId, st), frais);
   const frames = split(segments, budgetMax, nbFrames);
   // ⚠️ THE COUNTER TRAVELS IN THE WRITE THAT ALREADY EXISTED — zero extra I/O,
   //    zero extra lock. That is what makes the canary's denominator FREE;
   //    a dedicated store would have added one write per action on the hot path.
   //    The empty pass does not count (cf `emissionCount`).
-  const emissions = emissionCount(scopeId) + (segments.length > 0 ? 1 : 0);
-  persistQueue(scopeId, frames[frames.length - 1].deferred, emissions);
+  const emissions = emissionCount(scopeId, st) + (segments.length > 0 ? 1 : 0);
+  persistQueue(scopeId, frames[frames.length - 1].deferred, emissions, st);
   return { segments, frames, plan: frames[indice - 1] };
 }
 

@@ -45,6 +45,8 @@ on:
       - 'src/budget.js'
       - 'src/harness-conformance.js'
       - 'src/temporal-budget-pure.js'
+      - 'src/memory-store-pure.js'
+      - 'src/kernel-endpoint.js'
       # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
       - 'test/harness-conformance.test.js'
       - 'test/lib-pure.test.js'
@@ -75,6 +77,8 @@ on:
       - 'test/scope-reach-pure.test.js'
       - 'test/derived-observables.test.js'
       - 'test/temporal-budget-pure.test.js'
+      - 'test/memory-store.test.js'
+      - 'test/kernel-endpoint.test.js'
       # ── the mutation config itself + the deps ──
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'

@@ -58,7 +58,7 @@ const budget = require('./budget');
 //    bring the queue or the splitting back into this orchestration — the gate
 //    `emission-core-gate.test.js` requires every emitter to go through the module.
 const emission = require('./emission-core');
-const { withLock } = require('./lock');
+const lockModule = require('./lock');
 const paths = require('./paths');
 const store = require('./session-store');
 
@@ -117,6 +117,26 @@ function budgetFor(config, options) {
 // Any error = silent exit 0 (fail-open).
 function run(data, emit, options) {
   try {
+    // 🛑 WHO OWNS THE STATE IS AN ARGUMENT (2026-08-20). A spawned hook keeps the
+    //    on-disk store and its cross-process lock; the DAEMON owns its state in
+    //    memory and needs no lock at all — the KERNEL serialises its callers
+    //    (one connection delivered at a time onto a single-threaded loop), so
+    //    the mutual exclusion the lock simulates already exists, for free, above
+    //    us. Everything the two have in common stays in ONE code path.
+    // 🔴 REFUSED: an environment variable. They are INHERITED by children, so a
+    //    single leak would make a spawned hook read an empty memory instead of
+    //    the real state — every `once` delivered again, silently, with no error
+    //    anywhere. An ambient switch on a state backend manufactures silent bugs.
+    // ⚠️ Defaults are the historical modules ⇒ every existing caller is
+    //    byte-identical and the differentials stay green untouched.
+    const st = (options && options.store) || store;
+    // ⚠️ THE LOCAL NAME STAYS `withLock`, ON PURPOSE. `state-write-under-lock-gate`
+    //    proves that no state write escapes the critical section by matching the
+    //    SHAPE of the call site. Renaming it to something prettier made the gate
+    //    blind — it went red immediately, which is precisely its job: "an alias
+    //    that hides a write is flagged". A guardrail is not worked around by
+    //    choosing another identifier.
+    const withLock = (options && options.withLock) || lockModule.withLock;
     const toolName = data.tool_name || '';
     const toolInput = data.tool_input || {};
     // ⚠️ SCOPE PER AGENT (19/07/2026): the once/smart state is keyed by
@@ -157,7 +177,7 @@ function run(data, emit, options) {
     //    TURNS ⇒ zero elapsing forever ⇒ a `smart` doc degenerated into
     //    `once`, SILENTLY. Sealed by `cascade-source-gate.test.js`.
     if (matched.some((d) => gate.driftUnitForDoc(config, decls[d], acc.owner[d]) === 'turn')) {
-      const t = store.loadState(TURN_PREFIX, sessionId).turns;
+      const t = st.loadState(TURN_PREFIX, sessionId).turns;
       if (Number.isInteger(t)) turnCount = t;
     }
 
@@ -237,7 +257,7 @@ function run(data, emit, options) {
       //    session prefix. An orphan key would only be cleaned by the
       //    TTL GC — a silent piece of waste, exactly what we refuse.
       const clePlan = sessionId + '--inv-' + invocationId;
-      const cache = fragmente ? store.loadState(PLAN_PREFIX, clePlan) : {};
+      const cache = fragmente ? st.loadState(PLAN_PREFIX, clePlan) : {};
       // ⚠️ THE PLAN MEMOIZES THE **SEGMENTS**, NO LONGER ONLY THE IDS (05/08/2026).
       //    Since the queue exists, the input of the splitting is no longer
       //    derivable from the ids alone: it mixes chunks INHERITED from previous
@@ -249,7 +269,7 @@ function run(data, emit, options) {
       if (Array.isArray(cache.segments)) {
         return { segments: cache.segments, decision: cache.decision, frames: split(cache.segments), filteredOut: cache.filteredOut || [] };
       }
-      const state = store.loadState(STORE_PREFIX, sessionId);
+      const state = st.loadState(STORE_PREFIX, sessionId);
       const r = gate.decide(config, decls, matched, state, turnCount, acc.owner, toolName);
 
       // ── EMISSION: queue first, fresh next, remainder persisted ──
@@ -264,6 +284,7 @@ function run(data, emit, options) {
         nbFrames,
         indice,
         scopeId: sessionId,
+        store: st,
       });
       const segments = em.segments;
       const frames = em.frames;
@@ -277,10 +298,10 @@ function run(data, emit, options) {
       //    twice. The guarantee "never consumed without being delivered" has not
       //    disappeared: it has changed guardian, and its guardian is now sealed
       //    by a property.
-      if (r.changed) store.saveState(STORE_PREFIX, sessionId, r.state);
+      if (r.changed) st.saveState(STORE_PREFIX, sessionId, r.state);
       // ⚠️ `filteredOut` MEMOIZED with the plan: frames 2..N read the cache back
       //    and must see the SAME finding as the 1st (same reason as segments).
-      if (fragmente) store.saveState(PLAN_PREFIX, clePlan, { segments, decision: r.decision, filteredOut: r.filteredOut });
+      if (fragmente) st.saveState(PLAN_PREFIX, clePlan, { segments, decision: r.decision, filteredOut: r.filteredOut });
       return { segments, decision: r.decision, frames, filteredOut: r.filteredOut };
     }, { fallback: null });
     // Lock unavailable → decide WITHOUT state (never keep silent, cf header).
@@ -295,7 +316,7 @@ function run(data, emit, options) {
       //    (orphan chunk in production, 07/08/2026). The lock serializes the
       //    WRITES — reading never needed it and has no side effect.
       //    We read, we decide, we write NOTHING. Detail: `gate.md`.
-      const etatConnu = store.loadState(STORE_PREFIX, sessionId);
+      const etatConnu = st.loadState(STORE_PREFIX, sessionId);
       const r = gate.decide(config, decls, matched, etatConnu, turnCount, acc.owner, toolName);
       // 🔴 `injectLockless`, NOT `inject` — fix of 2026-08-20, proved sufficient by the TLA+
       //    spec (`TransportCandidateFix.cfg`) BEFORE being written here.

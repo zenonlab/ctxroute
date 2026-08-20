@@ -273,6 +273,10 @@ function frameFromUrl(url, parse) {
  * @property {typeof run} runFn the shared orchestration core
  * @property {typeof output} outputFn the harness dialect, borrowed from the spawn lane
  * @property {(argv: string[]) => {frame: number, nbFrames: number}} parseFrames
+ * @property {{loadState: Function, saveState: Function}|null} store the state
+ *   backend. Absent/null ⇒ the historical disk store, byte-identical. A daemon
+ *   passes its MEMORY store and, with it, an empty lock: the kernel already
+ *   serialises its callers. The two always travel together.
  */
 
 /**
@@ -301,7 +305,7 @@ function frameFromUrl(url, parse) {
  * @returns {object} the JSON to send back
  */
 function handle(body, url, deps) {
-  const { runFn, outputFn, parseFrames } = deps;
+  const { runFn, outputFn, parseFrames, store } = deps;
   let data;
   try {
     data = JSON.parse(body);
@@ -326,6 +330,21 @@ function handle(body, url, deps) {
       frame: frames.frame,
       nbFrames: frames.nbFrames,
       invocationId: typeof data.tool_use_id === 'string' ? data.tool_use_id : '',
+      // 🔑 THE STATE OF A LIVING DAEMON LIVES IN MEMORY, AND THE LOCK GOES WITH
+      //    IT. Sixteen short-lived processes had no common ground but the disk,
+      //    so a FILE was made to carry a conversation between them — a lock to
+      //    take turns, an atomic publish, a lock-less fallback, bounded
+      //    retries. All of it simulated, by hand, the one thing the kernel
+      //    already does: SERIALISE. Here the kernel delivers one connection at
+      //    a time onto a single-threaded loop, so the mutual exclusion exists
+      //    ABOVE us, for free. `withLock` therefore just runs the section.
+      // 🛑 THE TWO TRAVEL TOGETHER, NEVER ONE WITHOUT THE OTHER. A memory store
+      //    with the file lock would take a cross-process lock protecting
+      //    nothing (pure cost); the file store with an empty lock would be the
+      //    2026-08-07 production bug, deliberately reintroduced.
+      // ⚠️ Absent `store` ⇒ the historical modules, byte-identical: that is what
+      //    keeps the spawn lane and every differential untouched.
+      ...(store ? { store, withLock: (_dir, section) => section() } : {}),
     });
   } catch {
     // ⚠️ FAIL-OPEN, and it matters MORE here than on the spawn lane: there, a
@@ -346,6 +365,10 @@ function createServer(deps = {}) {
   const wired = {
     runFn: deps.runFn || run,
     outputFn: deps.outputFn || output,
+    // ⚠️ NO DEFAULT ON PURPOSE: absent = the disk store, i.e. the exact previous
+    //    behaviour. Owning the state is a DECISION taken by whoever starts the
+    //    daemon, never a silent default inherited by a test or a shell.
+    store: deps.store || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
   };
   const server = http.createServer((req, res) => {
