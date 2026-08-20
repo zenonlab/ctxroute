@@ -47,3 +47,9 @@ EVAL-SESSIONS.md
 #    generation exists to prevent.
 specs/tla/tla2tools.jar
 specs/tla/*.cfg
+
+# TLC scratch: regenerated at every run, timestamped per run.
+# 🔴 464 files / 3.9 MB slipped into the history on 2026-08-20 — a disk writer
+#    created with NO declared bound, in the ONE place that never forgets. Growth
+#    would have been ~464 files per `spec:tlc` run, for ever.
+specs/tla/states/
