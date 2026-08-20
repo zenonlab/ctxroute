@@ -276,6 +276,10 @@ function frameFromUrl(url, parse) {
  * @property {typeof run} runFn the shared orchestration core
  * @property {typeof output} outputFn the harness dialect, borrowed from the spawn lane
  * @property {(argv: string[]) => {frame: number, nbFrames: number}} parseFrames
+ * @property {((err: Error) => void)|null} onAddressInUse what to do when the
+ *   kernel refuses the address. Absent ⇒ NOTHING happens here: a builder must
+ *   not decide whether its caller lives or dies. `main` throws; `kernel-bind`
+ *   inspects a possibly dead entry instead.
  * @property {{loadState: Function, saveState: Function}|null} store the state
  *   backend. Absent/null ⇒ the historical disk store, byte-identical. A daemon
  *   passes its MEMORY store and, with it, an empty lock: the kernel already
@@ -372,6 +376,7 @@ function createServer(deps = {}) {
     //    behaviour. Owning the state is a DECISION taken by whoever starts the
     //    daemon, never a silent default inherited by a test or a shell.
     store: deps.store || null,
+    onAddressInUse: deps.onAddressInUse || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
   };
   const server = http.createServer((req, res) => {
@@ -398,16 +403,29 @@ function createServer(deps = {}) {
       try { res.destroy(); } catch { /* already gone, which is the desired end state */ }
     });
   });
-  // ⚠️ A `server` without an `error` listener turns EVERY socket-level error
-  //    into an uncaught exception. 🛑 EADDRINUSE is the ONE case we let kill us,
-  //    deliberately: it means a second instance is starting, the kernel has
-  //    already refused the port, and the OS is the authority that must prevent
-  //    duplicates — not a PID file, not a liveness probe, not us. Every OTHER
-  //    error is survivable and must not take the service down.
+  // ⚠️ A `server` without an `error` listener turns EVERY socket-level error into
+  //    an uncaught exception, so one must exist here: a request-level failure is
+  //    survivable and must never take the service down.
+  // 🔴 BUT IT NO LONGER DECIDES THE PROCESS'S FATE — FIXED 2026-08-20, FOUND ON
+  //    macOS CI. This handler used to `throw` on EADDRINUSE, i.e. a CONSTRUCTOR
+  //    imposed a lifecycle policy on every caller. It is the house rule, broken
+  //    right here: **a core returns a verdict, the SHELL decides to die.** The
+  //    cost was concrete — `kernel-bind` attaches its own handler to inspect a
+  //    possibly DEAD socket file, and this one killed the process first. macOS
+  //    is the only kernel that leaves such a file behind, so the conflict was
+  //    invisible on Windows and on Linux.
+  // 🛑 EADDRINUSE STAYS FATAL WHERE IT MUST BE — in `main`, below, which is the
+  //    piece that owns the lifecycle. The guarantee is unchanged: a second
+  //    instance is refused BY THE KERNEL, never by a PID file or a liveness
+  //    probe. What changed is WHO acts on that refusal.
+  // ⚠️ `listenerCount` is not consulted, deliberately: "does someone else handle
+  //    this?" is a question about intent, and answering it by counting is how a
+  //    guard becomes conditional on load order. The handler simply reports.
   server.on('error', (err) => {
     // ⚠️ `code` lives on `ErrnoException`, not on `Error` — `tsc` is right to
     //    ask, and a JSDoc that hid it would be a lying contract.
-    if (/** @type {NodeJS.ErrnoException} */ (err).code === 'EADDRINUSE') throw err;
+    const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+    if (code === 'EADDRINUSE' && typeof deps.onAddressInUse === 'function') deps.onAddressInUse(err);
   });
   return server;
 }
@@ -571,7 +589,11 @@ if (require.main === module) {
   //    this morning, through a brand-new door.
   const etat = createMemoryStore({ snapshotPath: path.join(paths.stateDir(), 'daemon-state.json') });
   etat.restore();
-  listenOn(createServer({ store: etat }), process.env, process.pid, port);
+  // 🛑 THE LIFECYCLE LIVES HERE, in the executable shell — not in the builder.
+  //    A second instance must NOT start: the kernel already refused the address,
+  //    and it is the authority on duplicates (never a PID file, never a probe).
+  listenOn(createServer({ store: etat, onAddressInUse: (err) => { throw err; } }),
+    process.env, process.pid, port);
   // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
   //    itself pulled in. Watching before would miss the modules loaded lazily
   //    on the first require — the exact half most likely to be edited.
