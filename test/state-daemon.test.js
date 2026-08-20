@@ -104,7 +104,14 @@ ask(payload, { socketPath: adresse, frame: Number(frame), frames: Number(frames)
 function demarrerDaemon(adresse, snapshot) {
   return new Promise((pret, echec) => {
     const args = snapshot ? [adresse, snapshot] : [adresse];
-    const d = fork(DAEMON, args, { env: ENV, stdio: 'ignore' });
+    // 🛑 `stderr` IS CAPTURED, NOT DISCARDED. With `stdio: 'ignore'` a daemon that
+    //    throws at startup reports "exited (code 1)" and NOTHING else — the stack
+    //    that names the cause is thrown away by the very test meant to diagnose
+    //    it. Measured on macOS CI: two round trips lost to a message we already
+    //    had and were destroying.
+    const d = fork(DAEMON, args, { env: ENV, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    let plainte = '';
+    if (d.stderr) d.stderr.on('data', (b) => { plainte += b; });
     d.on('message', (m) => {
       if (m === 'pret') { pret(d); return; }
       if (typeof m === 'string' && m.startsWith('erreur:')) {
@@ -113,7 +120,10 @@ function demarrerDaemon(adresse, snapshot) {
     });
     // The death of a child is an OS EVENT: if it dies without ever answering,
     // that is a FACT worth reporting, never a wait to sit through.
-    d.on('exit', (code) => echec(new Error(`the daemon exited (code ${code}) without ever listening`)));
+    d.on('exit', (code) => echec(new Error(
+      `the daemon exited (code ${code}) without ever listening.
+--- its stderr ---
+${plainte.trim() || '(nothing)'}`)));
   });
 }
 
