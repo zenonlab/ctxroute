@@ -26,6 +26,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+// ⚠️ The module is loaded here TOO (the templates above build child scripts): the
+//    cells at the bottom drive the READ DECISION directly, with an injected
+//    reader, instead of racing to reproduce a race.
+import store from '../src/session-store.js';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'store-atomique-'));
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -180,4 +184,55 @@ test('NO LOST WRITE: after saving, the state is read back identically', () => {
   `], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.deepStrictEqual(JSON.parse(r.stdout.trim()), { 'docs/a.md': { seen: true, sinceLastCall: 3 } });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// CROSSING THE WINDOW — the DECISION, exercised directly (2026-08-20)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE CAUSE IS ESTABLISHED, BY TWO CONCORDANT CI MEASUREMENTS. Replacing a
+//    file on a Windows runner leaves a window in which the NAME does not exist;
+//    a reader landing in it answers `{}`, which ASSERTS "nothing has ever been
+//    injected" and the document goes out a second time. Measured on this very
+//    suite: `{"ENOENT":512}`, then `{"ENOENT":593,"transient":1}` — **100 %
+//    absence**, zero EPERM, zero partial read, and the `transient` proves the
+//    file WAS there right after. The atomic write was never in question.
+// 🛑 AND IT IS UNREPRODUCIBLE LOCALLY — 0 out of 7,164 reads, even with reader
+//    and writer PINNED TO A SINGLE CORE. So this cell does NOT race to prove a
+//    race: that is how a suite becomes flaky in turn, and how a first attempt at
+//    this fix was rightly rejected earlier today. The DECISION is isolated from
+//    the I/O and driven with an injected reader — deterministic, on every OS.
+// ⚠️ WHAT MUST NEVER BECOME TRUE: that the retry INVENTS a presence. Absence
+//    that lasts is still absence, and it still answers `{}`.
+test('THE WINDOW IS CROSSED: an absence that ENDS is not "never injected"', () => {
+  const etat = { 'docs/a.md': { seen: true } };
+  let restantes = 5;
+  const lecteur = () => {
+    if (restantes-- > 0) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; }
+    return JSON.stringify(etat);
+  };
+  assert.deepStrictEqual(store.readThrough(lecteur, 'peu-importe'), etat,
+    'a name that reappears must be read: without the retry, a state being replaced reads as '
+    + '"never injected" and its document is delivered a second time');
+});
+
+test('AN ABSENCE THAT LASTS STAYS AN ABSENCE — the retry invents nothing', () => {
+  const lecteur = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
+  assert.deepStrictEqual(store.readThrough(lecteur, 'jamais-ecrit'), {},
+    'a state that never existed must still answer {} — a TRUE {}');
+});
+
+// 🛑 ONLY absence is retried. `EPERM`, `EACCES` or a truncated JSON are REAL
+//    problems: retrying them would HIDE them, and a hidden problem is a silent
+//    bug. This cell is what keeps the retry narrow.
+test('ONLY absence is retried — a real error is NOT swallowed by repetition', () => {
+  let appels = 0;
+  const refus = () => { appels += 1; const e = new Error('EPERM'); e.code = 'EPERM'; throw e; };
+  assert.deepStrictEqual(store.readThrough(refus, 'x'), {});
+  assert.strictEqual(appels, 1, 'an EPERM must be decided ON THE SPOT, never retried into silence');
+
+  let lectures = 0;
+  const tronque = () => { lectures += 1; return '{ coupé'; };
+  assert.deepStrictEqual(store.readThrough(tronque, 'x'), {});
+  assert.strictEqual(lectures, 1, 'a truncated JSON is a real defect: retrying it would mask a broken write');
 });

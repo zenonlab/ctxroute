@@ -52,6 +52,41 @@
    (`src/hooks/http-server.js`, nothing wired) + proven byte-identical to the spawn lane
    (`http-lane-differential.test.js`, seen red on a shifted frame). Details and the ONE remaining
    guess → `http-lane.md`. What is left is the OS service unit and the maintainer's switch-over.
+0sexies-bis. 🔑 **THE KERNEL SERIALISES, THE DISK ONLY SAVES — SHIPPED INERT 20/08/2026, AND IT IS
+   THE RULE THAT EXPLAINS THE THREE FLAKY OF THAT DAY.** Sixteen frame processes had no common
+   ground but the disk, so a FILE was made to carry a CONVERSATION between them: a lock to take
+   turns, tmp+rename to publish, a lock-less fallback when the lock was held, bounded retries when
+   Windows refused. **Every layer simulated by hand the one word any operating system already does:
+   SERIALISE** — and all three flaky came out of that simulation.
+   📐 **MEASURED (Node 22.15.1): of the 68 builtin modules, ZERO expose an inter-process
+   synchronisation primitive** — no named mutex, no shared memory, no semaphore. In C or Go you take
+   a named mutex; from JavaScript the ONE kernel primitive reachable is the **SOCKET**. That is not
+   a taste, it is why the design is what it is.
+   ✅ **PROVEN ON THE THREE KERNELS (CI run `32404824679`, ubuntu + windows + macos all green)**:
+   16 real processes, one `once`, delivered EXACTLY once, **no lock and ZERO file written**; no
+   daemon ⇒ an IMMEDIATE kernel fact (`ENOENT`/`ECONNREFUSED`), never a timer; and the state
+   SURVIVES a restart (snapshot restored BEFORE `listen` — the order IS the guarantee).
+   🛑 **WHAT MUST NEVER BE UNDONE, and it is violable from anywhere**: ① **never make a file carry a
+   conversation between peers again** — the disk is a SAVE, written by the SINGLE owner and read
+   ONCE at startup when nothing else exists · ② **`store` and `withLock` travel TOGETHER** (memory +
+   file lock = a lock protecting nothing; disk + empty lock = the 2026-08-07 production bug,
+   deliberately reintroduced) · ③ **the backend is an ARGUMENT, never an environment variable** —
+   env vars are INHERITED, and one leak makes a spawned hook read an EMPTY memory: every `once`
+   re-delivered, no error anywhere · ④ **the local name `withLock` is load-bearing**
+   (`state-write-under-lock-gate` matches the SHAPE of the call site; renaming it blinded the gate
+   the same day) · ⑤ **a builder never decides whether its caller lives** — `createServer` used to
+   `throw` on `EADDRINUSE` and killed the process before `kernel-bind` could inspect a DEAD socket
+   file; a core returns a verdict, the SHELL decides to die.
+   ⚠️ **THE THREE-OS MATRIX EARNED ITS COST IN ONE HOUR** — three real defects, none visible
+   locally: a Linux abstract address starts with a NUL byte an `argv` cannot carry · macOS keeps the
+   socket FILE after a killed daemon (cleared only after ASKING the kernel who answers, never on
+   "the file exists so it is dead") · and ⑤ above, ours. 🛑 **Two of the three round trips were LOST
+   because the failure was unobservable** (a 30 s timeout saying only "it timed out", then the
+   daemon's `stderr` thrown away by `stdio: 'ignore'`). **A fact documented but not wired protects
+   nobody, and an unobservable failure costs one CI round trip PER HYPOTHESIS.**
+   🛑 **NOTHING IS WIRED**: production still runs the spawn lane and its files. Switching over is
+   the maintainer's decision, at a moment when no agent is running. Detail: `kernel-state.md`.
+
 0sexies. ⚖️ **WHY THE RIGOUR IS NOT ZEAL — the stake, in money.** A **SILENT** defect costs a human
    DAY to find; that day is precisely what the system promises never to cost again, so a silent
    defect does not degrade the product — **it destroys its premise**. And a **SCALE** defect does

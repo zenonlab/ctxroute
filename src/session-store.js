@@ -28,12 +28,51 @@ function storeFile(prefix, sessionId) {
   return path.join(paths.stateDir(), `${prefix}${sanitizeSessionId(sessionId)}.json`);
 }
 
-function loadState(prefix, sessionId) {
-  try {
-    return JSON.parse(fs.readFileSync(storeFile(prefix, sessionId), 'utf8'));
-  } catch {
-    return {};
+/**
+ * READ A STATE, CROSSING THE WINDOW IN WHICH ITS NAME DOES NOT EXIST.
+ *
+ * 🔴 THE DEFECT, AND ITS CAUSE IS ESTABLISHED — TWO CONCORDANT CI MEASUREMENTS
+ *    (2026-08-20). Replacing a file on a Windows runner leaves a window during
+ *    which the NAME is absent. A reader landing in it gets `ENOENT`, answers
+ *    `{}`, and that `{}` ASSERTS "nothing has ever been injected" ⇒ the document
+ *    is delivered a second time. Measured twice on the same suite:
+ *    `{"ENOENT":512}` then `{"ENOENT":593,"transient":1}` — **100 % absence,
+ *    zero EPERM, zero partial read**, and the `transient` proves the file WAS
+ *    there right after. The atomic write was never in question.
+ * 🛑 UNREPRODUCIBLE LOCALLY — 0 out of 7,164 even with reader and writer pinned
+ *    to a SINGLE core. That is why the retry is not "tested" by racing: the
+ *    DECISION is isolated from the I/O and exercised directly (house doctrine),
+ *    with the reader injected. Racing to prove a race is how a suite becomes
+ *    flaky in turn.
+ * ⚠️ ONLY `ENOENT` IS RETRIED, and that is the whole guarantee: absence is the
+ *    ONE error a concurrent rename can fabricate. `EPERM`, `EACCES` or a
+ *    truncated JSON are REAL problems — retrying them would hide them, and
+ *    hiding a problem is how a silent bug is born.
+ * ⚠️ NO DELAY, and none is needed: the window is closed by the OS itself, so an
+ *    IMMEDIATE retry either finds the file or proves it is genuinely gone. Same
+ *    shape and same bound as the write side above.
+ * ⚠️ A state that never existed still answers `{}` — a TRUE `{}` — after
+ *    exhausting the attempts in a few microseconds. That case has its own
+ *    counter-proof in the suite; the retry may cross an absence, it may never
+ *    invent a presence.
+ *
+ * @param {(chemin: string) => string} lire injected reader (the real one is `fs`)
+ * @param {string} chemin
+ */
+function readThrough(lire, chemin) {
+  for (let i = 0; i < RENAME_RETRIES; i += 1) {
+    try {
+      return JSON.parse(lire(chemin));
+    } catch (err) {
+      if (err && /** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') continue;
+      return {};
+    }
   }
+  return {};
+}
+
+function loadState(prefix, sessionId) {
+  return readThrough((c) => fs.readFileSync(c, 'utf8'), storeFile(prefix, sessionId));
 }
 
 // 🛑 ATOMIC WRITE MANDATORY — tmp + `rename`, NEVER a direct `writeFileSync`
@@ -71,4 +110,4 @@ function saveState(prefix, sessionId, state) {
   }
 }
 
-module.exports = { storeFile, loadState, saveState };
+module.exports = { storeFile, loadState, saveState, readThrough };
