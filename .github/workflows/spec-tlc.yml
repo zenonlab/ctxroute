@@ -1,0 +1,51 @@
+name: spec-tlc
+
+# ⚠️ SEPARATE WORKFLOW, STRICT `paths:` — same doctrine as mutation.yml.
+#    TLC is a HEAVY job (a JVM started once per run, 11 runs, ~25 s measured
+#    plus the JDK setup and the jar download). `paths:` applies to the WHOLE
+#    workflow and never to a job, so putting it in test.yml would run it on
+#    every documentation commit.
+# 🛑 THE PATHS ARE THE ANSWER TO "WHEN CAN THE PROOF BECOME FALSE?": the spec
+#    itself, and the four modules it models. A module removed from this list is
+#    a module whose change stops being confronted with the proof — in silence.
+#    `transport-spec-gate.test.js` runs in the FAST lane on every push, so the
+#    drift shield is never gated behind these paths.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'specs/tla/**'
+      - 'src/pretool-core.js'
+      - 'src/emission-core.js'
+      - 'src/session-store.js'
+      - 'src/lock.js'
+      - '.github/workflows/spec-tlc.yml'
+  pull_request:
+    paths:
+      - 'specs/tla/**'
+      - 'src/pretool-core.js'
+      - 'src/emission-core.js'
+      - 'src/session-store.js'
+      - 'src/lock.js'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tlc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # tla2tools.jar targets Java 8+; the LTS is what the toolchain is tested on.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # ⚠️ No `npm ci`: the gate is zero-dependency on purpose (node + java only).
+      #    Adding an install here would make the proof depend on the npm registry.
+      - run: npm run spec:tlc

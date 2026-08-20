@@ -36,3 +36,14 @@ SWAP-PLAN.md
 REFACTOR-PLAN.md
 REFACTOR-ARCHIVE.md
 EVAL-SESSIONS.md
+
+# ⚠️ TLA+ TOOLING AND GENERATED MODEL CONFIGS (20/08/2026).
+#    `tla2tools.jar` is a 2.2 MB BINARY downloaded on demand by
+#    `specs/tla/run-tlc.mjs` (release pinned + SHA-256 verified): committing a
+#    third-party binary is both dead weight in the history and a supply-chain
+#    artifact nobody re-checks. `specs/tla/*.cfg` are GENERATED from
+#    `specs/tla/runs.json`, the single source of the run matrix — committing
+#    them would create a second truth that drifts, which is exactly what the
+#    generation exists to prevent.
+specs/tla/tla2tools.jar
+specs/tla/*.cfg

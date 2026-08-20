@@ -44,6 +44,20 @@ things depending on which axis read it. 780 divergences, found by the model, not
 And `cwd` — the parameter that separates "I work here" from "I quote this" — is a declared key
 like any other, so `["-cwd"]` reaches it.
 
+🛑 **A shell gesture carries THREE facts, not one**: the raw text (`command`) · the directory a
+`cd X && …` designates (`commandCwd`) · the paths that `cd` RECONSTRUCTS, gluing that directory to
+**every following word** (`commandPaths`). The last two are DERIVED by us and named like any key.
+⇒ a project name merely QUOTED after a `cd` becomes a path OF that project and triggers its skill.
+**A project entry writes `keys: {match: ["-command", "-commandPaths"]}`** — citing stops injecting,
+working in it still injects. `-command` alone is NOT enough. The directory is a PREFIX of every
+reconstructed path, so dropping `commandCwd` alone changes nothing.
+🛑 **`defaults.{file|mcp|skill|tool}` carries `scope`/`exclude`/`keys`**: write there what holds for a
+whole category instead of repeating it per entry. `match` is out — the only operator that CREATES an
+injection. **One rule, both levels: at least one `-` ⇒ you ADJUST · only bare names ⇒ you REPLACE.**
+Your addition beats your category's removal. `scope`/`exclude` never compose (values, not universes):
+you win whole or inherit whole, an EMPTY list means "not declared". A PURE addition ("the default
+plus this key") has NO form — at either level.
+
 ⚠️ It NARROWS, it never triggers: declared alone it is refused, like `scope`. And what the
 validator refuses is the AMBIGUOUS (a list half whitelist, half blacklist), never the unusual —
 giving `scope` and `exclude` different universes is allowed, visible in the entry, and yours to

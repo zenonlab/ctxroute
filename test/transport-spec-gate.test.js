@@ -1,0 +1,190 @@
+// ═══════════════════════════════════════════════════════════════════════
+// THE SHIELD OF THE TLA+ TRANSPORT SPEC — what keeps `specs/tla/` HONEST.
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🛑 A FORMAL SPEC HAS ONE FAILURE MODE WORSE THAN BEING WRONG: DRIFTING AWAY
+//    FROM THE CODE IT CLAIMS TO PROVE. It then certifies a system that no
+//    longer exists, and it certifies it in a language nobody re-reads. That is
+//    the same class as this repo's worst defect — a GREEN gate that sees
+//    nothing — with the added authority of the word "proven".
+//
+// ⚠️ THIS FILE DOES NOT RUN TLC (no Java in the fast lane, and TLC is not what
+//    can drift). It seals the two things that CAN drift, and both are
+//    unreachable from inside the `.tla` file:
+//      ① the ORDER OF THE THREE WRITES in `pretool-core.js`, which is the
+//         abstraction the whole proof rests on (queue -> state -> plan);
+//      ② the COHERENCE of the run matrix: every name checked by TLC must be
+//         DEFINED in the module, every sabotage constant must be exercised,
+//         and the negative-check / anti-vacuity runs must still be there.
+//    Running TLC itself is `npm run spec:tlc`, exercised by
+//    `test/transport-spec-tlc.test.js` in the heavy lane.
+//
+// ⚠️ ANTI-INERTNESS: every detector here is confronted, IN MEMORY, with a
+//    sabotaged copy of what it reads, and must go red on it. A detector never
+//    seen refusing is a detector ASSUMED to work.
+// 🛑 The sabotage NEVER touches a real file — a previous version of that idea,
+//    elsewhere in this repo, brought down 38 tests of other suites running in
+//    parallel.
+// ═══════════════════════════════════════════════════════════════════════
+
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const ROOT = path.join(__dirname, '..');
+const TLA = path.join(ROOT, 'specs', 'tla', 'Transport.tla');
+const RUNS = path.join(ROOT, 'specs', 'tla', 'runs.json');
+const CORE = path.join(ROOT, 'src', 'pretool-core.js');
+
+const lire = (p) => fs.readFileSync(p, 'utf8');
+
+// ═══ ① DRIFT SHIELD — the order of the three writes ═════════════════════
+//
+// The spec proves that a dead leader is harmless to the OTHER processes
+// BECAUSE the plan is published LAST: an unpublished plan makes every
+// survivor recompute the same thing by pure determinism, instead of half of
+// them replaying a plan whose author never finished. Reorder those writes and
+// the proof is void while the spec keeps looking green.
+//
+// ⚠️ We look for the CALL SITES, in source order, inside the module. Anchors
+//    are the literal store prefixes and the emission entry point — the three
+//    things that would have to be renamed for this shield to lie.
+const ORDRE = [
+  { nom: 'queue', motif: /emission\.emit\(/ },
+  { nom: 'state', motif: /saveState\(STORE_PREFIX/ },
+  { nom: 'plan', motif: /saveState\(PLAN_PREFIX/ },
+];
+
+/** @returns {string[]} the three writes, in the order they appear in `src`. */
+function ordreDesEcritures(src) {
+  return ORDRE.map((e) => ({ nom: e.nom, at: src.search(e.motif) }))
+    .filter((e) => e.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((e) => e.nom);
+}
+
+test('DRIFT SHIELD: the critical section writes queue -> state -> plan, in that order', () => {
+  const src = lire(CORE);
+  const ordre = ordreDesEcritures(src);
+  assert.deepEqual(
+    ordre,
+    ['queue', 'state', 'plan'],
+    'the TLA+ proof of Transport.tla rests on this order (plan published LAST). ' +
+      'Reordering it makes the spec prove a system that no longer exists — ' +
+      'update specs/tla/Transport.tla and re-run `npm run spec:tlc` before changing it.'
+  );
+});
+
+test('DRIFT SHIELD, anti-inertness: a reordering IS seen (in-memory sabotage)', () => {
+  // Positive control first: the detector really found the three writes above.
+  assert.equal(ordreDesEcritures(lire(CORE)).length, 3, 'the detector must see THREE writes, not fewer');
+  // Sabotage: publish the plan before the state.
+  const sabote = 'x = saveState(PLAN_PREFIX, a);\ny = emission.emit({});\nz = saveState(STORE_PREFIX, b);';
+  assert.deepEqual(ordreDesEcritures(sabote), ['plan', 'queue', 'state'], 'a reordering must be visible');
+  assert.notDeepEqual(ordreDesEcritures(sabote), ['queue', 'state', 'plan']);
+});
+
+// ═══ ② THE LOCK-LESS FALLBACK READS, AND WRITES NOTHING ═════════════════
+//
+// Invariant `NoWriteWithoutLock` of the spec. It is ALSO covered, from another
+// angle, by `state-write-under-lock-gate.test.js` (ast-grep, derived from the
+// SHAPE of a write). Here we seal the ONE branch the spec models explicitly,
+// so the two nets fail for different reasons rather than sharing a blind spot.
+test('the lock-less fallback branch READS the state and performs NO write', () => {
+  const src = lire(CORE);
+  const debut = src.indexOf('if (!res) {');
+  assert.ok(debut > 0, 'the lock-less fallback branch must still be recognisable');
+  const branche = src.slice(debut, src.indexOf('\n    }', debut));
+  assert.match(branche, /loadState\(STORE_PREFIX/, 'it MUST read the state — never decide with {} (2026-08-07 bug)');
+  assert.doesNotMatch(branche, /saveState\(/, 'it MUST NOT write: the lock serializes the WRITES');
+  assert.doesNotMatch(branche, /emission\.emit\(/, 'it MUST NOT touch the queue without the lock');
+});
+
+// ═══ ③ COHERENCE OF THE RUN MATRIX ══════════════════════════════════════
+
+const matrix = JSON.parse(lire(RUNS));
+const tla = lire(TLA);
+
+/** Names DEFINED in the module (`Name ==` at column 0). */
+function definis(src) {
+  return new Set([...src.matchAll(/^([A-Za-z][A-Za-z0-9_]*)\s*==/gm)].map((m) => m[1]));
+}
+
+/** CONSTANTS declared by the module, read from the `CONSTANTS` block. */
+function constantes(src) {
+  const bloc = src.slice(src.indexOf('\nCONSTANTS'), src.indexOf('\nDocs '));
+  return [...bloc.matchAll(/^\s{4}([A-Z][A-Za-z0-9_]*),?\s*(?:\\\*|$)/gm)].map((m) => m[1]);
+}
+
+test('MATRIX: every invariant and property checked by TLC is DEFINED in Transport.tla', () => {
+  const noms = definis(tla);
+  assert.ok(noms.size > 10, 'anti-mute probe: the parser must really see the module definitions');
+  const cites = new Set();
+  for (const r of matrix.runs) {
+    for (const i of r.invariants || []) (i === '#shipped' ? matrix.shippedInvariants : [i]).forEach((n) => cites.add(n));
+    for (const p of r.properties || []) cites.add(p);
+    if (r.expect.violated) cites.add(r.expect.violated);
+  }
+  assert.ok(cites.size >= 8, `anti-vacuity: the matrix must cite several names, it cites ${cites.size}`);
+  for (const n of cites) assert.ok(noms.has(n), `runs.json checks "${n}", which is NOT defined in Transport.tla`);
+});
+
+test('MATRIX: every CONSTANT of the module has a declared default value', () => {
+  const cs = constantes(tla);
+  assert.ok(cs.length >= 8, `anti-mute probe: the CONSTANTS block must be read, ${cs.length} found`);
+  for (const c of cs) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(matrix.constantsDefault, c),
+      `CONSTANT "${c}" is declared by Transport.tla but absent from runs.json.constantsDefault — ` +
+        'TLC would refuse the model, and a constant nobody sets is a knob nobody exercises.'
+    );
+  }
+  // Inverse part: a default that names nothing is a stale leftover.
+  for (const k of Object.keys(matrix.constantsDefault)) {
+    assert.ok(cs.includes(k), `runs.json sets "${k}", which Transport.tla no longer declares`);
+  }
+});
+
+test('MATRIX: every SABOTAGE knob of the module is really exercised by a run', () => {
+  // DERIVED from the module, never a hand-written list: a sabotage knob added
+  // tomorrow lands in this table by itself and stays red until a run uses it.
+  const knobs = constantes(tla).filter((c) => /^(LOCKLESS_|ATOMIC_|FALLBACK_|SLOW_)/.test(c));
+  assert.ok(knobs.length >= 4, `anti-vacuity: ${knobs.length} knob(s) found, expected at least 4`);
+  for (const k of knobs) {
+    const used = matrix.runs.some((r) => r.constants && Object.prototype.hasOwnProperty.call(r.constants, k));
+    assert.ok(used, `the knob "${k}" is never flipped by any run — it is an untested sabotage, i.e. none at all`);
+  }
+});
+
+test('MATRIX: the negative-checks and the anti-vacuity runs are still there', () => {
+  const rouges = matrix.runs.filter((r) => !r.expect.green);
+  const verts = matrix.runs.filter((r) => r.expect.green);
+  assert.ok(verts.length >= 1, 'at least one run must prove the design as shipped');
+  // 🛑 NEVER lower these floors to make a change pass. They are what stops the
+  //    spec from becoming a hollow green.
+  const vacuite = rouges.filter((r) => /^Never(Delivers|Fallback|Queued)$/.test(r.expect.violated));
+  assert.ok(vacuite.length >= 3, `anti-vacuity: ${vacuite.length} witness run(s), 3 required (delivery, fallback, queue)`);
+  const sabotages = rouges.filter((r) => r.constants && Object.keys(r.constants).length > 0);
+  assert.ok(sabotages.length >= 3, `negative-check: ${sabotages.length} sabotage run(s), 3 required`);
+  const rotation = matrix.runs.find((r) => r.expect.violated === 'QueueEventuallyEmpty');
+  assert.ok(rotation, 'the ROTATION run must stay: it is what distinguishes indefinite rotation of a `dumb` corpus (CORRECT) from starvation (forbidden)');
+});
+
+test('MATRIX: every run declares a WELL-FORMED verdict and a written reason', () => {
+  for (const r of matrix.runs) {
+    assert.ok(typeof r.cfg === 'string' && r.cfg.length > 0, 'a run must name its cfg');
+    assert.ok(typeof r.why === 'string' && r.why.length > 40, `run ${r.cfg}: the reason must be written, not implied`);
+    const g = r.expect.green === true;
+    const v = typeof r.expect.violated === 'string';
+    assert.ok(g !== v, `run ${r.cfg}: expect must be EITHER green EITHER violated, never both nor neither`);
+  }
+});
+
+// ═══ ④ THE FOUND DEFECT IS DECLARED, NOT BURIED ═════════════════════════
+test('the duplicate window found by the spec is carried by a DEDICATED run', () => {
+  const dette = matrix.runs.find((r) => r.expect.violated === 'AtMostOnceDelivery' && !r.constants.ATOMIC_WRITE);
+  assert.ok(dette, 'the known defect (a `once` delivered by the lock-less path is never recorded) must keep its own run');
+  const fix = matrix.runs.find((r) => r.expect.green && (r.invariants || []).includes('AtMostOnceDelivery'));
+  assert.ok(fix, 'the candidate fix must keep its own GREEN run — a defect stated without a reachable exit is a note, not a debt');
+});

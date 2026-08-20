@@ -38,7 +38,9 @@
     "vendor": "node src/vendor-deadline.js",
     "test:deps": "vitest run deps-criticality-pure.test.js deps-criticality-gate.test.js",
     "prepare": "git config core.hooksPath .githooks || exit 0",
-    "scope-reach": "node tools/scope-reach.js"
+    "scope-reach": "node tools/scope-reach.js",
+    "spec:tlc": "node specs/tla/run-tlc.mjs",
+    "test:spec-tlc": "vitest run transport-spec-gate.test.js transport-spec-tlc.test.js transport-conformance.test.js"
   },
   "license": "MIT",
   "keywords": [

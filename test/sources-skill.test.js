@@ -366,3 +366,48 @@ test('㊴ toolMatches: payload WITHOUT toolInput — the tool name is NOT a para
   const config = { skills: { s: { tool: ['Bash'], scope: ['Bash'] } } };
   expect(toolMatches(config, { toolName: 'Bash' })).toEqual([]);
 });
+
+// ── THE CATEGORY DEFAULT REACHES A SKILL RULE (2026-08-20) ─────────────
+// 🔴 THESE CASES EXIST BECAUSE THE CI FOUND THEM, NOT A LOCAL RUN. The line that reads
+//    `config.defaults.skill` carried FOUR surviving mutants: nothing exercised the tier THROUGH
+//    `skillRules`, only the composition in isolation. That is the "proven on a literal object,
+//    hence not proven at all" shape — the exact defect that shipped `keys` inert on 8 skills.
+// 🛑 `skillRules` REBUILDS a rule field by field, so a tier resolved elsewhere and not carried
+//    HERE is accepted by the schema and ignored by the engine (class ㊴). It must be probed on
+//    the road a real config takes, never on a hand-built rule.
+
+test('skillRules: an entry with NO keys inherits its category default', () => {
+  const rules = skillRules({
+    skills: { demo: { match: ['projet'] } },
+    defaults: { skill: { keys: { match: ['-command', '-commandPaths'] } } },
+  });
+  expect(rules[0].keys).toEqual({ match: ['-command', '-commandPaths'] });
+});
+
+test('skillRules: an entry that ADJUSTS composes with its category, it does not replace it', () => {
+  const rules = skillRules({
+    skills: { demo: { match: ['projet'], keys: { match: ['-cwd'] } } },
+    defaults: { skill: { keys: { match: ['-command'] } } },
+  });
+  expect(rules[0].keys).toEqual({ match: ['-command', '-cwd'] });
+});
+
+test('skillRules: no category default ⇒ the entry is untouched (the fleet of today)', () => {
+  const rules = skillRules({ skills: { demo: { match: ['projet'], keys: ['-command'] } } });
+  expect(rules[0].keys).toEqual(['-command']);
+});
+
+test('skillRules: a `defaults` block WITHOUT a `skill` key changes nothing', () => {
+  // ⚠️ Each link of `config && config.defaults && config.defaults.skill` has its case: a chain
+  //    tested only on the happy path is a chain whose guards nobody proved.
+  const rules = skillRules({
+    skills: { demo: { match: ['projet'], keys: ['-command'] } },
+    defaults: { file: { keys: ['-cwd'] } },
+  });
+  expect(rules[0].keys).toEqual(['-command']);
+});
+
+test('skillRules: a config without `defaults` at all, and a NULL config, never throw', () => {
+  expect(skillRules({ skills: { demo: { match: ['projet'] } } })[0].keys).toBeUndefined();
+  expect(skillRules(null)).toEqual([]);
+});
