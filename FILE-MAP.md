@@ -167,6 +167,8 @@ test/keys-operator.test.js - contract of the `keys` operator (WHERE to look): bo
 - `tools/lint-corpus.js` — I/O shell of the fleet lint (`npm run lint`), liveness probe exit 2.
 - `test/lint.test.js` / `test/lint-corpus.test.js` — the lint's suites (deterministic core · negative-check on a fake tmpdir fleet).
 - `.github/workflows/mutation.yml` — separate mutation workflow with strict paths (gated mirror).
+- `.github/workflows/spec-tlc.yml` — the TLA+ gate in CI, strict paths (`specs/tla/**` + the 4 modelled modules): the spec must be replayed when the transport moves, and only then — a TLC job under a wide path would burn the Actions quota. Java is installed there, so the local skip-by-name never hides a real red.
+- `docs/framework/transport-spec.md` — published mirror of the transport spec doc (what a fork receives). Mirrors are copies: never edit here, edit the fleet doc and re-copy, `mirror-sync-gate` compares them byte for byte.
 - `.dependency-cruiser.json` — anti-coupling rules (lib-pure must stay pure, no cycles, stdin-json standalone).
 - `.jscpd.json` — duplication detection (1% threshold).
 - `jsconfig.json` — `tsc --checkJs` config (㉑, 16/08/2026): JSDoc + noEmit, node types, noImplicitAny off — the checker, never the syntax; the executed file stays the written file.
