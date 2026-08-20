@@ -218,6 +218,21 @@ test('ADOPT: only well-formed pairs enter, and the ceiling applies', () => {
     'a malformed pair, a non-string key, a null and an ARRAY value are all dropped');
   assert.deepEqual([...m.keys()], ['a']);
 
+  // 🔴 THE TWO CASES THE SHAPE GUARD REALLY EXISTS FOR — and without them FOUR
+  //    mutants survived on that single line (measured in CI: `if (false)`,
+  //    `&&` for `||`, `|| false`…). They all said the same thing: the cell
+  //    exercised the guard without DISTINGUISHING what it does.
+  //    · a NON-ARRAY entry: destructuring a number THROWS, so dropping the
+  //      `Array.isArray` half turns a corrupt save into a crash at startup —
+  //      the daemon would refuse to start over a scratch file.
+  //    · an entry of THREE items: without the length half it is silently
+  //      accepted, keeping its first two elements. A save we never wrote would
+  //      become state we trust.
+  const hostile = new Map();
+  assert.equal(adopt([42, 'texte', null, ['a', { v: 1 }, 'surplus'], ['bon', { v: 2 }]], hostile, 10), 1,
+    'a non-array entry must be DROPPED, never destructured (it would throw), and a 3-item entry is not a pair');
+  assert.deepEqual([...hostile.keys()], ['bon']);
+
   const grand = new Map();
   assert.equal(adopt([['a', {}], ['b', {}], ['c', {}]], grand, 2), 2, 'the ceiling applies to a restore too');
   assert.deepEqual([...grand.keys()], ['b', 'c']);

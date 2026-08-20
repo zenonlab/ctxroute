@@ -56,6 +56,13 @@ function fingerprint(racine) {
   //    with either separator and in either case. Two spellings of one clone
   //    must hash to ONE address, or the client would knock on a door the daemon
   //    never opened.
+  // ⚠️ TRULY EQUIVALENT MUTANT, DECLARED — measured in CI 2026-08-20, the only
+  //    survivor of this file. `toUpperCase()` satisfies the property just as
+  //    well: what matters is that ONE spelling wins, not WHICH one. Killing it
+  //    would mean coupling a test to a hash value chosen at random, i.e.
+  //    freezing an arbitrary decision as if it were a contract. The property
+  //    itself IS tested — "ONE DIRECTORY = ONE ADDRESS, whatever the spelling".
+  // Stryker disable next-line MethodExpression
   const normalisee = path.resolve(racine).replace(/\\/g, '/').toLowerCase();
   return crypto.createHash('sha256').update(normalisee).digest('hex').slice(0, EMPREINTE);
 }
