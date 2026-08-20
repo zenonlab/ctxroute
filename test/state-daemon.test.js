@@ -37,6 +37,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { endpoint } = require('../src/kernel-endpoint.js');
+const { occupied } = require('../src/kernel-bind.js');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-daemon-'));
 const DOCS = path.join(TMP, 'docs');
@@ -67,16 +68,19 @@ fs.writeFileSync(DAEMON, `
 'use strict';
 const { createServer } = require(${JSON.stringify(path.join(RACINE, 'src', 'hooks', 'http-server.js').replace(/\\/g, '/'))});
 const { createMemoryStore } = require(${JSON.stringify(path.join(RACINE, 'src', 'memory-store.js').replace(/\\/g, '/'))});
-const { kernelAddress } = require(${JSON.stringify(path.join(RACINE, 'src', 'kernel-endpoint.js').replace(/\\/g, '/'))});
+const { bind } = require(${JSON.stringify(path.join(RACINE, 'src', 'kernel-bind.js').replace(/\\/g, '/'))});
 const adresse = process.argv[2];
 // A snapshot path may be given as argv[3]: with it the daemon survives its own
 // death, without it the state is purely volatile (zero disk).
 const store = createMemoryStore({ snapshotPath: process.argv[3] || null });
 store.restore();                                 // BEFORE listen — see below
 const srv = createServer({ store });
-// ⚠️ CONVERTED HERE, at the one moment the kernel reads it: the address
-// travelled through argv, where a NUL byte is forbidden.
-srv.listen(kernelAddress(adresse), () => process.send('pret'));
+// bind() does the two things only this layer may do: convert the address to the
+// form the kernel reads (an argv could not carry the NUL), and clear a DEAD
+// entry on the one kernel that leaves one — after ASKING the kernel whether
+// anybody is still listening. Never a guess.
+// (No backticks in this comment: it lives inside a template literal.)
+bind(srv, adresse, () => process.send('pret'), (e) => { process.send('erreur:' + e.code); });
 process.on('message', (m) => { if (m === 'stop') { srv.close(); process.exit(0); } });
 `);
 
@@ -239,3 +243,37 @@ test('A RESTART DOES NOT RE-DELIVER: the state survives the death of the daemon'
       'the document was delivered AGAIN after a restart: the daemon did not restore its state, '
       + 'so every edit of this repository would re-inject every `once` — the duplicate delivery, back.');
   });
+
+// ── ⑥ "IS ANYONE THERE?" IS ASKED TO THE KERNEL, NEVER TO THE FILESYSTEM ──
+//
+// 🔴 THE DEFECT THIS GUARDS, FOUND BY CI ON macOS AND ONLY THERE (2026-08-20).
+//    Windows removes its pipe when the owner exits; a Linux ABSTRACT socket
+//    disappears with its last reference. macOS leaves a real FILE, and Node only
+//    unlinks it on a clean `close()`. A daemon that is KILLED — the normal case,
+//    since any code edit makes it exit — leaves a dead socket file, and the NEXT
+//    daemon cannot bind: `EADDRINUSE` for ever, with nothing listening. Four
+//    cells passed; the restart one timed out.
+// 🛑 AND THE ENTRY IS NEVER REMOVED ON A GUESS. "The file exists, so it is
+//    probably stale" is the inference this whole design removes, and here it
+//    would be catastrophic: deleting the socket of a LIVING daemon leaves it
+//    running while every client knocks on an address nobody owns — silence, no
+//    error, nothing to notice. So the KERNEL answers, instantly: a connect that
+//    succeeds means someone is alive; `ECONNREFUSED` means the entry is dead.
+// ⚠️ This cell is platform-agnostic BECAUSE the question is: `occupied()` asks
+//    the kernel about an address, and every kernel answers it the same way.
+test('THE KERNEL SAYS WHO IS ALIVE — an address answers, or it is dead', { timeout: 30000 }, async () => {
+  const adresse = adresseTest('vivant');
+
+  const mort = await new Promise((r) => occupied(endpoint({ root: path.join(TMP, 'jamais-ne') }), r));
+  assert.equal(mort, false, 'an address nobody ever listened on must read as DEAD — otherwise a stale entry is never cleared');
+
+  const daemon = await demarrerDaemon(adresse);
+  try {
+    const vivant = await new Promise((r) => occupied(require('../src/kernel-endpoint.js').kernelAddress(adresse), r));
+    assert.equal(vivant, true,
+      'a LIVING daemon must read as alive: without this, its address would be deleted under it and every '
+      + 'client would knock on a door nobody owns — silently.');
+  } finally {
+    daemon.send('stop');
+  }
+});
