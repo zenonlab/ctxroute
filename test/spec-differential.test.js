@@ -160,6 +160,13 @@ const NON_EXERCES = {
   pattern: 'it IS the trigger — every generated rule carries one, and `triggers-gate` proves its consumption',
   rank: 'an emission ORDER, not a matching semantics: it decides no injection (covered by loader.test.js)',
 };
+// 🛑 BOUND DECLARED HERE, NOT RAISED GLOBALLY (2026-08-20). These tests ENUMERATE a domain, so
+//    their cost follows the domain, not the machine. CI measured 6,232 ms against ~3,600 ms
+//    locally and the 5 s wall of the fast lane BROKE — after having already been grazed at
+//    4,992 ms. Raising the lane to 30 s would make 1,000 tests that should fail in 5 s wait for
+//    30. A timeout is a BOUND, never a wait: it lengthens nothing, it only refuses what runs long.
+//    ⚠️ Growing the domain is what moves this number — re-measure, never bump it to silence a red.
+
 test('⓪ the DOMAIN exercises every matching operator of the vocabulary', () => {
   const produits = new Set();
   for (const r of rules()) for (const k of Object.keys(r)) produits.add(k);
@@ -173,7 +180,7 @@ test('⓪ the DOMAIN exercises every matching operator of the vocabulary', () =>
   );
 });
 
-test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', () => {
+test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', { timeout: 30000 }, () => {
   const G = gestes();
   const R = rules();
   const divergences = [];
@@ -215,7 +222,7 @@ function corpsDeGeste() {
   return out;
 }
 
-test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', () => {
+test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', { timeout: 30000 }, () => {
   const fms = [];
   for (const tool of [['aaa'], ['aaa', 'bbb'], ['*'], 'aaa']) {
     for (const exclude of sousEnsembles(A)) {
@@ -246,7 +253,7 @@ test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', () => {
   assert.deepStrictEqual(divergences.slice(0, 5), [], `${divergences.length} divergence(s) on the tool source`);
 });
 
-test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', () => {
+test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', { timeout: 30000 }, () => {
   // ⚠️ The order IS PART of the semantics (global → specific = the hierarchy
   //    lives in the path): we compare LISTS, never sets.
   const names = ['mcp__srv__outil', 'mcp__srv__', 'mcp__srv', 'mcp__a_b__c', 'mcp__a.b__c', 'Read', '', 'mcp____x'];
@@ -284,7 +291,7 @@ test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', (
   assert.deepStrictEqual(divergences.slice(0, 5), [], `${divergences.length} divergence(s) on the mcp source`);
 });
 
-test('SPEC ⟷ ENGINE (source `skill`): EXHAUSTIVE conformance over the 3 dimensions', () => {
+test('SPEC ⟷ ENGINE (source `skill`): EXHAUSTIVE conformance over the 3 dimensions', { timeout: 30000 }, () => {
   const entrees = [];
   const filtresCombis = [];
   for (const exclude of sousEnsembles(A)) for (const scope of sousEnsembles(A)) filtresCombis.push({ scope, exclude });

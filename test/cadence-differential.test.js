@@ -62,6 +62,13 @@ const HORS_CADENCE = {
   rank: 'an emission ORDER: it decides no delivery (loader.test.js)',
   note: 'the ONLY field the engine NEVER reads — an author comment, inert by contract',
 };
+// 🛑 BOUND DECLARED HERE, NOT RAISED GLOBALLY (2026-08-20). These tests ENUMERATE a domain, so
+//    their cost follows the domain, not the machine. CI measured 6,232 ms against ~3,600 ms
+//    locally and the 5 s wall of the fast lane BROKE — after having already been grazed at
+//    4,992 ms. Raising the lane to 30 s would make 1,000 tests that should fail in 5 s wait for
+//    30. A timeout is a BOUND, never a wait: it lengthens nothing, it only refuses what runs long.
+//    ⚠️ Growing the domain is what moves this number — re-measure, never bump it to silence a red.
+
 test('⓪ the DOMAIN exercises every CADENCE key of the vocabulary', () => {
   const exerces = new Set(Object.keys(VALEURS));
   assert.ok(exerces.size >= 3, `suspicious domain: only ${exerces.size} settings exercised`);
@@ -85,7 +92,7 @@ const RESOLVEURS = {
   enforce: gate.enforceForDoc,
 };
 
-test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting', () => {
+test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting', { timeout: 30000 }, () => {
   const divergences = [];
   let cas = 0;
   for (const reglage of Object.keys(RESOLVEURS)) {
@@ -117,7 +124,7 @@ test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting',
 });
 
 // ── ②③ DELIVERY AND DRIFT, THROUGH THE REAL `decide` ────────────────────
-test('CADENCE ⟷ ENGINE ②③: delivery and drift, EXHAUSTIVE (both units)', () => {
+test('CADENCE ⟷ ENGINE ②③: delivery and drift, EXHAUSTIVE (both units)', { timeout: 30000 }, () => {
   const divergences = [];
   let cas = 0;
   for (const mode of spec.MODES) {
@@ -177,7 +184,7 @@ const FILTRES = () => [
   { filterMode: 'bogus', filterList: ['Bash'] },
 ];
 
-test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', () => {
+test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { timeout: 30000 }, () => {
   const divergences = [];
   let cas = 0;
   for (const mode of spec.MODES) {
