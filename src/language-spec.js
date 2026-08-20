@@ -53,6 +53,8 @@
 
 // Normalisation — one same text must compare the same way on every OS.
 const { DEFAULT_PROFILE } = require('./harness-profile.js');
+// ⚠️ The DERIVED half of the universe — declaration shared, algebra not (see below).
+const { DERIVED_OBSERVABLES } = require('./derived-observables.js');
 
 const norm = (v) => String(v == null ? '' : v).toLowerCase().replace(/\\/g, '/');
 const contient = (u, motif) => norm(u).includes(norm(motif));
@@ -202,22 +204,25 @@ function candidates(toolName, toolInput, keysDecl) {
   // The commands come from the DECLARED KEYS, never from a hard-coded `command`:
   // that is what makes them narrowable by `keys` exactly like the paths.
   for (const commande of keyValues(toolInput, clesCommandes, 20)) out.push(commande);
-  // ⚠️ TWO FACTS, TWO UNIVERSES (20/08/2026). What a command SAYS (its raw text, above)
-  //    and WHERE it works (`cd X && …`, below) are DISTINCT observables, and the second
-  //    one has its own declared name in the profile. As long as they shared a key, a
-  //    language could not tell "I quote this project" from "I work in it" — the defect
-  //    was not in the combinators (∃/∀ were right) but in the universe they range over.
-  // ⚠️ It reads the FULL command list, NOT `clesCommandes`: dropping the raw half must
-  //    NOT drop the designated directory, otherwise the operator loses 47.7 % of real
-  //    work (measured on 28,703 actions) and becomes unusable — which is the whole point.
-  const clesCd = universeTrigger(keysDecl, [DEFAULT_PROFILE.commandCwdKey]);
-  if (clesCd.includes(DEFAULT_PROFILE.commandCwdKey)) {
-    for (const commande of keyValues(toolInput, DEFAULT_PROFILE.commandKeys, 20)) {
-      const cd = commande.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
-      if (cd) {
-        const after = commande.split(/&&|;/).slice(1).join(' ');
-        for (const word of after.trim().split(/\s+/)) out.push(cd[1] + '/' + word);
-      }
+  // ⚠️ THE DERIVED FACTS ARE READ FROM THE REGISTRY, one loop, no name written here
+  //    (2026-08-20). What a command SAYS (its raw text, above) and what it DESIGNATES or
+  //    RECONSTRUCTS (below) are DISTINCT observables. While they shared one key, no
+  //    combination of operators could tell "I quote this project" from "I work in it" — the
+  //    defect was never in the combinators (∃/∀ were right) but in the UNIVERSE they range
+  //    over. That is the whole thesis, and it has now cost ten defects.
+  // 🛑 THE MODEL SHARES THE **DECLARATION** AND THE MECHANICAL EXTRACTION, NEVER THE ALGEBRA.
+  //    Same rule as `keyValues` and the profile just above: if the model re-listed the facts
+  //    by hand, the differential would prove a divergence of LIST instead of a divergence of
+  //    MEANING — and a judge that argues about vocabulary stops judging semantics. What stays
+  //    independent here, and is the only thing worth judging, is WHICH universe each operator
+  //    ranges over and with which quantifier.
+  // ⚠️ The input is the FULL command list, NOT `clesCommandes`: dropping the raw half must
+  //    NOT drop where the gesture works, otherwise the operator loses 47.7 % of real work
+  //    (measured on 28,703 actions) and becomes unusable — which is the whole point.
+  for (const obs of DERIVED_OBSERVABLES) {
+    if (!universeTrigger(keysDecl, [obs.name]).includes(obs.name)) continue;
+    for (const commande of keyValues(toolInput, DEFAULT_PROFILE[obs.from], 20)) {
+      for (const cand of obs.derive(commande)) out.push(cand);
     }
   }
   return out;

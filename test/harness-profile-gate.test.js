@@ -115,6 +115,17 @@ test('㊽ THE SHELL IS NOT DECLARED — it is DETECTED (no list of shell tools)'
     'A `shellTools` has appeared: the shell is recognised by the PRESENCE of a `command`, never by a list of names.');
   assert.ok(Object.keys(DEFAULT_PROFILE).every((k) => /^[a-z][A-Za-z]*$/.test(k)),
     'Profile key outside the English camelCase convention — this file is PUBLIC INTERFACE.');
-  assert.deepStrictEqual(Object.keys(DEFAULT_PROFILE).sort(), ['commandCwdKey', 'commandKeys', 'contentKeys', 'patchTools', 'pathKeys'],
+  assert.deepStrictEqual(Object.keys(DEFAULT_PROFILE).sort(), ['commandKeys', 'contentKeys', 'patchTools', 'pathKeys'],
     'The profile has changed shape: update this gate AND the doc, in the same move.');
+  // 🛑 THE PROFILE HOLDS THE HARNESS DIALECT, NEVER OUR DERIVATIONS (2026-08-20). A fact we
+  //    COMPUTE from what a harness sends — the directory a `cd X && …` designates, the paths
+  //    it reconstructs — has a different authority: nobody sends it, we decide it exists.
+  //    Both kinds spent one evening in this file as scalar fields, and the engine immediately
+  //    grew one branch per field; a third fact would have made that a pattern. They now live
+  //    in `derived-observables.js`, as a registry the engine LOOPS over.
+  // ⚠️ Checked by SHAPE, not by name: a key ending in `Key` here is a scalar standing in for
+  //    what should be a registry entry — the exact shortcut that was taken and reverted.
+  assert.deepStrictEqual(Object.keys(DEFAULT_PROFILE).filter((k) => k.endsWith('Key')), [],
+    'A scalar `…Key` is back in the profile: a derived fact belongs to the registry in `derived-observables.js`, '
+    + 'otherwise the engine grows one branch per fact and stops being a language.');
 });

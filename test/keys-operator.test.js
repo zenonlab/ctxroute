@@ -62,8 +62,21 @@ test('flat form = the SAME universe for the three axes (the shortcut)', () => {
   //    a mistake made and caught by this very test, one minute after writing it.
   assert.ok(injecte(doc({ pattern: 'projet-x/ls' }), cmd('cd projet-x && ls')),
     'PRECONDITION: only the reconstruction can produce this candidate');
-  assert.ok(!injecte(doc({ pattern: 'projet-x/ls', keys: ['-commandCwd'] }), cmd('cd projet-x && ls')),
-    'the halves are separable in BOTH directions — otherwise the split is one-way and unproven');
+  // 🔴 THE DERIVED HALF WAS ITSELF TWO FACTS UNTIL 20/08/2026 (evening) — 10th defect of the
+  //    family. `commandCwd` named the DIRECTORY *and* the paths RECONSTRUCTED word by word,
+  //    so a project merely QUOTED after a `cd` became a plausible path OF that project and
+  //    triggered. MEASURED on the real corpus: 13,910 shell actions, **6,336 carrying a
+  //    `cd` (46 %), 402,734 fabricated paths, up to 1,740 for a single command** — and one
+  //    of them delivered a FOREIGN project's entire 90 KB skill into an unrelated session.
+  //    `-command` shut the raw text; the reconstruction reopened the window.
+  assert.ok(!injecte(doc({ pattern: 'projet-x/ls', keys: ['-commandPaths'] }), cmd('cd projet-x && ls')),
+    'the RECONSTRUCTED paths must be cuttable ALONE — that is what stops a citation from injecting');
+  assert.ok(injecte(doc({ pattern: 'projet-x/ls', keys: ['-commandCwd'] }), cmd('cd projet-x && ls')),
+    'cutting the DIRECTORY must NOT cut the reconstruction: one name, one fact, and they are separable');
+  assert.ok(injecte(doc({ pattern: 'projet-x', keys: ['-command', '-commandPaths'] }), cmd('cd projet-x && ls')),
+    'the pair an entry actually writes: WORKING in the project still injects (only the directory is read)');
+  assert.ok(!injecte(doc({ pattern: 'projet-x', keys: ['-command', '-commandPaths'] }), cmd('cd ailleurs && echo projet-x')),
+    '…and CITING it fabricates nothing any more — the case that fired in production on 20/08');
   assert.ok(injecte(doc({ keys: ['-content'] }), cmd('cd projet-x && ls')), 'removing an unrelated key changes nothing');
 });
 

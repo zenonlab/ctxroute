@@ -64,7 +64,10 @@ const fileAdapter = {
   id: 'file',
   collect(config, payload, acc) {
     const corpus = readCorpus(paths.fileDocsDir(), 'docs/');
-    const rules = rulesFromCorpus(corpus);
+    // ⚠️ PER-SOURCE DEFAULT of the filters (20/08/2026): the adapter POSES the block, it
+    //    resolves NOTHING — the cascade lives in `lib.heriterFiltres`, reached through the
+    //    single road `rulesOfDecl`. An adapter that resolved would be class ㊳ all over again.
+    const rules = rulesFromCorpus(corpus, (config && config.defaults && config.defaults.file) || undefined);
     for (const d of corpus) {
       const { data: fm, body } = parse(d.text);
       if (validate(fm).length === 0) acc.decls[d.doc] = fm;

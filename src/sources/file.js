@@ -36,6 +36,10 @@
 //    `harness-profile.js`. No harness literal must COME BACK here — a
 //    gate derived from the profile refuses it. Porting = editing the profile, never this file.
 const { DEFAULT_PROFILE } = require('../harness-profile.js');
+// ⚠️ THE DERIVED FACTS AND THEIR DERIVATIONS LIVE IN ONE REGISTRY (2026-08-20). This file
+//    consumes it and never enumerates it: an engine that names its observables one by one
+//    has to be reopened for each new one, and that is a tool, not a language.
+const { DERIVED_OBSERVABLES, derivedCandidates } = require('../derived-observables.js');
 // ⚠️ SINGLE SOURCE of the `keys` syntax: the validator REFUSES what this engine cannot
 //    read. Redefining the marker here would be a second truth, and the copy would drift the
 //    day the syntax moves — exactly the class this repo keeps closing.
@@ -455,39 +459,18 @@ function shouldSkip(rule, context, toolInput) {
   return false;
 }
 
-// ⚠️ Reconstruction `cd /path && command` — allows matching "infra-mcp/server.js"
-//    without an absolute path. DOES NOT COVER pushd, subshell, double cd (known limit,
-//    inherited as is: broadening it would make the differential diverge).
-// 🛑 THE DERIVED HALF IS ITS OWN OBSERVABLE (20/08/2026) — `commandCwdCandidates`.
-//    A shell command carries TWO DISTINCT FACTS under ONE key, and until today only one
-//    of them was declared: the raw TEXT (what the gesture SAYS) and the directory the
-//    gesture DESIGNATES (`cd X && …`, i.e. where it WORKS). Merging them made "quoting a
-//    project" indistinguishable from "working in it" — MEASURED on 28,703 real actions:
-//    removing the whole `command` key from a trigger's universe destroyed 2,281
-//    injections, of which **1,087 (47.7 %) were real work**. Declaring the derived half
-//    separately costs 749, of which **41 (5.5 %)** — the same target, a tenth of the price.
-// ⚠️ `bashCandidates` KEEPS returning BOTH (raw first): it is the public probe consumed by
-//    `explain.js` and the property laws, and the ∀¬ of `exclude` must keep seeing the whole
-//    universe. Only the TRIGGER composes the two halves per rule — a filter that stopped
-//    seeing a value would be a negation weakened in silence, which is ㊼ all over again.
+// ⚠️ THE DERIVED FACTS ARE A REGISTRY, NOT A LIST OF BRANCHES — `derived-observables.js`.
+//    Read the WHY there. What matters HERE: this file no longer knows how many derived
+//    observables exist, nor what they are called. It LOOPS. Adding one is one entry in the
+//    registry and NOT ONE LINE of engine — which is the whole difference between a language
+//    and a tool, and the reason this project exists.
+// ⚠️ `bashCandidates` KEEPS returning the WHOLE universe (raw text first, then every derived
+//    fact in registry order): it is the public probe consumed by `explain.js` and by the
+//    property laws, and the ∀¬ of `exclude` must keep seeing every value. A filter that
+//    stopped seeing one would be a negation weakened in SILENCE, which is ㊼ all over again.
+//    Only the TRIGGER composes the facts per rule.
 function bashCandidates(command) {
-  return [command].concat(commandCwdCandidates(command));
-}
-
-// The DERIVED observable: the directory a shell command DESIGNATES.
-// ⚠️ Returns [] when the command designates nothing — a rule that reads ONLY this
-//    observable then bites on nothing, which is the honest answer, never a fallback on
-//    the raw text (that fallback would silently re-merge the two facts).
-function commandCwdCandidates(command) {
-  const cdMatch = command.match(/\bcd\s+["']?([^\s"'&;]+)["']?\s*(?:&&|;)/);
-  if (!cdMatch) return [];
-  // Stryker disable next-line ArrayDeclaration: EQUIVALENT mutant, same proof as above — a junk
-  //   candidate is never a SUBSTRING match of any pattern, so it can neither bite nor enter
-  //   `mordants`, hence it changes no decision and no exclusion universe.
-  const out = [];
-  const afterCd = command.split(/&&|;/).slice(1).join(' ');
-  for (const w of afterCd.trim().split(/\s+/)) out.push(cdMatch[1] + '/' + w);
-  return out;
+  return [command].concat(derivedCandidates(command));
 }
 
 /**
@@ -570,17 +553,25 @@ function matchingDocs(rules, payload) {
     //    rule that drops `command` must keep seeing WHERE it works, which is the entire
     //    point. Reading it from `commandesR` would re-merge them and cost 47.7 % of real
     //    work, measured.
-    const cdKeys = rule.keys ? triggerKeys(rule.keys, [DEFAULT_PROFILE.commandCwdKey]) : null;
-    const cdActif = !cdKeys || cdKeys.includes(DEFAULT_PROFILE.commandCwdKey);
+    // ⚠️ ONE GATE PER DERIVED FACT, DERIVED FROM THE REGISTRY — never a branch per name.
+    //    A fact added to `derived-observables.js` tomorrow is addressable here the same day,
+    //    without a line changing. Two hand-written branches was the first shape of this code
+    //    and it was already a duplication: the third fact would have made it a pattern.
 
     const mordants = [];
     for (const fp of cheminsR) if (norm(fp).includes(normPattern)) mordants.push(fp);
     for (const commande of commandesR) {
       if (norm(commande).includes(normPattern)) mordants.push(commande);
     }
-    if (cdActif) {
+    for (const obs of DERIVED_OBSERVABLES) {
+      // ⚠️ The gate reads the rule's universe for THIS name; `triggerKeys` is the single
+      //    decision (REPLACE vs ADJUST), never re-implemented here.
+      const clesObs = rule.keys ? triggerKeys(rule.keys, [obs.name]) : null;
+      if (clesObs && !clesObs.includes(obs.name)) continue;
+      // ⚠️ THE INPUT IS THE FULL COMMAND LIST, never `commandesR`: dropping the raw half must
+      //    NOT drop where the gesture WORKS — measured, that reading costs 47.7 % of real work.
       for (const commande of commandes) {
-        for (const cand of commandCwdCandidates(commande)) {
+        for (const cand of obs.derive(commande)) {
           if (norm(cand).includes(normPattern)) mordants.push(cand);
         }
       }
@@ -598,7 +589,6 @@ module.exports = {
   shouldSkip,
   scopeGroups,
   bashCandidates,
-  commandCwdCandidates,
   textValues,
   MAX_DEPTH,
   MAX_SIZE,

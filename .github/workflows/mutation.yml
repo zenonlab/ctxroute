@@ -30,6 +30,7 @@ on:
       - 'src/leak-pure.js'
       - 'src/docfacts.js'
       - 'src/scope-reach-pure.js'
+      - 'src/derived-observables.js'
       - 'src/sources/file.js'
       - 'src/sources/tool.js'
       - 'src/sources/mcp.js'
@@ -71,6 +72,7 @@ on:
       - 'test/budget.test.js'
       - 'test/docfacts.test.js'
       - 'test/scope-reach-pure.test.js'
+      - 'test/derived-observables.test.js'
       # ── the mutation config itself + the deps ──
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'

@@ -55,6 +55,7 @@ import * as fileSrc from '../src/sources/file.js';
 import * as toolSrc from '../src/sources/tool.js';
 import * as skillSrc from '../src/sources/skill.js';
 import { DEFAULT_PROFILE } from '../src/harness-profile.js';
+import { DERIVED_OBSERVABLES, DERIVED_NAMES } from '../src/derived-observables.js';
 
 const ATOME = 'atome-temoin';
 const decideFile = (rule, geste) => fileSrc.matchingDocs([{ ...rule, doc: 'd.md' }], geste).length > 0;
@@ -145,43 +146,57 @@ const CELLULES = () => [
     avec: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo ' + ATOME } }),
     sans: () => decideFile({ pattern: ATOME }, { toolName: 'X', toolInput: { [cle]: 'echo rien' } }),
   })),
-  // ── THE TWO HALVES OF A SHELL GESTURE (20/08/2026) ─────────────────────
-  // 🔴 THE 9th DEFECT OF THE SAME FAMILY, and the one that closes the founding use case.
-  //    A command carries what the gesture SAYS and where it WORKS; while both lived under
-  //    one key, no combination of operators could tell "I quote this project" from "I work
-  //    in it" — the boolean base was complete and the distinction still inexpressible.
-  //    MEASURED on 28,703 real actions: merged, the only available move cost 47.7 % of
-  //    real work. These two cells prove the halves are SEPARABLE, in BOTH directions —
-  //    one cell alone would pass while the split stayed one-way, which is exactly how
-  //    `keys` shipped half-inert on 19/08.
-  // ⚠️ THE `sans` CASES ARE BUILT WITH CARE, and the first attempt was WRONG: every word
-  //    following a `cd` becomes a pseudo-path (`/w/rien/` + word), so putting the atom
-  //    after the `cd` makes it reachable through the DESIGNATED half and the cell measures
-  //    nothing. The atom must sit in a segment the reconstruction never reaches.
+  // ── THE FACTS WE DERIVE — CELLS BUILT FROM THE REGISTRY (2026-08-20) ───
+  // 🔴 THE 9th AND 10th DEFECTS OF THE SAME FAMILY LIVED HERE. A shell command carried what
+  //    the gesture SAYS, where it WORKS, and the paths it RECONSTRUCTS — three facts, one
+  //    key. While they shared a name, no combination of operators could tell "I quote this
+  //    project" from "I work in it": the boolean base was complete and the distinction still
+  //    inexpressible. MEASURED: merged, the only available move cost 47.7 % of real work;
+  //    and the reconstruction alone fabricated 402,734 pseudo-paths over 13,910 real actions,
+  //    one of which delivered a FOREIGN project's 90 KB skill into an unrelated session.
+  // 🛑 THESE CELLS ARE **DERIVED FROM `derived-observables.js`**, never written one by one.
+  //    The first version of this block hand-wrote three cells for two facts — the exact
+  //    "copied list" anti-pattern this file reproaches `language-atoms` with, committed in
+  //    the file that names the fault. A fact added to the registry tomorrow lands here BY
+  //    ITSELF and stays RED until it is proven reachable AND droppable.
+  // ⚠️ THE ISOLATING DECLARATION IS DERIVED TOO: to prove a fact is reachable ALONE we drop
+  //    the raw command AND every OTHER derived fact — listing them by hand would go stale at
+  //    the next entry, which is the very class (㊽) this table exists to catch.
+  // ⚠️ EACH ENTRY SUPPLIES ITS OWN WITNESS (`temoin`), and it must be a form the
+  //    reconstruction really produces: the bare directory is a SUBSTRING of every glued
+  //    path, so a witness taken on the directory would be satisfied by the OTHER fact and
+  //    the cell would measure nothing — green, and blind.
+  ...DERIVED_OBSERVABLES.flatMap((obs) => {
+    const autres = DERIVED_OBSERVABLES.filter((o) => o.name !== obs.name).map((o) => '-' + o.name);
+    const isolant = ['-' + DEFAULT_PROFILE.commandKeys[0]].concat(autres);
+    const geste = { toolName: 'X', toolInput: { command: obs.temoin().command.split('@@').join(ATOME) } };
+    const motif = obs.temoin().pattern.split('@@').join(ATOME);
+    return [
+      {
+        id: `tool_input/derived:${obs.name}/reachable-alone`, capacite: 'tool_input', atteint: true,
+        avec: () => decideFile({ pattern: motif, keys: { match: isolant } }, geste),
+        sans: () => decideFile({ pattern: motif, keys: { match: isolant } },
+          { toolName: 'X', toolInput: { command: 'echo rien' } }),
+      },
+      {
+        // 🛑 THE CELL THAT MAKES THE OTHER ONE MEAN SOMETHING: without it, an engine that
+        //    IGNORED this name entirely would satisfy "reachable" and nobody would notice —
+        //    which is precisely how `keys` shipped accepted-and-inert on 19/08.
+        id: `tool_input/derived:${obs.name}/really-droppable`, capacite: 'tool_input', atteint: true,
+        avec: () => decideFile({ pattern: motif, keys: { match: isolant } }, geste),
+        sans: () => decideFile({ pattern: motif, keys: { match: isolant.concat('-' + obs.name) } }, geste),
+      },
+    ];
+  }),
+  // ⚠️ THE RAW TEXT STAYS REACHABLE WITHOUT ANY DERIVED FACT — the symmetric half. Its `sans`
+  //    case puts the atom in a segment the reconstruction never reaches: after a `;`, the
+  //    gluing starts from the NEXT segment, so an atom placed before it cannot leak in.
   {
-    id: 'tool_input/command-cwd/reachable-without-the-raw-text', capacite: 'tool_input', atteint: true,
-    avec: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandKeys[0]] } },
-      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls -la' } }),
-    sans: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandKeys[0]] } },
-      { toolName: 'X', toolInput: { command: 'grep ' + ATOME + ' f.txt; cd /w/rien && ls' } }),
-  },
-  {
-    id: 'tool_input/command-raw/reachable-without-the-designated-dir', capacite: 'tool_input', atteint: true,
-    avec: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
+    id: 'tool_input/command-raw/reachable-without-the-derived-facts', capacite: 'tool_input', atteint: true,
+    avec: () => decideFile({ pattern: ATOME, keys: { match: DERIVED_NAMES.map((n) => '-' + n) } },
       { toolName: 'X', toolInput: { command: 'grep ' + ATOME + ' f.txt' } }),
-    sans: () => decideFile({ pattern: ATOME, keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
+    sans: () => decideFile({ pattern: ATOME, keys: { match: DERIVED_NAMES.map((n) => '-' + n) } },
       { toolName: 'X', toolInput: { command: 'grep rien f.txt' } }),
-  },
-  // 🛑 THE THIRD CELL IS THE ONE THAT MAKES THE OTHER TWO MEAN SOMETHING: it proves the
-  //    split is REAL and not one-way. Without it, an engine that ignored `-commandCwd`
-  //    entirely would satisfy both cells above — which is EXACTLY how `keys` shipped
-  //    half-inert on 19/08 (accepted by the schema, ignored by one dimension).
-  {
-    id: 'tool_input/command-cwd/really-droppable', capacite: 'tool_input', atteint: true,
-    avec: () => decideFile({ pattern: 'w/' + ATOME + '/ls' },
-      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls' } }),
-    sans: () => decideFile({ pattern: 'w/' + ATOME + '/ls', keys: { match: ['-' + DEFAULT_PROFILE.commandCwdKey] } },
-      { toolName: 'X', toolInput: { command: 'cd /w/' + ATOME + ' && ls' } }),
   },
 
   ...DEFAULT_PROFILE.contentKeys.map((cle) => ({

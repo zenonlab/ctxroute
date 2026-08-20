@@ -39,6 +39,7 @@
     "src/leak-pure.js",
     "src/docfacts.js",
     "src/scope-reach-pure.js",
+    "src/derived-observables.js",
     "src/harness-conformance.js"
   ],
   "incremental": true,

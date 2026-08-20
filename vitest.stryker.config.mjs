@@ -53,6 +53,7 @@ export default defineConfig({
       // ⚠️ DETERMINISTIC half only — the LAWS of the scanner live in the same file
       //    but fast-check is excluded from this runner; each law has its case here.
       'test/scope-reach-pure.test.js',
+      'test/derived-observables.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // ⚠️ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive

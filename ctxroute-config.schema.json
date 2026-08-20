@@ -55,6 +55,82 @@
             "type": "string"
           },
           "description": "TARGETS of this category's filterMode: MCP server, exact tool name, or wildcard \"*\" (52, 15/08/2026)."
+        },
+        "scope": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "minItems": 1
+            }
+          ],
+          "description": "PER-SOURCE DEFAULT for the `scope` operator (20/08/2026). An entry that declares it WINS entirely (no merge) — 4-stage cascade, identical to the behaviour keys. Born of a MEASURED defect: making every doc of a category stop reading an observable required writing it on 300+ entries, i.e. an ENUMERATION, born stale. `match` is DELIBERATELY absent from this tier: it is the only operator that CREATES an injection, so a category-wide default would fabricate rules for docs that declare none. Filters can only ever narrow. Original shape: FLAT FORM = OR (inherited, untouched) - GROUPED FORM = AND of ORs (㊺①, 14/08/2026): [[\"a\"],[\"b\"]] = a AND b, [[\"a\",\"b\"],[\"c\"]] = (a OR b) AND c. EXACT MIRROR of frontmatter.js::formeScopeErreur - two form declarations th"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "PER-SOURCE DEFAULT for the `exclude` operator (20/08/2026). An entry that declares it WINS entirely (no merge) — 4-stage cascade, identical to the behaviour keys. Born of a MEASURED defect: making every doc of a category stop reading an observable required writing it on 300+ entries, i.e. an ENUMERATION, born stale. `match` is DELIBERATELY absent from this tier: it is the only operator that CREATES an injection, so a category-wide default would fabricate rules for docs that declare none. Filters can only ever narrow. Original shape: Patterns to reject (matched on the current path/command) — homonyms (node_modules, dist...)."
+        },
+        "keys": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "match": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "exclude": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "minProperties": 1
+            }
+          ],
+          "description": "PER-SOURCE DEFAULT for the `keys` operator (20/08/2026). An entry that declares it WINS entirely (no merge) — 4-stage cascade, identical to the behaviour keys. Born of a MEASURED defect: making every doc of a category stop reading an observable required writing it on 300+ entries, i.e. an ENUMERATION, born stale. `match` is DELIBERATELY absent from this tier: it is the only operator that CREATES an injection, so a category-wide default would fabricate rules for docs that declare none. Filters can only ever narrow. Original shape: WHICH parameter keys this entry may see. Flat list = the same universe for the three axes; object = one universe PER axis (match/scope/exclude). A name prefixed with '-' REMOVES the key from the default universe (blackli"
         }
       }
     }

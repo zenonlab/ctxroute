@@ -99,25 +99,64 @@
    triggered), so `keys` would be accepted AND inert — the very defect that got `mcp:` removed
    from the file corpus. Proofs: 959 tests, **mutation 100.00 %** on both modules, doctor 14/14.
 
-3quater. ✅ **`commandCwd` — THE 9th DEFECT OF THE FAMILY, AND THE ONE THAT CLOSED THE FOUNDING
-   USE CASE (20/08/2026).** `keys` shipped correctly on 19/08 and **still could not do the thing it was
+3quater. ✅ **THE 9th AND 10th DEFECTS OF THE FAMILY — a shell gesture carried THREE facts under
+   ONE key (20/08/2026).** `keys` shipped correctly on 19/08 and **still could not do the thing it was
    written for**. MEASURED on 28,703 real actions: `keys: {match:["-command"]}` on the 8 fleet skills
    destroyed 2,281 injections of which **1,087 (47.7 %) were REAL WORK** — the July threshold refuses
    that, so the operator was unusable exactly where it was needed.
-   🔑 **CAUSE, and it is the thesis of §0ter verbatim**: a shell command carries TWO FACTS under ONE
-   key — the raw TEXT (what the gesture SAYS) and the directory it DESIGNATES (`cd X && …`, where it
-   WORKS). While they shared a key, NO combination of operators could separate "I quote this project"
-   from "I work in it". The boolean base was complete and the distinction inexpressible: **the hole
-   was in the OBSERVABLE SET, not in the combinators — like EVERY defect before it.**
-   ✅ Fix = **declare the missing observable** (`harness-profile.commandCwdKey`, DATA), never a new
-   word: `keys` addresses it like any other key. `["-command"]` = stop reading what the command SAYS,
-   keep reading where it WORKS · `["-commandCwd"]` = the exact opposite. **Price re-measured: 749
-   injections lost, 41 of them real work (5.5 %, i.e. 0.2 % of all injections); 14 of 327
-   (session, skill) pairs lose the skill entirely.** Accepted, and DECLARED per entry — visible,
-   reversible, the author’s call.
-   📌 **THE DATA HALF IS SHIPPED TOO**: the 8 fleet entries carry `keys: {match:["-command"]}`. Proven
-   by real probe on the real config — a `grep netium` is silent, a `cd .../netium && ls` injects.
-   REFACTOR-PLAN 57 is CLOSED.
+   🔑 **CAUSE, the thesis of §0ter verbatim**: what the gesture SAYS (raw text), where it WORKS (the
+   directory of a `cd X && …`) and the paths it RECONSTRUCTS (that directory glued to every following
+   word) were ONE observable. While they shared a name, NO combination of operators could separate
+   "I quote this project" from "I work in it". The boolean base was complete and the distinction
+   inexpressible: **the hole was in the OBSERVABLE SET, not in the combinators — like EVERY defect
+   before it.**
+   🔴 **AND SPLITTING IT IN TWO WAS NOT ENOUGH — the 10th defect, found by the MAINTAINER the same
+   evening, WATCHING what got injected.** `-command` shut the raw text and the reconstruction reopened
+   the window: **the guard closes the door, the `cd` opens the window.** A project name merely QUOTED
+   after a `cd` becomes a plausible path OF that project. **MEASURED: 13,910 shell actions, 6,336
+   carrying a `cd` (46 %), 402,734 FABRICATED paths, up to 1,740 for a single command** — one of them
+   delivered a FOREIGN project's entire 90 KB skill into an unrelated session, evicting from the frame
+   budget the knowledge that session actually needed. 🛑 **No gate could see it**: `observable-reach`
+   proves we can discriminate on every DECLARED fact — it cannot see that one declaration covers two.
+   **The table judges the DECLARATION, never the reality.**
+   ✅ **FIX = DECLARE, AND DECLARE IN A REGISTRY** (`src/derived-observables.js`), never a new word and
+   never a field per fact. `keys` addresses each name like any other key: `["-command"]` drops the raw
+   text · `["-commandPaths"]` drops the fabrications · `["-commandCwd"]` drops the directory. **The pair
+   an entry actually writes is `["-command","-commandPaths"]`** — citing stops injecting, working in the
+   project still injects. The 8 fleet entries carry it, PROVEN by real probe on the live config.
+   🛑 **WHY A REGISTRY AND NOT TWO FIELDS — read this before adding an 11th fact.** The first shape was
+   two scalar fields in `harness-profile.js`, and the engine grew TWO near-identical branches in one
+   evening; the model and every judge would have grown one each. **That is a TOOL, and §0bis says the
+   engine must not move when a need appears.** Now: **one entry = zero engine line, zero judge edited** —
+   the reach cells and the spec model LOOP over the registry, and each entry carries a THUNK witness
+   (a module-level literal is a static mutant: 2 false survivors measured). The profile keeps the
+   harness DIALECT only, and its gate refuses any key ending in `Key`.
+   ⚠️ **The directory is a PREFIX of every reconstructed path** ⇒ declaring it is decision-neutral by
+   default, and dropping ONLY `commandCwd` changes nothing while the reconstruction lives.
+   📐 **PRICE, measured on real actions BEFORE shipping, twice**: declaring the derived half cost 749
+   injections of which 41 real work (0.2 % of all injections); dropping the fabrications costs
+   **20 out of 5,978 (0.33 %)** over 8,000 actions, concentrated on ONE doc that legitimately matches a
+   relative path. 🛑 **REMOVING the reconstruction was proposed and REFUSED by the maintainer**: it
+   serves the awkward cases, and dropping a capability to close a case is a REGRESSION. **We CUT IN
+   TWO, we never REMOVE.** REFACTOR-PLAN 57 and 62 are CLOSED.
+3quater-bis. ✅ **`defaults.{file|mcp|skill|tool}` NOW CARRIES THE FILTERS (20/08/2026) — and refusing
+   that tier the day before WAS the defect.** On 19/08 `keys` was denied it with a written reason ("the
+   global key universe already exists, it is `harness-profile.js`") and the KNOB TEST verdict ("the data
+   ALREADY expresses the distinction"). **Both refuted the next day, by measurement**: making every doc
+   of a category stop reading ONE observable meant writing it on 300+ entries — an ENUMERATION, born
+   stale (class ㊽), the very thing forbidden everywhere else here. And the profile is the wrong knob:
+   GLOBAL to every source at once, it cannot say "skills stop reading this, file docs keep it".
+   🛑 **THE TIER CARRIES `scope`, `exclude` AND `keys` TOGETHER** — a filter is an operator like any
+   other and lives where its peers live; treating `keys` as a special case is what produced the 19/08
+   exception. ⚠️ **`match` IS DELIBERATELY OUT, asymmetry DECLARED**: it is the only operator that
+   CREATES an injection, so a category-wide default would fabricate rules for docs that declare none.
+   A filter can only narrow — worst case silence; a trigger's worst case is the whole fleet injecting
+   on everything. ⚠️ **The entry WINS ENTIRELY, never a merge** (same law as the behaviour keys), and
+   the resolution has a SINGLE source: `lib.heriterFiltres`, shared by `loader.rulesOfDecl` (docs) and
+   `sources/skill.js` (skills) — two copies of one cascade diverge, and this repo has paid that bill
+   twice (㊱, ㊳). ⚠️ **KNOWN GAP, WRITTEN NOT HIDDEN**: an entry cannot yet say "the category default
+   PLUS this key" — it would have to re-enumerate, which is class ㊽ one level up. The ADJUST form
+   belongs here too; until then, an entry that needs a fact back names its whole universe.
 3quinquies. ✅ **THE `keys` MIXED FORM IS ADMITTED (20/08/2026) — the refusal WAS a hole, and the
    maintainer is the one who named it.** Rule, decidable by looking: **at least one `-` ⇒ you ADJUST
    the default universe (minus the removals, plus the bare names) · no `-` ⇒ the list REPLACES it.**

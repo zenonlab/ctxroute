@@ -26,6 +26,7 @@
 'use strict';
 
 const { parse, validate } = require('./frontmatter');
+const lib = require('./lib-pure');
 
 // One declaration -> its flat rules { pattern, doc, scope?, exclude?, keys? }.
 // ⚠️ Reproduces EXACTLY the inverse semantics of migrate.declaration():
@@ -41,12 +42,24 @@ const { parse, validate } = require('./frontmatter');
 //    TOTAL (a string, a null, an absent key all mean "no narrowing"), so a guard here would
 //    decide nothing and survive as an equivalent mutant — the same arbitration as in
 //    `sources/skill.js::skillRules`.
-function rulesOfDecl(data, doc) {
+// ⚠️ THE FILTER CASCADE IS **NOT** RESOLVED HERE — `lib.heriterFiltres` is its SINGLE
+//    SOURCE, shared with `sources/skill.js`. Two copies of one cascade diverge, and this
+//    project has already paid that exact bill twice (㊱, ㊳). Read the WHY there.
+/**
+ * One declaration -> its rules. THE ONLY ROAD from a written frontmatter to a decision.
+ *
+ * @param {any} data - the parsed frontmatter (a THIRD-PARTY shape: total parsing, never a schema here).
+ * @param {string} doc - the document id.
+ * @param {{scope?: Array, exclude?: Array, keys?: any}} [defauts] - PER-SOURCE default of the
+ *   filters (`config.defaults.{source}`). Absent = no default; the resolution itself belongs
+ *   to `lib.heriterFiltres`, never to this function.
+ * @returns {Array<{pattern: any, doc: string, keys?: any, scope?: Array, exclude?: Array, rank?: number}>}
+ */
+function rulesOfDecl(data, doc, defauts) {
   if (Array.isArray(data.rules)) {
     return data.rules.map((r) => {
-      const out = { pattern: r.pattern, doc, keys: r.keys };
-      if (Array.isArray(r.scope) && r.scope.length) out.scope = r.scope;
-      if (Array.isArray(r.exclude) && r.exclude.length) out.exclude = r.exclude;
+      /** @type {{pattern: any, doc: string, keys?: any, scope?: Array, exclude?: Array, rank?: number}} */
+      const out = { pattern: r.pattern, doc, ...lib.heriterFiltres(r, defauts) };
       // PER-ENTRY rank (interleaved docs): the rule carries its exact JSON index.
       if (typeof r.rank === 'number') out.rank = r.rank;
       return out;
@@ -55,9 +68,7 @@ function rulesOfDecl(data, doc) {
   if (data.match === undefined) return [];
   const patterns = Array.isArray(data.match) ? data.match : [data.match];
   return patterns.map((p) => {
-    const out = { pattern: String(p), doc, keys: data.keys };
-    if (Array.isArray(data.scope) && data.scope.length) out.scope = data.scope;
-    if (Array.isArray(data.exclude) && data.exclude.length) out.exclude = data.exclude;
+    const out = { pattern: String(p), doc, ...lib.heriterFiltres(data, defauts) };
     return out;
   });
 }
@@ -65,6 +76,11 @@ function rulesOfDecl(data, doc) {
 /**
  * Corpus -> ordered flat rules, ready for matchingDocs().
  * @param {Array<{doc: string, text: string}>} docs - raw content of each .md
+ * @param {{scope?: Array, exclude?: Array, keys?: any}} [defauts] - PER-SOURCE default of the
+ *   filters, POSED by the adapter (`config.defaults.{source}`) and resolved once, downstream.
+ *   Optional by contract: every caller that has no config (lint, collisions, explain, the reach
+ *   instrument) must keep working unchanged — an optional tier is one that costs nothing to
+ *   whoever does not use it.
  * @returns {Array<{pattern, doc, scope?, exclude?, keys?}>}
  *   ⚠️ `keys` is ALWAYS present (possibly undefined) — see `rulesOfDecl`. Omitting it from
  *   this contract is what turned the CI red on 19/08/2026: `tsc` infers the rule's shape
@@ -72,7 +88,7 @@ function rulesOfDecl(data, doc) {
  *   was perfectly correct. A JSDoc is a VERIFIED CONTRACT, and this is the third lying one
  *   caught on this operator alone (textValues, injects, and now this).
  */
-function rulesFromCorpus(docs) {
+function rulesFromCorpus(docs, defauts) {
   if (!Array.isArray(docs)) return [];
   const groupes = [];
   for (const d of docs) {
@@ -82,7 +98,7 @@ function rulesFromCorpus(docs) {
     if (!d || typeof d.doc !== 'string') continue;
     const { data } = parse(d.text);
     if (validate(data).length > 0) continue; // invalid = inert HERE, RED at the lint.
-    const rules = rulesOfDecl(data, d.doc);
+    const rules = rulesOfDecl(data, d.doc, defauts);
     // ⚠️ NO `rules.length === 0` guard: an empty group emits nothing at the flatten —
     //    same output, one guard less (a `mcp:`-only doc / `inject: never` are harmless).
     groupes.push({ rank: typeof data.rank === 'number' ? data.rank : Infinity, doc: d.doc, rules });

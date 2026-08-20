@@ -347,7 +347,53 @@ function declaredBudget(argv) {
   return n === 0 ? Infinity : n;
 }
 
+
+// ── THE PER-SOURCE DEFAULT OF THE FILTERS (20/08/2026) ──────────────────
+// 🔴 WHY THIS TIER EXISTS, AND WHY REFUSING IT WAS THE DEFECT. On 19/08 `keys` was denied a
+//    `defaults.{source}` tier with a written reason — "the global key universe already
+//    exists, it is `harness-profile.js`" plus the KNOB TEST verdict "the data ALREADY
+//    expresses the distinction". **Both were refuted the next day, by measurement**: making
+//    every doc of a category stop reading ONE observable meant writing it on 300+ entries,
+//    i.e. an ENUMERATION, born stale (class ㊽) — the very thing this repo forbids
+//    everywhere else. And the profile is the wrong knob: GLOBAL to every source at once, it
+//    cannot say "skills stop reading this, file docs keep it".
+// 🛑 A FILTER IS AN OPERATOR LIKE ANY OTHER — it lives where its peers live. Treating
+//    `keys` as a special case IS what produced the 19/08 exception, so this tier carries
+//    `scope`, `exclude` AND `keys` TOGETHER. Never one of them alone: that asymmetry is
+//    the class this repo spent a full day closing.
+// ⚠️ `match` IS DELIBERATELY OUT, and the asymmetry is DECLARED, never forgotten: it is the
+//    only operator that CREATES an injection. A category-wide `match` would fabricate rules
+//    for docs that declare none — every doc of a category triggering on everything. A filter
+//    can only narrow, so its worst case is silence; a trigger's worst case is the whole
+//    fleet injecting on every gesture.
+// ⚠️ THE ENTRY WINS ENTIRELY, never a merge: same law as the behaviour keys (the entry has
+//    the last word). A merge would make an operator's effective value unreadable from the
+//    entry that carries it — and unreadable is how a rule stops being auditable.
+// ⚠️ TOTAL: a malformed `defaults` block degrades to "no default", never throws. A config is
+//    hand-editable and NOTHING validates it at runtime (`config-gate` is a TEST, not a
+//    runtime guard) — the engine never trusts its input.
+// ⚠️ SINGLE SOURCE, consumed by `loader.rulesOfDecl` (file docs) AND `sources/skill.js`
+//    (skills): two copies of a cascade diverge, and this one already cost a day.
+function heriterFiltres(entree, defauts) {
+  const d = (defauts && typeof defauts === 'object' && !Array.isArray(defauts)) ? defauts : {};
+  const e = (entree && typeof entree === 'object') ? entree : {};
+  // ⚠️ AN EMPTY LIST IS 'NOT DECLARED', on BOTH sides — historical semantics of the loader,
+  //    kept to the byte (`loader.test.js` asserts it: an empty scope/exclude is NEVER posed).
+  //    Consequence, and it is the RIGHT one: a doc writing `scope: []` declares no filter, so
+  //    it INHERITS its category's. Reading it as 'declared empty' would give the same
+  //    decision (an empty scope filters nothing) but a DIFFERENT rule shape — and a shape
+  //    that changes for nothing is what makes a differential red for a non-reason.
+  const choisir = (a, b) => ((Array.isArray(a) && a.length) ? a : ((Array.isArray(b) && b.length) ? b : undefined));
+  const out = { keys: e.keys === undefined ? d.keys : e.keys };
+  const sc = choisir(e.scope, d.scope);
+  const ex = choisir(e.exclude, d.exclude);
+  if (sc) out.scope = sc;
+  if (ex) out.exclude = ex;
+  return out;
+}
+
 module.exports = {
+  heriterFiltres,
   declaredBudget,
   parseFrameArgs,
   sanitizeSessionId,

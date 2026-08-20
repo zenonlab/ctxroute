@@ -43,6 +43,13 @@ const DOC_PREFIX = 'skill/';
 // natural dedup by matchingDocs = 1 pointer even if 2 patterns match).
 function skillRules(config) {
   const skills = (config && config.skills) || {};
+  // ⚠️ PER-SOURCE DEFAULT of the filters (20/08/2026) — resolved by `lib.heriterFiltres`,
+  //    the SINGLE source shared with `loader.rulesOfDecl`. Read the WHY there: refusing this
+  //    tier on 19/08 is what forced a 300-entry enumeration the next day.
+  // 🛑 THIS FUNCTION REBUILDS A RULE FIELD BY FIELD, which is exactly how `keys` was born
+  //    INERT on 8 skills out of 8. Any operator resolved elsewhere and not carried HERE is
+  //    accepted by the schema and ignored by the engine (class ㊴).
+  const defauts = (config && config.defaults && config.defaults.skill) || undefined;
   const rules = [];
   for (const name of Object.keys(skills)) {
     const entry = skills[name] || {};
@@ -56,7 +63,7 @@ function skillRules(config) {
       //    ignored). Re-checking here = duplicated guards = equivalent mutants.
       //    `{...null}` = {}: a null entry becomes a rule without a pattern,
       //    skipped downstream — totality without a conditional.
-      for (const r of entry.rules) rules.push({ ...r, doc: DOC_PREFIX + name });
+      for (const r of entry.rules) rules.push({ ...r, doc: DOC_PREFIX + name, ...lib.heriterFiltres(r, defauts) });
       continue;
     }
     const match = Array.isArray(entry.match) ? entry.match : [];
@@ -67,8 +74,9 @@ function skillRules(config) {
       //    :undefined would change the shape for no reason — matchingDocs ignores
       //    absence). COMPLETE PARITY with file docs: the reused matcher
       //    already handles scope+exclude, so we expose BOTH (no withheld capability).
-      if (Array.isArray(entry.scope)) rule.scope = entry.scope;
-      if (Array.isArray(entry.exclude)) rule.exclude = entry.exclude;
+      const filtres = lib.heriterFiltres(entry, defauts);
+      if (filtres.scope) rule.scope = filtres.scope;
+      if (filtres.exclude) rule.exclude = filtres.exclude;
       // 🔴 `keys` WAS MISSING HERE — SHIPPED 19/08, INERT ON 8 SKILLS OUT OF 8 (fixed the
       //    same day). The other three dimensions (`rules`, `servers`, `tool`) hand the
       //    WHOLE entry to `file.shouldSkip`, so they honoured it; this one REBUILDS a
@@ -82,7 +90,7 @@ function skillRules(config) {
       //    A shape guard here decided NOTHING — Stryker proved it, surviving as an
       //    EQUIVALENT mutant. Same doctrine as the sibling lines above: matchingDocs is
       //    the sole validation authority, a second guard is a mutant we cannot kill.
-      rule.keys = entry.keys;
+      rule.keys = filtres.keys;
       rules.push(rule);
     }
   }
