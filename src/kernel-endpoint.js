@@ -81,7 +81,7 @@ function endpoint(options) {
   //    the property that matters most here: nothing on disk at all, and the
   //    address disappears with the last reference, so a killed daemon leaves NO
   //    stale entry for the next one to trip over.
-  if (plateforme === 'linux') return `\0ctxroute-${empreinte}`;
+  if (plateforme === 'linux') return `@ctxroute-${empreinte}`;
 
   // macOS (and any other POSIX): a real socket file. Kept in the state
   // directory — the place already reserved for what this framework writes.
@@ -100,4 +100,18 @@ function leavesFilesystemEntry(plateforme) {
   return p !== 'win32' && p !== 'linux';
 }
 
-module.exports = { endpoint, fingerprint, leavesFilesystemEntry, EMPREINTE };
+/**
+ * The form the KERNEL reads, from the form humans and processes carry around.
+ * 🛑 CALLED AT EXACTLY TWO PLACES — `listen` and `connect` — and nowhere else.
+ *    Converting earlier would put a NUL byte back into something that gets
+ *    passed as an argument, logged or compared; converting in two places would
+ *    let the two drift, which for an address means going silently deaf.
+ * ⚠️ Idempotent on every other platform: a pipe name and a socket path pass
+ *    through untouched, so callers never branch on the platform.
+ * @param {string} adresse
+ */
+function kernelAddress(adresse) {
+  return adresse.startsWith('@') ? `\0${adresse.slice(1)}` : adresse;
+}
+
+module.exports = { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, EMPREINTE };

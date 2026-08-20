@@ -33,7 +33,7 @@
 'use strict';
 
 const http = require('http');
-const { endpoint } = require('../kernel-endpoint');
+const { endpoint, kernelAddress } = require('../kernel-endpoint');
 
 /**
  * @param {object} payload  the harness payload, verbatim
@@ -42,7 +42,10 @@ const { endpoint } = require('../kernel-endpoint');
  */
 function ask(payload, options, done) {
   const o = options || {};
-  const socketPath = o.socketPath || endpoint();
+  // ⚠️ Converted HERE, at the moment the kernel reads it — never earlier: on
+  //    Linux the abstract form carries a NUL byte, which cannot travel in an
+  //    argv, an env var or a log line.
+  const socketPath = kernelAddress(o.socketPath || endpoint());
   const corps = JSON.stringify(payload);
   // ⚠️ ONE settlement, whatever happens. A callback called twice would make a
   //    shell emit twice — the duplicate delivery this whole refactor removes.

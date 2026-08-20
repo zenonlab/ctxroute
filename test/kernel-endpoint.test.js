@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { endpoint, fingerprint, leavesFilesystemEntry, EMPREINTE } = require('../src/kernel-endpoint.js');
+const { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, EMPREINTE } = require('../src/kernel-endpoint.js');
 
 // 🛑 THE PREFIX IS IMPOSED BY THE KERNEL, never chosen by us: on Windows a
 //    server listening anywhere else is REFUSED (EACCES) — measured while
@@ -32,19 +32,37 @@ test('WINDOWS: a named pipe, under the namespace the kernel requires', () => {
     'Windows requires an entry under \\\\.\\pipe\\ — anywhere else the bind is refused');
 });
 
-// ⚠️ The leading \0 is what makes the socket ABSTRACT, and it is Linux-only. It
-//    buys the property that matters most here: NOTHING on disk, and the address
-//    disappears with the last reference — a killed daemon leaves no stale entry
-//    for the next one to trip over.
-test('LINUX: an ABSTRACT socket — nothing on disk, nothing to clean up', () => {
+// 🔴 THE LAW THAT WOULD HAVE CAUGHT IT, AND IT WAS PAID IN CI ON 2026-08-20.
+//    The kernel wants a leading NUL byte to make the socket ABSTRACT; an argv
+//    string may NOT contain one. Returning the NUL form made
+//    `fork(daemon, [address])` throw at once and the whole daemon suite died on
+//    Linux while staying green on Windows — no local run could have shown it.
+// ⚠️ A FIRST VERSION OF THIS CELL WAS HOLLOW: it compared the converted form to
+//    itself and passed BY COINCIDENCE on the broken code. What discriminates is
+//    below — the TRANSPORTABLE form must carry no null byte AT ALL.
+test('LINUX: the address is ARGV-SAFE, and only the kernel ever sees the NUL', () => {
   const a = endpoint({ platform: 'linux', root: '/r' });
-  assert.equal(a[0], '\0', 'without the leading NUL the socket becomes a real file, and stale entries come back');
-  assert.match(a, /^\0ctxroute-[0-9a-f]{12}$/);
+
+  assert.equal(a.indexOf(String.fromCharCode(0)), -1,
+    'the transportable address carries a NUL byte: it cannot travel in an argv, an env var or a log line');
+  assert.match(a, /^@ctxroute-[0-9a-f]{12}$/, '`@name` is the form Linux itself displays (ss, netstat)');
+
+  const noyau = kernelAddress(a);
+  assert.equal(noyau.charCodeAt(0), 0,
+    'without the leading NUL the socket stops being abstract and becomes a real file, with stale entries');
+  assert.equal(noyau.slice(1), a.slice(1), 'the conversion changes the prefix, never the name');
 });
 
-// ⚠️ macOS has NO abstract namespace. That is a property of that kernel, STATED
-//    rather than worked around — emulating it with a lock file would put back
-//    by hand exactly what this whole design removes.
+// ⚠️ IDEMPOTENT ELSEWHERE, so no caller ever branches on the platform: a pipe
+//    name and a socket path must pass through untouched.
+test('THE CONVERSION TOUCHES ONLY LINUX', () => {
+  const pipe = endpoint({ platform: 'win32', root: '/r' });
+  assert.equal(kernelAddress(pipe), pipe);
+  const sock = endpoint({ platform: 'darwin', root: '/r', stateDir: '/tmp/etat' });
+  assert.equal(kernelAddress(sock), sock);
+});
+
+
 test('macOS: a real socket file, and the difference is DECLARED', () => {
   const a = endpoint({ platform: 'darwin', root: '/r', stateDir: '/tmp/etat' });
   assert.ok(a.endsWith('.sock'));

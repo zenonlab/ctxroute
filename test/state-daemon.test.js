@@ -67,13 +67,16 @@ fs.writeFileSync(DAEMON, `
 'use strict';
 const { createServer } = require(${JSON.stringify(path.join(RACINE, 'src', 'hooks', 'http-server.js').replace(/\\/g, '/'))});
 const { createMemoryStore } = require(${JSON.stringify(path.join(RACINE, 'src', 'memory-store.js').replace(/\\/g, '/'))});
+const { kernelAddress } = require(${JSON.stringify(path.join(RACINE, 'src', 'kernel-endpoint.js').replace(/\\/g, '/'))});
 const adresse = process.argv[2];
 // A snapshot path may be given as argv[3]: with it the daemon survives its own
 // death, without it the state is purely volatile (zero disk).
 const store = createMemoryStore({ snapshotPath: process.argv[3] || null });
 store.restore();                                 // BEFORE listen — see below
 const srv = createServer({ store });
-srv.listen(adresse, () => process.send('pret'));
+// ⚠️ CONVERTED HERE, at the one moment the kernel reads it: the address
+// travelled through argv, where a NUL byte is forbidden.
+srv.listen(kernelAddress(adresse), () => process.send('pret'));
 process.on('message', (m) => { if (m === 'stop') { srv.close(); process.exit(0); } });
 `);
 
