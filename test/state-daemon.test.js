@@ -96,11 +96,24 @@ ask(payload, { socketPath: adresse, frame: Number(frame), frames: Number(frames)
   (r) => { process.send({ frame: Number(frame), texte: JSON.stringify(r || null) }); });
 `);
 
+// 🛑 A DAEMON THAT FAILS TO BIND MUST SAY SO, NOT TIME OUT. Measured on macOS
+//    CI 2026-08-20: this cell died at the 30 s wall and the log said only "it
+//    timed out" — the ONE thing that could not be acted on. The daemon already
+//    reported its error code; nobody was listening. An unobservable failure
+//    costs a full CI round trip per hypothesis, so the observation comes FIRST.
 function demarrerDaemon(adresse, snapshot) {
-  return new Promise((pret) => {
+  return new Promise((pret, echec) => {
     const args = snapshot ? [adresse, snapshot] : [adresse];
     const d = fork(DAEMON, args, { env: ENV, stdio: 'ignore' });
-    d.on('message', (m) => { if (m === 'pret') pret(d); });
+    d.on('message', (m) => {
+      if (m === 'pret') { pret(d); return; }
+      if (typeof m === 'string' && m.startsWith('erreur:')) {
+        echec(new Error(`the daemon could not take its address (${m.slice(7)}) at ${JSON.stringify(adresse)}`));
+      }
+    });
+    // The death of a child is an OS EVENT: if it dies without ever answering,
+    // that is a FACT worth reporting, never a wait to sit through.
+    d.on('exit', (code) => echec(new Error(`the daemon exited (code ${code}) without ever listening`)));
   });
 }
 
