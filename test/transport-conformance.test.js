@@ -112,36 +112,51 @@ test('CONTROL: with the lock available, a `once` document is delivered exactly o
 // ═══════════════════════════════════════════════════════════════════════
 // ② `NoWriteWithoutLock` — the model's invariant (2), on the real engine.
 // ═══════════════════════════════════════════════════════════════════════
+// ⚠️ `dumb` SINCE 2026-08-20, AND THE CHOICE IS THE POINT. This cell proves the
+//    lock-less path still DELIVERS (silence on contention would be a regression)
+//    and still WRITES NOTHING. It used a `once` document, which the fallback no
+//    longer delivers — because an unrecorded `once` comes back twice (cell ③).
+//    A `dumb` document exercises the SAME two invariants and is re-decided at
+//    every action, so no record is needed for it to stay correct.
+// 🛑 Do not switch it back to `once` to "cover more": that would assert the
+//    defect this engine has just removed.
 test('SPEC (2): the lock-less path DELIVERS and writes NOTHING', () => {
   const { run, lib } = moteur();
-  doc('once', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
+  doc('dumb', '---\nmatch: server.js\nmode: dumb\n---\nDUMB BODY\n');
   const s = 'nolock-' + sid;
   const relacher = tenirLeVerrou(lib, s);
   const texte = action(run, s);
   relacher();
-  assert.match(String(texte), /ONCE BODY/, 'never silent on contention — silence would be a regression');
+  assert.match(String(texte), /DUMB BODY/, 'never silent on contention — silence would be a regression');
   assert.deepEqual(seenFiles(), [], 'NO state write escapes the lock');
 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // ③ THE COUNTER-EXAMPLE OF `TransportKnownDefect.cfg`, ON THE REAL ENGINE.
 //
-// 🔴 THIS TEST ASSERTS A DEFECT, DELIBERATELY, AND IT IS NOT A "TODO".
-//    TLC found it on 2026-08-20 in the design AS SHIPPED, and here is the same
-//    behaviour observed on the engine: the lock-less fallback DELIVERS a fresh
-//    `once` document and RECORDS NOTHING (invariant (2) forbids it to write),
-//    so the next action's leader re-decides it as fresh and delivers it a
-//    SECOND time. The 2026-08-07 fix closed "already delivered -> re-emitted";
-//    this is the same duplicate reached by the opposite door.
+// ✅ THE DEBT IS PAID (2026-08-20). This cell WAS the witness of a defect; it is
+//    now an ordinary anti-regression assertion, exactly as its previous version
+//    instructed. History, kept because it is the reason the rule exists:
+//    TLC found, in the design AS SHIPPED, that the lock-less fallback DELIVERED a
+//    fresh `once` document and RECORDED NOTHING (invariant (2) forbids it to
+//    write), so the next action's leader re-decided it as fresh and delivered it
+//    a SECOND time. Rare, contention-only, unreproducible on demand — a flaky
+//    PROGRAM, the kind that bites once every few months.
 //
-// 🛑 DO NOT "FIX" THIS TEST. It is the WITNESS of a declared debt, and it is
-//    solidary with `specs/tla/runs.json` -> `TransportKnownDefect`. The day the
-//    engine stops duplicating, BOTH flip together and BOTH must be updated in
-//    the same move: the invariant moves into `Transport.cfg`, this cell becomes
-//    an ordinary anti-regression assertion. A witness that survives its defect
-//    is a lie; a defect without a witness comes back.
+// ✅ THE FIX, proved sufficient by `TransportCandidateFix.cfg` BEFORE being
+//    written: the lock-less path delivers only what stays correct WITHOUT a
+//    record (`gate.injectLockless`). A `once` is therefore DELAYED by one
+//    action, never duplicated and never lost — the fallback writes nothing, so
+//    the document stays unseen and the leader delivers it next.
+// 🛑 THE PRICE IS DECLARED, NOT HIDDEN: the 2026-08-07 rule said "under
+//    contention, never keep silent". For a `once` we now do stay silent, for one
+//    action. The trade was FORCED — the fallback may not write, so the only
+//    alternatives were "delivered twice, at random" or "delivered later, always".
+//    Determinism wins: a duplicate is a flaky bug, a delay is a known behaviour.
+// 🛑 NEVER go back to delivering `once` here, and NEVER "fix" it by letting the
+//    fallback write: that breaks `NoWriteWithoutLock`, the reason the lock exists.
 // ═══════════════════════════════════════════════════════════════════════
-test('SPEC — KNOWN DEFECT: a `once` delivered by the lock-less path is delivered AGAIN next action', () => {
+test('SPEC: a `once` is delivered EXACTLY ONCE even when the lock is unavailable', () => {
   const { run, lib } = moteur();
   doc('once', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
   const s = 'dup-' + sid;
@@ -153,14 +168,12 @@ test('SPEC — KNOWN DEFECT: a `once` delivered by the lock-less path is deliver
   const a2 = action(run, s); // lock free -> leader, state still empty
   const a3 = action(run, s);
 
-  assert.match(String(a1), /ONCE BODY/, 'action 1: delivered by the lock-less path');
-  assert.match(
-    String(a2),
-    /ONCE BODY/,
-    'action 2: DELIVERED A SECOND TIME — this is the debt. If this line fails, the engine was ' +
-      'fixed: move AtMostOnceDelivery into specs/tla/Transport.cfg and rewrite this cell.'
-  );
-  assert.equal(a3, null, 'action 3: silent — the leader did record it, so the duplication is bounded to ONE extra delivery');
+  assert.equal(a1, null,
+    'action 1: the lock-less path must NOT deliver a `once` — it cannot record it, and an '
+    + 'unrecorded delivery is re-decided as fresh next action (the duplicate).');
+  assert.match(String(a2), /ONCE BODY/,
+    'action 2: DELIVERED, and recorded — nothing is lost, it was only delayed by one action.');
+  assert.equal(a3, null, 'action 3: silent — recorded, so never again.');
 });
 
 // ═══════════════════════════════════════════════════════════════════════

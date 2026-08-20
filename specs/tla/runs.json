@@ -19,7 +19,7 @@
     "ATOMIC_WRITE": "TRUE",
     "FALLBACK_WRITES": "FALSE",
     "SLOW_LEADER": "FALSE",
-    "FALLBACK_DELIVERS_ONCE": "TRUE"
+    "FALLBACK_DELIVERS_ONCE": "FALSE"
   },
   "shippedInvariants": [
     "TypeOK",
@@ -31,16 +31,16 @@
   "runs": [
     {
       "cfg": "Transport",
-      "why": "DESIGN AS SHIPPED. No loss, no write outside the lock, no re-delivery of a consumed doc, one split per invocation, and a consumed `once` always ends up delivered.",
+      "why": "DESIGN AS SHIPPED. No loss, no write outside the lock, no re-delivery of a consumed doc, one split per invocation, and a consumed `once` always ends up delivered. SINCE 2026-08-20 it also carries AtMostOnceDelivery: the lock-less path stopped delivering `once` documents it cannot record, so the duplicate found by TLC is gone from the SHIPPED design and the invariant moved here — exactly where the witness cell said it should go.",
       "constants": {},
-      "invariants": ["#shipped"],
+      "invariants": ["#shipped", "AtMostOnceDelivery"],
       "properties": ["OnceProgress"],
       "expect": { "green": true }
     },
     {
       "cfg": "TransportKnownDefect",
-      "why": "THE FINDING (2026-08-20). Shipped settings, plus AtMostOnceDelivery. The lock-less fallback DELIVERS a fresh `once` document and RECORDS NOTHING, so the next action's leader re-decides it as fresh and delivers it a SECOND time. Declared debt, machine-checked. Going GREEN here is also a gate failure: it means the engine was fixed and this invariant belongs in Transport.cfg.",
-      "constants": {},
+      "why": "LEGACY NEGATIVE-CHECK since 2026-08-20 — it no longer models the shipped engine, it models the design we LEFT, and it must stay RED for ever. It re-enables the old behaviour explicitly (FALLBACK_DELIVERS_ONCE) and shows the duplicate coming back: the lock-less fallback delivers a fresh `once` and records nothing, so the next leader re-decides it as fresh and delivers it a SECOND time. 🛑 Its value is anti-vacuity: if this run ever goes GREEN, AtMostOnceDelivery has stopped discriminating and the proof in Transport.cfg is hollow. NEVER delete it and NEVER make it green.",
+      "constants": { "FALLBACK_DELIVERS_ONCE": "TRUE" },
       "invariants": ["#shipped", "AtMostOnceDelivery"],
       "expect": { "violated": "AtMostOnceDelivery" }
     },
@@ -54,8 +54,8 @@
     },
     {
       "cfg": "TransportLocklessEmpty",
-      "why": "SABOTAGE 1 — the 2026-08-07 production bug verbatim: the lock-less fallback decides with an EMPTY state instead of reading it.",
-      "constants": { "LOCKLESS_EMPTY_STATE": "TRUE" },
+      "why": "SABOTAGE 1 — the 2026-08-07 production bug verbatim: the lock-less fallback decides with an EMPTY state instead of reading it. ⚠️ IT ALSO RE-ENABLES `FALLBACK_DELIVERS_ONCE` SINCE 2026-08-20, AND THE REASON MATTERS: once the fallback stopped delivering `once` documents at all, this sabotage went GREEN — not because reading the state stopped mattering, but because a SECOND barrier now hides it. A negative-check that passes for a reason other than the one it tests has stopped testing anything. Re-enabling the old delivery restores exactly one barrier, so this run keeps measuring what it was written to measure: that the state is READ, never guessed. 🛑 Do not drop this constant to 'simplify' — the run would go green and prove nothing.",
+      "constants": { "LOCKLESS_EMPTY_STATE": "TRUE", "FALLBACK_DELIVERS_ONCE": "TRUE" },
       "invariants": ["#shipped"],
       "expect": { "violated": "NeverRedeliverConsumed" }
     },

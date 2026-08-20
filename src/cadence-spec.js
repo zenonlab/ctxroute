@@ -261,7 +261,37 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   const changed = Object.keys({ ...prev, ...next }).some((doc) => bouge(prev[doc], next[doc]));
 
   const decision = inject.length === 0 ? 'none' : (blocked.length > 0 ? 'deny' : 'allow');
-  return { decision, inject, state: next, changed, filteredOut };
+
+  // ── WHAT A CALLER WITHOUT THE LOCK MAY DELIVER (2026-08-20) ──
+  // WRITTEN FROM THE INTENTION, as this whole model is — never copied from `gate.js`.
+  // THE INTENTION: a caller that cannot WRITE must not deliver anything whose
+  // correctness depends on being recorded. A `once` delivered and not recorded is
+  // re-decided as fresh at the next gesture and delivered AGAIN. `dumb` and `smart`
+  // do not need the record to stay correct within this rule: re-delivery is `dumb`'s
+  // contract, and `smart` measures drift, not first sight.
+  // ⇒ the lock-less subset is "everything except `once`", and NOTHING IS LOST:
+  //   no record is written, so the next gesture delivers it under the lock.
+  const injectSansVerrou = inject.filter((doc) => reg('mode', doc) !== 'once');
+
+  // AND THE DECISION FOLLOWS WHAT IS DELIVERED. Refusing a gesture while withholding
+  // the document that explains the refusal is a mute wall — the worst of both worlds.
+  // A degraded path fails OPEN. It only refuses when every blocking document is
+  // actually in the caller's hands.
+  const decisionSansVerrou = injectSansVerrou.length === 0
+    ? 'none'
+    : (blocked.length > 0 && blocked.every((doc) => injectSansVerrou.includes(doc)))
+      ? 'deny'
+      : 'allow';
+
+  return {
+    decision,
+    inject,
+    injectLockless: injectSansVerrou,
+    decisionLockless: decisionSansVerrou,
+    state: next,
+    changed,
+    filteredOut,
+  };
 }
 
 module.exports = {

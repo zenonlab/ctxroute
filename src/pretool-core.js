@@ -297,8 +297,20 @@ function run(data, emit, options) {
       //    We read, we decide, we write NOTHING. Detail: `gate.md`.
       const etatConnu = store.loadState(STORE_PREFIX, sessionId);
       const r = gate.decide(config, decls, matched, etatConnu, turnCount, acc.owner, toolName);
-      const segments = segmentsPour(r.inject);
-      res = { segments, decision: r.decision, frames: split(segments), filteredOut: r.filteredOut };
+      // 🔴 `injectLockless`, NOT `inject` — fix of 2026-08-20, proved sufficient by the TLA+
+      //    spec (`TransportCandidateFix.cfg`) BEFORE being written here.
+      //    Without the lock we may DELIVER but never WRITE. A `once` document delivered and
+      //    not recorded is re-decided as fresh by the NEXT action's leader and delivered a
+      //    SECOND time — a defect that only appears under contention, hence rare, hence
+      //    unreproducible on demand. Exactly the bug that bites once every few months.
+      // 🛑 The cure is NOT to let this path write: that would break `NoWriteWithoutLock`,
+      //    the reason the lock exists. We deliver only what stays correct with no record.
+      // ⚠️ NOTHING IS LOST, it is DELAYED by one action: we write nothing, so the document
+      //    stays unseen and the next action delivers it under the lock.
+      // 🛑 The subset and its decision are RESOLVED BY THE GATE. Never re-derive them here —
+      //    a cadence rule read in two places diverges (paid twice: ㊱, ㊳).
+      const segments = segmentsPour(r.injectLockless);
+      res = { segments, decision: r.decisionLockless, frames: split(segments), filteredOut: r.filteredOut };
     }
 
     // ⚠️ `segments`, NOT `r.inject`: the queue may carry content while

@@ -236,7 +236,10 @@ function enforceForDoc(config, decl, source) {
  * @param {string} [toolName] - the TARGET of the gesture (global filter 52). ABSENT =
  *                           no filter by tool name can bite —
  *                           behaviour identical to BEFORE (parity).
- * @returns {{ decision: 'none'|'allow'|'deny', inject: string[], state: object, changed: boolean, filteredOut: string[] }}
+ * ⚠️ `injectLockless`/`decisionLockless` = what a caller that CANNOT WRITE may deliver
+ *    (2026-08-20). A JSDoc here is a VERIFIED CONTRACT — `tsc` refused the two new fields
+ *    until this line declared them, and it was right to.
+ * @returns {{ decision: 'none'|'allow'|'deny', inject: string[], injectLockless: string[], decisionLockless: 'none'|'allow'|'deny', state: object, changed: boolean, filteredOut: string[] }}
  *
  * ⚠️ `changed` = the state REALLY moved — a 100% dumb corpus NEVER
  *    produces a write (perf parity with protect-files, which has no state).
@@ -339,7 +342,39 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
       ? 'deny'
       : 'allow';
 
-  return { decision, inject, state: next, changed, filteredOut };
+  // 🔴 WHAT THE LOCK-LESS PATH IS ALLOWED TO DELIVER — the fix the TLA+ spec proved
+  //    sufficient (`TransportCandidateFix.cfg`), applied 2026-08-20.
+  //    THE DEFECT: without the lock a caller may DELIVER but must NOT WRITE. A `once`
+  //    document delivered and never recorded is re-decided as fresh by the NEXT action's
+  //    leader, and delivered a SECOND time. It only happens under contention, so it
+  //    surfaces rarely and unpredictably — a flaky PROGRAM, the kind that bites once
+  //    every few months and that nobody can reproduce on demand.
+  // 🛑 THE CURE IS NOT "let the fallback write": that would break `NoWriteWithoutLock`,
+  //    which is the entire reason the lock exists. The cure is to deliver only what stays
+  //    correct WITHOUT a record.
+  // ⚠️ `once` AND ONLY `once`, deliberately — the model proved THIS subset sufficient, and
+  //    a broader filter would change more behaviour than the proof covers. `dumb` is
+  //    re-decided at every action, so re-delivery is its CONTRACT, not a defect.
+  // ⚠️ NOTHING IS LOST, it is DELAYED: the fallback writes nothing, so the document stays
+  //    unseen and the next action delivers it under the lock. That is what keeps liveness,
+  //    and the spec checks it (`NeverConsumedWithoutDelivery`).
+  // 🛑 The cadence lives HERE and nowhere else: `pretool-core` must never re-derive this
+  //    subset — a second resolution of the same rule diverges (paid twice: ㊱, ㊳).
+  const injectLockless = inject.filter((doc) => modeForDoc(config, decls[doc], src(doc)) !== 'once');
+
+  // ⚠️ THE DECISION MUST FOLLOW WHAT IS ACTUALLY DELIVERED — otherwise the lock-less path
+  //    could REFUSE an action while withholding the very document that explains the refusal.
+  //    The gate's own rule, three lines below: blocking without delivering the knowledge is
+  //    "a mute wall — the worst of both worlds". A degraded path fails OPEN, never closed.
+  // 🛑 Computed HERE, next to `decision`, and never re-derived by a caller: two readings of
+  //    one cadence rule diverge, and this repo has paid that twice.
+  const decisionLockless = injectLockless.length === 0
+    ? 'none'
+    : (blocked.length > 0 && blocked.every((doc) => injectLockless.includes(doc)))
+      ? 'deny'
+      : 'allow';
+
+  return { decision, inject, injectLockless, decisionLockless, state: next, changed, filteredOut };
 }
 
 // Short label of an injected doc (user-only systemMessage) — EXACT REPLICA of

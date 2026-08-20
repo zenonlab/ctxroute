@@ -660,8 +660,20 @@ test('FALLBACK WITHOUT A LOCK: a `once` already delivered is NOT re-injected whe
 // COUNTER-CHECK — without it, the test above would also pass if the fallback
 // became SILENT by accident (e.g. a premature `return`), which would be a breakdown
 // and not a fix. A doc NEVER seen must always be delivered without a lock.
+// ⚠️ `dumb` SINCE 2026-08-20, AND IT IS A DECISION, NOT A CONVENIENCE. This cell
+//    exists so that a fallback going SILENT by accident is caught. It used a
+//    `once` document — which the fallback deliberately no longer delivers, because
+//    it cannot RECORD it, and an unrecorded `once` is re-decided as fresh and
+//    delivered a SECOND time (found by TLC, reproduced on the engine).
+// 🛑 THE PRICE IS WRITTEN, NOT HIDDEN: for a `once`, contention now means "one
+//    action later", where it used to mean "twice, at random". The trade was
+//    FORCED — the fallback may not write, so there were only two branches, and a
+//    delay is deterministic while a duplicate is not.
+//    Nothing is lost: no record is written, so the leader delivers it next action.
+// 🛑 Do NOT restore `once` here to "cover more" — that would re-assert the defect.
+//    The `once` path has its own cell in `transport-conformance.test.js`.
 test('FALLBACK WITHOUT A LOCK: a doc NEVER seen is still delivered (fail-open intact)', async () => {
-  writeDoc('neuve.md', '---\nmatch: server.js\nmode: once\n---\n# New\ninedit\n');
+  writeDoc('neuve.md', '---\nmatch: server.js\nmode: dumb\n---\n# New\ninedit\n');
   const lockDir = path.join(STATE, '.lock-doc-lockfb2');
   fs.mkdirSync(lockDir, { recursive: true });
   try {
