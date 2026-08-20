@@ -20,9 +20,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+// 🛑 STATIC, DIRECT IMPORT OF THE MUTATED MODULE. Stryker's `perTest` coverage
+//    maps a mutant to the tests that covered it, and a dynamic `require` breaks
+//    that mapping: MEASURED 2026-08-20, `memory-store-pure.js` scored **0.00 %,
+//    45 survivors out of 45** — the decisions were covered THROUGH the I/O shell,
+//    so Stryker saw no test at all. The rule was already written; it was broken
+//    here. Reaching the pure module directly is what makes the score real.
+import { key, evict, touch, adopt, purge, MAX_SCOPES } from '../src/memory-store-pure.js';
 
 const require = createRequire(import.meta.url);
-const { createMemoryStore, MAX_SCOPES } = require('../src/memory-store.js');
+// ⚠️ The I/O shell is loaded dynamically (it reads env-driven paths at require
+//    time) and is NOT mutated — that is fine.
+const { createMemoryStore } = require('../src/memory-store.js');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-mem-'));
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -173,4 +182,55 @@ test('NO PATH = no disk at all', () => {
   s.saveState('doc-seen-', 'sess', { a: 1 });
   assert.deepEqual(s.loadState('doc-seen-', 'sess'), { a: 1 });
   assert.equal(s.restore(), 0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE DECISIONS, REACHED DIRECTLY — this is what Stryker actually measures.
+// ⚠️ Going through the I/O shell covers the same lines but maps to NO mutant.
+// ═══════════════════════════════════════════════════════════════════════
+
+test('KEY: the prefix is part of the identity, never a suffix nobody reads', () => {
+  assert.equal(key('doc-seen-', 'sess'), 'doc-seen-sess');
+  assert.notEqual(key('doc-seen-', 'a'), key('plan-', 'a'), 'two stores of one session must not collide');
+});
+
+test('EVICT: drops the OLDEST first, and only above the ceiling', () => {
+  const m = new Map([['a', 1], ['b', 2], ['c', 3]]);
+  assert.equal(evict(m, 3), 0, 'at the ceiling nothing is dropped');
+  assert.equal(evict(m, 2), 1, 'one over the ceiling drops exactly one');
+  assert.deepEqual([...m.keys()], ['b', 'c'], 'the COLDEST goes — insertion order is the LRU');
+  assert.equal(evict(m, 0), 2, 'a ceiling of zero empties it');
+});
+
+test('TOUCH: reading is a USE, and an absent key stays absent', () => {
+  const m = new Map([['a', { v: 1 }], ['b', { v: 2 }]]);
+  assert.deepEqual(touch(m, 'a'), { v: 1 });
+  assert.deepEqual([...m.keys()], ['b', 'a'], 'the read entry moves to the young end');
+  assert.equal(touch(m, 'absent'), undefined, 'an absent key must not be created by reading it');
+  assert.equal(m.has('absent'), false);
+});
+
+test('ADOPT: only well-formed pairs enter, and the ceiling applies', () => {
+  const m = new Map();
+  assert.equal(adopt('pas un tableau', m, 10), 0);
+  assert.equal(adopt({ x: 1 }, m, 10), 0, 'valid JSON of the wrong SHAPE is refused — parsing is not the guardrail');
+  assert.equal(adopt([['a', { v: 1 }], ['seule'], [42, {}], ['nul', null], ['tab', []]], m, 10), 1,
+    'a malformed pair, a non-string key, a null and an ARRAY value are all dropped');
+  assert.deepEqual([...m.keys()], ['a']);
+
+  const grand = new Map();
+  assert.equal(adopt([['a', {}], ['b', {}], ['c', {}]], grand, 2), 2, 'the ceiling applies to a restore too');
+  assert.deepEqual([...grand.keys()], ['b', 'c']);
+});
+
+test('PURGE: by PREFIX, and it counts what it really removed', () => {
+  const m = new Map([['doc-seen-a', {}], ['doc-seen-ab', {}], ['plan-a', {}], ['doc-seen-b', {}]]);
+  assert.equal(purge(m, 'doc-seen-a'), 2, 'the prefix matches `a` and `ab` — and says so');
+  assert.deepEqual([...m.keys()], ['plan-a', 'doc-seen-b']);
+  assert.equal(purge(m, 'rien-de-tel'), 0, 'a prefix matching nothing removes nothing and reports zero');
+});
+
+test('THE CEILING IS A REAL NUMBER, not an idea', () => {
+  assert.equal(typeof MAX_SCOPES, 'number');
+  assert.ok(MAX_SCOPES > 0, 'a ceiling of zero would evict everything on every write');
 });

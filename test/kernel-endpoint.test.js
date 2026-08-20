@@ -18,10 +18,13 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, EMPREINTE } = require('../src/kernel-endpoint.js');
+// 🛑 STATIC, DIRECT IMPORT OF THE MUTATED MODULE — never `createRequire`, never a
+//    re-export. Stryker's `perTest` coverage maps a mutant to the tests that
+//    covered it; a dynamic `require` breaks that mapping and EVERY mutant is
+//    reported as surviving. MEASURED 2026-08-20: this file scored **0.00 %,
+//    51 survivors out of 51** — not one missing test, the whole suite invisible.
+//    The rule was already written in `quality-configs.md`; it was broken here.
+import { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, EMPREINTE } from '../src/kernel-endpoint.js';
 
 // 🛑 THE PREFIX IS IMPOSED BY THE KERNEL, never chosen by us: on Windows a
 //    server listening anywhere else is REFUSED (EACCES) — measured while
