@@ -56,10 +56,19 @@ function occupied(adresse, done) {
  * @param {string} adresse transportable form (`@name` on Linux)
  * @param {() => void} onListening
  * @param {(err: Error) => void} onError
- * @param {{platform?: string}} [options]
+ * @param {{platform?: string, probe?: Function, unlink?: Function}} [options]
  */
 function bind(server, adresse, onListening, onError, options) {
-  const plateforme = (options && options.platform) || process.platform;
+  const o = options || {};
+  const plateforme = o.platform || process.platform;
+  // ⚠️ THE PROBE AND THE UNLINK ARE INJECTABLE, and that is not a testing
+  //    convenience: this decision is only ever TAKEN on macOS (the one kernel of
+  //    the three that leaves an entry behind), so without injection it could be
+  //    broken and **neither Windows nor Linux would notice** — the defect would
+  //    ship and surface on someone else's machine. Injecting them makes the
+  //    DECISION testable on all three, deterministically, with no race.
+  const sonder = o.probe || occupied;
+  const effacer = o.unlink || ((c) => fs.unlinkSync(c));
   const chemin = kernelAddress(adresse);
 
   const essayer = () => {
@@ -67,9 +76,9 @@ function bind(server, adresse, onListening, onError, options) {
       // ⚠️ ONLY `EADDRINUSE` is worth a second look. Any other failure is a real
       //    problem and is reported as-is: retrying it would hide it.
       if (err && /** @type {any} */ (err).code === 'EADDRINUSE' && leavesFilesystemEntry(plateforme)) {
-        occupied(chemin, (vivant) => {
+        sonder(chemin, (vivant) => {
           if (vivant) { onError(err); return; }   // someone IS there: the address is legitimately taken
-          try { fs.unlinkSync(chemin); } catch { /* already gone: another instance won the race */ }
+          try { effacer(chemin); } catch { /* already gone: another instance won the race */ }
           server.once('error', onError);
           server.listen(chemin, onListening);
         });
