@@ -211,7 +211,66 @@ function createServer(deps = {}) {
   });
 }
 
-module.exports = { createServer, handle, frameFromUrl, HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES };
+// ⚠️ EXIT CODE OF A STALE-CODE RESTART — non-zero ON PURPOSE, and the reason is
+//    portability, not style. A supervisor only restarts on a FAILURE by default
+//    (`Restart=on-failure`, launchd `KeepAlive`, Task Scheduler
+//    `RestartOnFailure`); an exit 0 reads as "the job is done" and Windows would
+//    simply never bring it back. Refusing to serve stale code IS an abnormal
+//    termination, so we say so in the only vocabulary all three OSes share.
+const EXIT_STALE_CODE = 75;
+
+/**
+ * 🛑 THE DEFECT A DAEMON HAS AND A SPAWNED HOOK CANNOT HAVE — read this before
+ *    touching anything here. The `command` lane re-reads the code on EVERY call,
+ *    so it is ALWAYS fresh. A long-lived process holds its modules in memory:
+ *    after a `git pull`, an edited doc engine or a fixed gate keeps serving the
+ *    OLD logic, while looking perfectly healthy. That is precisely the failure
+ *    this project fears most — not a crash, a GREEN THAT LIES.
+ *
+ * ✅ ZERO INFERENCE, and no polling: the kernel already knows when a file
+ *    changes (inotify · ReadDirectoryChangesW · FSEvents) and `fs.watch` is the
+ *    interface to it. We do not compare timestamps, we do not hash, we do not
+ *    ask "is my code still current?" — we are TOLD. On the first event we exit
+ *    and the OS starts a fresh process. Nothing is killed, nothing is guessed.
+ *
+ * ⚠️ THE WATCHED SET IS DERIVED, NEVER A LIST. `require.cache` holds exactly the
+ *    modules this process actually loaded — a file added tomorrow is watched by
+ *    itself, and a hand-written glob would rot. `node_modules` is excluded: a
+ *    dependency cannot change without an install, which is a deliberate act that
+ *    restarts the service anyway.
+ *
+ * ⚠️ WE WATCH DIRECTORIES, NOT FILES, AND THAT IS LOAD-BEARING. Git does not
+ *    write files in place: it writes a temporary file and RENAMES it over the
+ *    target. A watch on the file follows the old inode into the void and goes
+ *    silently deaf — the worst possible outcome, since a deaf watcher is
+ *    indistinguishable from a quiet one. A directory watch sees the rename.
+ *
+ * @param {(dir: string, cb: () => void) => {close: () => void}} watch injected in tests
+ * @param {Record<string, unknown>} cache module cache to derive the set from
+ * @param {() => void} onChange what to do when the code moved
+ * @returns {{close: () => void}[]} the live watchers
+ */
+function watchOwnCode(watch, cache, onChange) {
+  const dirs = new Set();
+  for (const file of Object.keys(cache)) {
+    if (file.includes('node_modules')) continue;
+    const cut = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
+    if (cut > 0) dirs.add(file.slice(0, cut));
+  }
+  const watchers = [];
+  for (const dir of dirs) {
+    // ⚠️ FAIL-OPEN, per directory: a platform that refuses one watch must not
+    //    cost us the others. Losing this guard degrades us to the stale-code
+    //    risk — bad — but crashing the daemon would be worse.
+    try { watchers.push(watch(dir, onChange)); } catch { /* one blind directory, not a dead daemon */ }
+  }
+  return watchers;
+}
+
+module.exports = {
+  createServer, handle, frameFromUrl, watchOwnCode,
+  HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE,
+};
 
 // ⚠️ The service's LIFECYCLE belongs to the OS — a systemd user unit, a Windows
 //    Service, a launchd job. This block is the entry point those units call; it
@@ -223,4 +282,13 @@ module.exports = { createServer, handle, frameFromUrl, HOST, DEFAULT_PORT, NO_OU
 if (require.main === module) {
   const port = Number(process.env.CTXROUTE_HTTP_PORT) || DEFAULT_PORT;
   createServer().listen(port, HOST);
+  // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
+  //    itself pulled in. Watching before would miss the modules loaded lazily
+  //    on the first require — the exact half most likely to be edited.
+  const fs = require('fs');
+  watchOwnCode(
+    (dir, cb) => fs.watch(dir, { persistent: false }, cb),
+    require.cache,
+    () => process.exit(EXIT_STALE_CODE)
+  );
 }
