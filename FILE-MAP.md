@@ -82,6 +82,8 @@
 - `test/budget.property.test.js` — property-based (fast-check): CONSERVATION, bound, priority, determinism, seal, announcement + meta-test ⑦ COVERAGE (proves the generator reaches the mixed zone — two sabotages passed GREEN there before it).
 - `src/hooks/codex-doc-inject.js` — CODEX PreToolUse shell (19/07/2026): pretool-core + Codex emit (WITHOUT permissionDecision outside deny).
 - `test/codex-doc-inject.test.js` — spawn suite of the Codex shell (dialect only: degradation, key without agent_id, fail-open).
+- `src/hooks/http-server.js` — HTTP shell (20/08/2026, ⛔ NOT WIRED ON PURPOSE): serves the SAME PreToolUse gate over a loopback socket, so a frame costs a local POST instead of a ~330 ms node startup. Frame coordinates travel in the URL, the response JSON comes from `doc-inject.output()` (never a twin). Claude Code only — Codex has no `http` handler.
+- `test/http-lane-differential.test.js` — DIFFERENTIAL spawn lane ↔ HTTP lane: same payload, same frame, identical bytes (oracle = `doc-inject.js` REALLY spawned). Covers the multi-frame split, silence, `enforce`, fail-open, and carries its own SEEN-RED case (a shifted frame must be detected).
 - `src/corpus.js` — shared I/O: recursive read of the fleet's .md files (ids identical to the docs' ids).
 - `src/session-store.js` — shared per-session state I/O (distinct prefixes: `ctxroute-seen-` servers / `doc-seen-` docs). Extracted via the jscpd gate. ATOMIC write (tmp + rename, bounded retry on Windows EPERM).
 - `test/session-store.test.js` — state-write atomicity: 2 real processes (writer/reader), zero hollow reads, zero lost writes, zero abandoned `.tmp`.
