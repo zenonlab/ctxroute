@@ -221,3 +221,64 @@ test('SPEC (7): a `dumb` corpus above capacity ROTATES for ever, and a `once` st
       'permanent rotation. 0 = starvation (the model forbids it); 2+ = the rotation re-delivers it.'
   );
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑤ THE THIRD DEFECT OF THE SAME FAMILY — A REFUSAL THAT CANNOT REMEMBER
+//    ITSELF (2026-08-20). Found while killing the last mutation survivor of
+//    `gate.js`: `blocked.every(...)` survived as `blocked.some(...)`, i.e. the
+//    engine had a branch whose semantics NO test could tell apart. Asking
+//    "which of the two is right?" turned out to be the wrong question.
+//
+// 🔑 THE ANTI-LOOP IS AN ANCHOR IN THE STATE, AND THE FALLBACK WRITES NOTHING.
+//    "A block is NEVER followed by a block" — the guarantee that makes `enforce`
+//    usable at all — is carried by the `denied` flag written by `gate.decide`
+//    into the session state. The lock-less path may not write (invariant (2),
+//    `NoWriteWithoutLock`), so a `deny` it emits leaves NO trace: the redone
+//    action is re-decided from the same state and refused AGAIN. While the
+//    contention lasts, the agent is walled in with no way out — exactly the
+//    infinite block the alternation exists to forbid.
+// 🛑 SO THE DEGRADED PATH NEVER REFUSES. Not "refuses less often": never. The
+//    document is still DELIVERED (informative), and the refusal lands on the
+//    next action, under the lock, WITH its memory. That is what "a degraded
+//    path fails OPEN" means when taken to its end — the comment claimed it, the
+//    code stopped one step short.
+// ⇒ The `every` survivor is gone BY CONSTRUCTION rather than by a test written
+//    for it: the branch it lived in should not exist. Doctrine, verbatim:
+//    "a survivor gets KILLED or ELIMINATED, never a lowered threshold" —
+//    and writing a test for useless code freezes it for ever.
+// ⚠️ ANTI-VACUITY: the control below proves the SAME document really does refuse
+//    when the lock is available. Without it, "never refuses" would also pass on
+//    an engine where `enforce` had simply stopped working.
+// ═══════════════════════════════════════════════════════════════════════
+function actionDecision(run, session) {
+  let d = null;
+  run(
+    { tool_name: 'Read', tool_input: { file_path: 'C:/p/server.js' }, session_id: session },
+    (decision) => { d = decision; },
+    {}
+  );
+  return d;
+}
+
+test('SPEC (2bis): the lock-less path NEVER refuses — a refusal it cannot record would repeat for ever', () => {
+  const { run, lib } = moteur();
+  doc('stop', '---\nmatch: server.js\nmode: dumb\nenforce: true\n---\nSTOP BODY\n');
+  const s = 'noloop-' + sid;
+
+  // CONTROL — with the lock, this very document DOES refuse, and the alternation
+  // then lets the redone action through. Anti-vacuity for the assertion below.
+  assert.equal(actionDecision(run, s), 'deny', 'control: with the lock, an `enforce` doc refuses');
+  assert.equal(actionDecision(run, s), 'allow', 'control: alternation — a block is never followed by a block');
+
+  // THE PROPERTY — under contention, twice in a row, never a refusal.
+  const s2 = 'noloop2-' + sid;
+  const relacher = tenirLeVerrou(lib, s2);
+  const d1 = actionDecision(run, s2);
+  const d2 = actionDecision(run, s2);
+  relacher();
+
+  assert.notEqual(d1, 'deny',
+    'the lock-less path refused, and it wrote no `denied` flag: the redone action is re-decided '
+    + 'from the same state and refused again — the infinite block the alternation forbids.');
+  assert.notEqual(d2, 'deny', 'and the second one proves the repetition, not a one-off');
+});

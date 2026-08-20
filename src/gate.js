@@ -362,17 +362,27 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    subset — a second resolution of the same rule diverges (paid twice: ㊱, ㊳).
   const injectLockless = inject.filter((doc) => modeForDoc(config, decls[doc], src(doc)) !== 'once');
 
-  // ⚠️ THE DECISION MUST FOLLOW WHAT IS ACTUALLY DELIVERED — otherwise the lock-less path
-  //    could REFUSE an action while withholding the very document that explains the refusal.
-  //    The gate's own rule, three lines below: blocking without delivering the knowledge is
-  //    "a mute wall — the worst of both worlds". A degraded path fails OPEN, never closed.
+  // 🛑 THE LOCK-LESS PATH NEVER REFUSES — not "refuses less often": NEVER (2026-08-20).
+  //    THE REASON IS THE ANTI-LOOP, AND IT IS AN ANCHOR IN THE STATE. "A block is never
+  //    followed by a block" — the guarantee that makes `enforce` usable at all — is carried
+  //    by the `denied` flag written a few lines above INTO THE STATE. This path may not
+  //    write (that is the whole reason the lock exists), so a `deny` emitted here leaves NO
+  //    trace: the redone action is re-decided from the same state and refused AGAIN. While
+  //    the contention lasts the agent is walled in with no way out — precisely the infinite
+  //    block the alternation was built to forbid.
+  // ⚠️ NOTHING IS WEAKENED: the document is still DELIVERED (informative), and the refusal
+  //    lands on the NEXT action, under the lock, WITH its memory. The gate is fail-OPEN by
+  //    contract — a dead hook lets everything through, and a degraded path must behave like
+  //    one rather than like a wall that cannot count to two.
+  // 🛑 THIS ALSO REMOVED A BRANCH WHOSE SEMANTICS NO TEST COULD TELL APART: `blocked.every`
+  //    survived mutation as `blocked.some` (99.52 %, 1/210) because the two differ only when
+  //    two `enforce` docs of different modes bite on one action. The right move was not to
+  //    write a test for it — a survivor is KILLED or ELIMINATED, and testing useless code
+  //    freezes it for ever. Proof it is gone for the right reason: cell ⑤ of
+  //    `transport-conformance.test.js`, seen RED on the previous engine.
   // 🛑 Computed HERE, next to `decision`, and never re-derived by a caller: two readings of
   //    one cadence rule diverge, and this repo has paid that twice.
-  const decisionLockless = injectLockless.length === 0
-    ? 'none'
-    : (blocked.length > 0 && blocked.every((doc) => injectLockless.includes(doc)))
-      ? 'deny'
-      : 'allow';
+  const decisionLockless = injectLockless.length === 0 ? 'none' : 'allow';
 
   return { decision, inject, injectLockless, decisionLockless, state: next, changed, filteredOut };
 }

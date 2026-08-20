@@ -273,15 +273,15 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //   no record is written, so the next gesture delivers it under the lock.
   const injectSansVerrou = inject.filter((doc) => reg('mode', doc) !== 'once');
 
-  // AND THE DECISION FOLLOWS WHAT IS DELIVERED. Refusing a gesture while withholding
-  // the document that explains the refusal is a mute wall — the worst of both worlds.
-  // A degraded path fails OPEN. It only refuses when every blocking document is
-  // actually in the caller's hands.
-  const decisionSansVerrou = injectSansVerrou.length === 0
-    ? 'none'
-    : (blocked.length > 0 && blocked.every((doc) => injectSansVerrou.includes(doc)))
-      ? 'deny'
-      : 'allow';
+  // AND SUCH A CALLER NEVER REFUSES (2026-08-20). Reasoned from the INTENTION, as this
+  // whole model is: a refusal is only bearable because it is FOLLOWED by a pass — that is
+  // the alternation, and the alternation is remembered in the state. A caller that cannot
+  // write cannot remember, so its refusal has no successor: the same gesture, redone,
+  // meets the same state and is refused again, and again, for as long as it cannot write.
+  // A rule whose termination depends on being recorded may not be applied by whoever
+  // cannot record. The knowledge is still handed over; only the refusal waits for a
+  // caller that can remember having refused.
+  const decisionSansVerrou = injectSansVerrou.length === 0 ? 'none' : 'allow';
 
   return {
     decision,

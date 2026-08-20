@@ -19,7 +19,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import net from 'node:net';
+import { execFile, fork } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require_ = createRequire(import.meta.url);
@@ -300,3 +301,187 @@ test('SEEN RED: the same criterion rejects a server that retains one object per 
     `the criterion FAILED TO SEE a deliberate leak (batches: ${out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ')}) — `
     + 'it is therefore proving nothing about the real daemon');
 }, 240000);
+
+// ── ⑤ EXACT COUNTS — the accumulations a slope can only SUSPECT ──────────
+//
+// 🛑 A SLOPE IS AN INFERENCE, AND AN INFERENCE CAN BE JOSTLED. Part ③ compares
+//    retained BYTES, a quantity nobody controls: the collector decides when it
+//    runs, the allocator decides how it packs, and a neighbour process decides
+//    how much CPU we get. It answers "does it look like it converges?" — a
+//    reading, not a fact. It stays (it is the only net for the leaks nothing
+//    counts), but it may not be the ONLY net: a suite that can be jostled is a
+//    suite people stop reading, and the day it is right nobody believes it.
+// ✅ WHAT THIS CELL ADDS ARE INTEGERS. The three things that actually pile up
+//    in a long-lived Node service are COUNTED, not weighed:
+//      · listeners on the server object   — the classic `on()` in a handler
+//      · active handles (sockets, timers) — a descriptor never closed
+//      · entries in the module cache      — a `require` under a request path
+//    After N requests each must equal what it was after the FIRST. Not "close
+//    to", not "converging": EQUAL. Zero inference, zero threshold, no tuning.
+// ⚠️ THE FIRST REQUEST IS THE BASELINE, NEVER ZERO: a service that has served
+//    once has legitimately opened its lazy modules and its pools. What is
+//    forbidden is what the SECOND to Nth requests add on top.
+// ⚠️ ANTI-VACUITY: the baseline must be non-trivial (a real server holds
+//    listeners and handles), otherwise "0 === 0" would pass on a driver that
+//    served nothing at all — the mute-probe trap this repo has paid five times.
+// ⚠️ Handles are read via `process.getActiveResourcesInfo()` (public API since
+//    Node 17). Sockets in flight make it fluctuate, so the reading is taken
+//    after a full round trip has ENDED, when nothing is in flight by construction.
+test('EXACT COUNTS: listeners, handles and module cache do not grow by a single unit', async () => {
+  const docs = path.join(TMP, 'docs-counts');
+  fs.mkdirSync(docs, { recursive: true });
+  for (let i = 0; i < 6; i += 1) {
+    fs.writeFileSync(path.join(docs, `d-${i}.md`),
+      `---\nmatch: ${i % 2 === 0 ? 'server.js' : `none-${i}.js`}\nmode: dumb\n---\n# D${i}\n${'line\n'.repeat(20)}`);
+  }
+
+  const driver = path.join(TMP, 'counts-driver.js');
+  fs.writeFileSync(driver, `
+    const http = require('http');
+    const { createServer } = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'hooks', 'http-server.js').replace(/\\/g, '/'))});
+    const payload = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'cat /proj/server.js' }, session_id: 'counts', tool_use_id: 'inv' });
+    const srv = createServer();
+    srv.listen(0, '127.0.0.1', async () => {
+      const port = srv.address().port;
+      // ONE SOCKET, DECLARED — otherwise the handle count is not a fact but a guess
+      // about the global agent pooling. Node 19+ enables keep-alive by default, so a
+      // connection lingers and its number depends on timing; an agent capped at ONE
+      // socket makes the count deterministic and the assertion true for the RIGHT
+      // reason. Measured while sabotaging this cell: handles read 2 then 3 on a run
+      // where nothing had leaked — an exact count must not rest on a default.
+      const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+      const once = () => new Promise((res, rej) => {
+        const req = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/pretool?frame=1&frames=1', agent,
+          headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } },
+          (r) => { r.resume(); r.on('end', res); });
+        req.on('error', rej); req.end(payload);
+      });
+      // The census: only integers, every one of them exact.
+      const recensement = () => ({
+        listeners: srv.eventNames().reduce((n, e) => n + srv.listenerCount(e), 0),
+        handles: process.getActiveResourcesInfo().length,
+        modules: Object.keys(require.cache).length,
+      });
+      await once();
+      const base = recensement();
+      for (let i = 0; i < 500; i++) await once();
+      const apres = recensement();
+      console.log(JSON.stringify({ base, apres }));
+      srv.close(); process.exit(0);
+    });
+  `);
+
+  const out = await new Promise((resolve, reject) => {
+    execFile(process.execPath, [driver], {
+      encoding: 'utf8',
+      env: { ...process.env, CTXROUTE_STATE_DIR: path.join(TMP, 'state-counts'), CTXROUTE_FILEDOCS_DIR: docs, CTXROUTE_CONFIG_PATH: path.join(TMP, 'cfg-counts.json') },
+    }, (err, stdout) => (err ? reject(new Error(err.message + stdout)) : resolve(JSON.parse(stdout.trim().split('\n').pop()))));
+  });
+
+  assert.ok(out.base.listeners > 0 && out.base.handles > 0 && out.base.modules > 10,
+    `mute probe: the baseline is trivial (${JSON.stringify(out.base)}) — the driver probably served nothing`);
+
+  for (const clef of ['listeners', 'handles', 'modules']) {
+    assert.strictEqual(out.apres[clef], out.base[clef],
+      `${clef}: ${out.base[clef]} after the 1st request, ${out.apres[clef]} after 501 — `
+      + `${out.apres[clef] - out.base[clef]} accumulated over 500 requests. `
+      + 'This is an EXACT count, not an estimate: any difference is a real accumulation, '
+      + `and at ${((out.apres[clef] - out.base[clef]) / 500).toFixed(3)} per request the service `
+      + 'is on a clock. Full census: ' + JSON.stringify(out));
+  }
+});
+
+// ── ⑥ WHY THERE IS NO "PORT-HOLDING PARENT" ON WINDOWS — MEASURED, NOT ASSUMED ──
+//
+// 🔴 THREE AGENTS BURNED THEMSELVES ON THIS, so the fact is sealed here rather
+//    than written in prose. The idea was sound: a tiny parent holds the listening
+//    socket, a child does the work; the child exits (stale code, recycling) and
+//    the parent keeps the port, so nothing is refused meanwhile. That is exactly
+//    what systemd socket activation gives us on Linux — for free, from the kernel.
+// 📐 WHAT WAS MEASURED ON WINDOWS (Node 22.15.1, 2026-08-20), in order:
+//    ① passing an ACCEPTED SOCKET to the child — `subprocess.send('sock', socket)`
+//       throws **EMFILE** on the very first call. The capability is absent, not slow.
+//    ② `cluster` — the platform's own answer — does NOT cover it: default policy on
+//       Windows is SCHED_NONE, so the LISTENING socket lives in the worker and dies
+//       with it (`ECONNREFUSED`). Forcing `SCHED_RR` moves the listen to the primary
+//       but the primary dispatches immediately instead of queuing (`ECONNRESET`).
+//    ③ passing the LISTENING SERVER works, twice over, and the parent does keep the
+//       port — but a connection issued while no child accepts is **NEVER RESOLVED**:
+//       not refused, not reset, it hangs. Measured at the 5,000 ms observation bound.
+// 🛑 SO THE PARENT IS REFUSED, AND FOR THE REASON THAT MATTERS: it does not remove
+//    the window, it makes it WORSE. Today the caller gets an instant, loud
+//    `ECONNREFUSED`; with the parent it would wait on a socket nobody will ever
+//    answer — up to the harness timeout, per frame. **A fast, noisy failure beats a
+//    silent hang**, and turning one into the other is a regression however clever
+//    the plumbing. On Linux the question does not arise: the kernel owns the socket
+//    and its backlog, which is precisely why socket activation was the right answer.
+// ⚠️ THIS CELL IS A DRIFT-TEST ON A THIRD PARTY, and it is meant to be. If it ever
+//    turns RED, Windows/Node gained the missing capability and the parent becomes
+//    buildable — that is news worth a red, never a test to delete.
+// 🛑 AND IT CONTAINS NO DELAY, WHICH IS THE WHOLE DIFFICULTY OF WRITING IT. The
+//    obvious version waits ~1.5 s and concludes "still nothing, therefore hung" —
+//    an INFERENCE, and the temporal gate rejected exactly that (rightly: the
+//    manifest says four waits are "a ceiling, not a licence"). The observable does
+//    exist and it is the ORDER: a request issued LATER is served by the replacement
+//    while the earlier one is still pending. A LATER cause producing an EARLIER
+//    effect is decidable, needs no clock, and is a STRONGER statement than any
+//    timeout — the connection is not slow, it has been overtaken and abandoned.
+test.skipIf(process.platform !== 'win32')('SEALED FACT (win32): a connection issued while no child accepts is OVERTAKEN and left unanswered', async () => {
+  const enfant = path.join(TMP, 'accepteur.js');
+  fs.writeFileSync(enfant, `
+    const http = require('http');
+    process.on('message', (msg, handle) => {
+      if (msg !== 'server' || !handle) return;
+      http.createServer((req, res) => res.end('child:' + process.pid)).listen(handle, () => process.send('up'));
+    });
+  `);
+
+  const server = net.createServer();               // the parent NEVER accepts
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+
+  const spawnChild = () => new Promise((ready) => {
+    const c = fork(enfant);
+    c.on('message', (m) => { if (m === 'up') ready(c); });
+    c.send('server', server);
+  });
+  // Every call carries its own SETTLED flag: the question "has this one come back
+  // yet?" is then answered by reading a boolean, never by waiting on a clock.
+  const call = () => {
+    const suivi = { settled: false, result: null };
+    suivi.done = new Promise((res) => {
+      const fini = (r) => { suivi.settled = true; suivi.result = r; res(r); };
+      const req = http.request({ host: '127.0.0.1', port, method: 'GET', path: '/' },
+        (r) => { let b = ''; r.on('data', (d) => { b += d; }); r.on('end', () => fini({ issue: 'served', by: b })); });
+      req.on('error', (e) => fini({ issue: 'error', code: e.code }));
+      req.end();
+    });
+    return suivi;
+  };
+
+  try {
+    const first = await spawnChild();
+    const before = await call().done;
+    // ANTI-VACUITY: the assembly must genuinely work before we assert that it fails
+    // in one precise spot. Without this the cell would also pass on a parent that
+    // never listened at all — the mute-probe trap.
+    assert.strictEqual(before.issue, 'served', `the handed-over server must serve normally first (got ${JSON.stringify(before)})`);
+
+    const dead = new Promise((r) => first.once('exit', r));
+    first.kill();
+    await dead;                                     // an OS EVENT, never a delay
+    const inFlight = call();                        // issued while NOBODY accepts
+    const second = await spawnChild();              // the replacement takes over
+    const after = await call().done;                // issued AFTER it — and awaited
+
+    assert.strictEqual(after.issue, 'served', `the replacement must serve the NEXT calls (got ${JSON.stringify(after)})`);
+    assert.notStrictEqual(second.pid, first.pid, 'the two children must really be distinct processes');
+    assert.strictEqual(inFlight.settled, false,
+      `Windows answered a connection issued during the window (${JSON.stringify(inFlight.result)}). `
+      + 'That is NEWS: the capability this cell records as ABSENT now exists, so a port-holding '
+      + 'parent becomes buildable and backlog item 4 can be reopened. Re-measure before believing it.');
+    second.kill();
+  } finally {
+    server.close();
+  }
+});

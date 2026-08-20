@@ -66,12 +66,37 @@ const DEST = path.join(DIR, 'doc-seen-course.json');
 const limite = Date.now() + 10000;
 while (!fs.existsSync(DEST) && Date.now() < limite) { /* waiting for the 1st state */ }
 if (!fs.existsSync(DEST)) { console.log(JSON.stringify({ lectures: 0, emptyOnes: 0, restes: 0 })); process.exit(0); }
+// 🛑 A HOLLOW READ MUST NAME ITS CAUSE — otherwise a red says "it happened"
+//    and an investigation reopens from zero. MEASURED 2026-08-20: this suite
+//    reported 1,178 hollow reads out of 9,045 on Windows CI, ONCE, and the cause
+//    could NOT be established afterwards; local reproduction found nothing, even
+//    with reader and writer pinned to a SINGLE logical core (0 out of 7,164).
+//    So we stop trying to guess the next one: \`loadState\` stays the ORACLE of the
+//    COUNT (the real production path, unchanged), and every \`{}\` it returns is
+//    immediately CLASSIFIED by a diagnostic read.
+// ⚠️ THE CAUSE IS INDICATIVE, NOT THE ORACLE: it is measured a few microseconds
+//    AFTER the fact, so it may differ from the one \`loadState\` met. It is a
+//    lead for whoever reads the red, never an assertion — which is why nothing
+//    below asserts on it. Three causes, three very different verdicts:
+//      ENOENT      -> the file is absent: \`{}\` is a FACT (a rename window, or a
+//                     startup not excluded by the wait above)
+//      EPERM/EBUSY -> we could NOT read: \`{}\` is an INFERENCE, and a false one
+//      SyntaxError -> partial read: the write stopped being atomic
 let lectures = 0, emptyOnes = 0;
+const causes = Object.create(null);
 const fin = Date.now() + 1500;
 while (Date.now() < fin) {
   const s = store.loadState('doc-seen-', 'course');
   lectures++;
-  if (Object.keys(s).length === 0) emptyOnes++;
+  if (Object.keys(s).length === 0) {
+    emptyOnes++;
+    let cause;
+    try {
+      cause = Object.keys(JSON.parse(fs.readFileSync(DEST, 'utf8'))).length === 0
+        ? 'empty-json' : 'transient';
+    } catch (e) { cause = e.code || e.constructor.name; }
+    causes[cause] = (causes[cause] || 0) + 1;
+  }
 }
 // 🛑 NEVER KILL THE WRITER BEFORE COUNTING THE .tmp — RED CI on macOS
 //    on 08/08/2026. A process KILLED between the \`writeFileSync(tmp)\` and the
@@ -97,7 +122,7 @@ const limiteFin = Date.now() + 10000;
 while (!fs.existsSync(FINI) && Date.now() < limiteFin) dors(20);
 enfant.kill(); // safety net only: normally already finished
 const restes = fs.readdirSync(DIR).filter((f) => f.endsWith('.tmp'));
-console.log(JSON.stringify({ lectures, emptyOnes, restes: restes.length }));
+console.log(JSON.stringify({ lectures, emptyOnes, causes, restes: restes.length }));
 `);
 
 function courir() {
@@ -115,7 +140,12 @@ test('ATOMICITY: a lock-less reader NEVER sees an empty state during a write', {
   assert.strictEqual(r.emptyOnes, 0,
     `${r.emptyOnes} read(s) out of ${r.lectures} returned {} while the state EXISTS — `
     + 'NON-atomic write: the reader sees a truncated file. '
-    + 'Measured BEFORE the fix: 9,596 / 24,147.');
+    + 'Measured BEFORE the fix: 9,596 / 24,147. '
+    + `CAUSES (indicative, measured just after the fact): ${JSON.stringify(r.causes)} `
+    + 'READ THEM BEFORE INVESTIGATING: ENOENT = the file is absent, {} is a FACT '
+    + '(rename window / startup) · EPERM|EBUSY = we could not read, {} is a FALSE '
+    + 'INFERENCE and `loadState` must stop treating "unreadable" as "empty" · '
+    + 'SyntaxError = partial read, the atomic write has broken.');
 });
 
 test('ATOMICITY: no temporary file survives the writes', { timeout: 30000 }, () => {
