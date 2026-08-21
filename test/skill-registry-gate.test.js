@@ -65,6 +65,45 @@ test('findUndeclared detects the undeclared ones (self-validation: the REVERSE g
   assert.deepStrictEqual(findUndeclared([], ['x'], []), []);
 });
 
+// PURE: which names claim BOTH answers at once? (negative-checkable)
+const findContradictory = (registered, withoutPerimeter) =>
+  registered.filter((n) => withoutPerimeter.includes(n)).sort();
+
+test('findContradictory detects the double declarations (self-validation: the gate BITES)', () => {
+  assert.deepStrictEqual(findContradictory(['a', 'b'], ['b', 'c']), ['b']);
+  assert.deepStrictEqual(findContradictory(['a'], ['b']), []);
+  assert.deepStrictEqual(findContradictory([], []), []);
+});
+
+// ── THIRD DIRECTION (21/08/2026): a name answers ONCE, never twice ──
+// 🔴 FOUND BY MEASUREMENT, not by review: `zenon-dispatcher` sat in BOTH
+//    `skills` and `skillsWithoutPerimeter` and NOTHING turned red — the two
+//    checks above are both satisfied by a contradiction (registered ⇒ not
+//    undeclared; present in either list ⇒ not missing). The blind spot is
+//    STRUCTURAL: each direction asks "is this name somewhere?", never "does
+//    it say ONE thing?".
+// ⚠️ THE TWO KEYS ARE MUTUALLY EXCLUSIVE BY THEIR OWN DEFINITION —
+//    `skills` = "auto-inject when the perimeter is crossed", and
+//    `skillsWithoutPerimeter` = "deliberately on-demand, no perimeter". A
+//    name in both declares an intention AND its negation: whichever the
+//    engine happens to honour, the other half of the config is a LIE that
+//    the next reader will trust. Fail-closed: we refuse, we never pick.
+// ⚠️ Same opt-in switch as the reverse direction — a config that never
+//    declares `skillsWithoutPerimeter` has no contradiction to have.
+test('no skill declares BOTH a perimeter and no-perimeter (a name answers ONCE)', () => {
+  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  if (!('skillsWithoutPerimeter' in config)) return;
+  const both = findContradictory(Object.keys(config.skills || {}), config.skillsWithoutPerimeter || []);
+  assert.deepStrictEqual(
+    both,
+    [],
+    `Skills declared TWICE, with contradictory intentions: [${both.join(', ')}]. ` +
+      'A name lives in config.skills (auto-injected on its perimeter) OR in ' +
+      'skillsWithoutPerimeter (deliberately on-demand) — never both. Keep the ' +
+      'perimeter and remove the name from skillsWithoutPerimeter, or drop the perimeter.'
+  );
+});
+
 // ── REVERSE DIRECTION (19/07/2026): every HARNESS skill must be declared ──
 // ⚠️ The gate above is DIRECTIONAL (registry → file): it is structurally
 //    BLIND to a skill created and never registered — the same hole as "MCP
