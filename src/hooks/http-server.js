@@ -103,6 +103,11 @@ const { output } = require('./doc-inject');
 const path = require('path');
 const paths = require('../paths');
 const { createMemoryStore } = require('../memory-store');
+// ⚠️ THE SECOND TRANSPORT (2026-08-21). `endpoint()` names the kernel rendezvous
+//    per OS; `bind` takes it, clearing a DEAD macOS entry only after asking the
+//    kernel who answers. Neither is reimplemented here — see the block in `main`.
+const { endpoint } = require('../kernel-endpoint');
+const { bind } = require('../kernel-bind');
 
 // ⚠️ LOOPBACK, hardcoded — read the header. This is NOT a setting: an adopter
 //    who needs to move it has a problem this framework must not solve.
@@ -594,6 +599,43 @@ if (require.main === module) {
   //    and it is the authority on duplicates (never a PID file, never a probe).
   listenOn(createServer({ store: etat, onAddressInUse: (err) => { throw err; } }),
     process.env, process.pid, port);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔴 THE SECOND LISTENER — WITHOUT IT THE KERNEL LANE HAS NO OTHER END.
+  // ═══════════════════════════════════════════════════════════════════════
+  // MEASURED 2026-08-21, and it invalidated a switch-over plan already written:
+  // this daemon listened ONLY on a TCP port, while `state-client.js` connects on
+  // `kernel-endpoint.endpoint()` — a named pipe on Windows, an abstract socket on
+  // Linux, a socket file on macOS. **Nobody was listening where the client
+  // knocks.** Switching the shells over would have sent every frame to `ENOENT`,
+  // hence to the local state-less path, hence `once` withheld on EVERY action.
+  // 🛑 AND THE THREE-OS PROOF DID NOT COVER IT: `state-daemon.test.js` forks its
+  //    OWN test daemon (address in `argv[2]`), never this file. It proves the
+  //    MECHANISM; it never proved that the PRODUCTION daemon listens at the
+  //    rendezvous. **A green on a twin is not a green on the thing.**
+  //
+  // ⚠️ BOTH ADDRESSES ARE LEGITIMATE — this is not one of them being a mistake:
+  //    · the PORT serves Claude Code's native `type:"http"` handler, which takes
+  //      a URL to POST to, and a pipe is not a URL;
+  //    · the RENDEZVOUS serves the client lane — spawned hooks, and Codex, which
+  //      has no `http` handler at all.
+  //    One handler, two transports. A second protocol would drift from the first.
+  // ⚠️ SAME `store`, DELIBERATELY: one daemon, one memory. Two stores would be
+  //    the "two memories" defect `client-core.js` exists to forbid, reintroduced
+  //    from inside the daemon itself.
+  // 🛑 `kernel-bind` TAKES THE ADDRESS, never a bare `listen`: on macOS a killed
+  //    daemon leaves its socket FILE behind, and the entry is cleared only after
+  //    ASKING THE KERNEL who answers — never on "the file exists, so it is
+  //    probably stale", which would delete a LIVING daemon's socket and leave
+  //    every client knocking on an address nobody owns.
+  // 🛑 THE SHELL DECIDES TO DIE, not the builder: an address already taken means
+  //    a second instance, and the kernel is the authority that refuses it.
+  bind(
+    createServer({ store: etat, onAddressInUse: (err) => { throw err; } }),
+    endpoint(),
+    () => {},
+    (err) => { throw err; },
+  );
   // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
   //    itself pulled in. Watching before would miss the modules loaded lazily
   //    on the first require — the exact half most likely to be edited.
