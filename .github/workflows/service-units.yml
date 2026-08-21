@@ -160,7 +160,7 @@ jobs:
       # ⚠️ Always, even on failure: a runner is thrown away, but an installer
       #    that cannot undo itself is an installer nobody dares run twice.
       - if: always()
-        run: sh service/install-linux.sh uninstall
+        run: sh service/install-macos.sh uninstall
         shell: bash
 
 

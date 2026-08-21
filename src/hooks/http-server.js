@@ -655,8 +655,11 @@ if (require.main === module) {
       //    supervisor captures it) and keep serving the other. A degradation
       //    that is announced is acceptable; a silent one is what this whole
       //    project exists to remove.
-      if (err && err.code === 'EADDRINUSE') throw err;
-      process.stderr.write(`ctxroute: the client lane is UNAVAILABLE (${err && err.code}: ${err && err.message}). `
+      // ⚠️ The cast is the repo's usual form: `Error` has no `code` for the type
+      //    checker, and a lying JSDoc is what `check:types` exists to refuse.
+      const e = /** @type {NodeJS.ErrnoException} */ (err);
+      if (e && e.code === 'EADDRINUSE') throw err;
+      process.stderr.write(`ctxroute: the client lane is UNAVAILABLE (${e && e.code}: ${e && e.message}). `
         + 'The port lane keeps serving; a spawned hook asking on the rendezvous will decide locally and record nothing.\n');
     },
   );
