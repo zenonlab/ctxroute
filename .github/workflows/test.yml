@@ -1,6 +1,11 @@
 name: test
 
 on:
+  # ⚠️ MANUAL TRIGGER — added 2026-08-21. The push triggers are branch-bound
+  #    ([main, master]) on purpose: quota. But a work branch then has NO judge at
+  #    all, and the three-OS matrix is the only thing that can see a Linux or
+  #    macOS defect. Dispatch gives that verdict WITHOUT deploying anything.
+  workflow_dispatch:
   push:
     branches: [main, master]
   pull_request:
