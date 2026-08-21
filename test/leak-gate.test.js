@@ -31,10 +31,32 @@ import { forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, no
 //    measures everything: that is the green-that-sees-nothing this repo calls its worst defect.
 // 🛑 MEASURED BY THE AUTHORITY THAT KNOWS (`git rev-parse --show-toplevel`), never by counting
 //    `..`: a supposed relative path is already a bug, and this file is proof.
-const ICI = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: path.dirname(fileURLToPath(import.meta.url)),
-  encoding: 'utf8',
-}).trim();
+// 🔴 `cwd` DOES NOT ISOLATE A `git` CHILD, AND THIS SUITE RUNS INSIDE A GIT HOOK.
+//    Git exports `GIT_DIR`, `GIT_INDEX_FILE` and friends to every hook it runs,
+//    and `.githooks/pre-commit` runs THIS FILE. Those variables are INHERITED by
+//    any child and they WIN over the working directory — so a `git` call aimed at
+//    a sandbox reached the REAL repository instead. MEASURED 2026-08-21: the
+//    negative-check staged its trap file into this repo's own index, the file
+//    reached a commit, and three `--amend` in a row could not remove it (each
+//    commit re-ran the hook, which re-ran this test, which re-staged the file).
+// 🛑 SCRUB THE WHOLE `GIT_*` FAMILY, never "unset the right one": nobody can
+//    enumerate what a future git version will export. It is the same law the
+//    state backend already carries — **an environment variable is INHERITED, so
+//    it is never a local choice** — and it is what makes `cwd` mean what it says.
+// ⚠️ ONE DOOR FOR EVERY `git` OF THIS SUITE. Scrubbing only the sandbox call was
+//    tried first and measured INSUFFICIENT: under a poisoned environment two
+//    OTHER cells still failed, because `git ls-files` was inheriting it too.
+const ENV_SANS_GIT = (() => {
+  const e = { ...process.env };
+  for (const k of Object.keys(e)) if (k.startsWith('GIT_')) delete e[k];
+  return e;
+})();
+
+function git(args, cwd) {
+  return execFileSync('git', args, { cwd, env: ENV_SANS_GIT, encoding: 'utf8' });
+}
+
+const ICI = git(['rev-parse', '--show-toplevel'], path.dirname(fileURLToPath(import.meta.url))).trim();
 
 // ⚠️ OUTSIDE THE REPO, by necessity: the private terms (first name, accounts)
 //    cannot travel in a public artefact — and BUILDING the list lives in
@@ -48,7 +70,7 @@ function motifs() {
 }
 
 function trackedFiles(cwd) {
-  return execFileSync('git', ['ls-files'], { cwd, encoding: 'utf8' }).split('\n').filter(Boolean);
+  return git(['ls-files'], cwd).split('\n').filter(Boolean);
 }
 
 function scanRepo(racine, m) {
@@ -252,9 +274,30 @@ test('NEGATIVE-CHECK: the gate KNOWS how to redden (sabotage on a COPY)', () => 
   const list = path.join(bac, 'list.json');
   const TERME = 'zzfuitetemoin';
   try {
-    execFileSync('git', ['init', '-q'], { cwd: bac });
+    // 🔴 `cwd` DOES NOT ISOLATE A `git` CHILD — MEASURED 2026-08-21, IN THIS REPO.
+    //    Git exports `GIT_DIR`, `GIT_INDEX_FILE` and friends to every hook it
+    //    runs, and the pre-commit hook runs THIS SUITE. Those variables are
+    //    INHERITED by the child, and they WIN over the working directory ⇒ the
+    //    `git add` below staged `piege.md` into the REAL repository's index,
+    //    from a sandbox living in the OS temp folder. It reached a commit, and
+    //    three `--amend` in a row could not remove it: each commit re-ran the
+    //    hook, which re-ran this test, which re-staged the file. Exactly the
+    //    class already engraved for the state backend — **an environment
+    //    variable is inherited, so it is never a local choice**.
+    // 🛑 SCRUB, NEVER "SET THE RIGHT ONE": we cannot enumerate what a future git
+    //    version will export. Removing the whole `GIT_*` family is the only form
+    //    that survives an upgrade — and it is what makes `cwd` mean what it says.
+
+    git(['init', '-q'], bac);
     fs.writeFileSync(path.join(bac, 'piege.md'), 'author: ' + TERME + '\n');
-    execFileSync('git', ['add', 'piege.md'], { cwd: bac });
+    git(['add', 'piege.md'], bac);
+
+    // ⚠️ THE ISOLATION IS PROVEN, NOT HOPED FOR: the sandbox must know the file
+    //    (so the sabotage is real) and the ambient index must be untouched. A
+    //    negative-check that dirties the repository it protects is worse than
+    //    none — this one used to.
+    assert.match(git(['ls-files'], bac), /piege\.md/,
+      'the sandbox did not even register the trap: the sabotage would prove nothing');
     fs.writeFileSync(list, JSON.stringify({ terms: [TERME], derivedFolders: [] }));
 
     const avant = process.env.CTXROUTE_LEAK_LIST;
