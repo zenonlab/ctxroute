@@ -55,6 +55,17 @@ export default defineConfig({
       'test/scope-reach-pure.test.js',
       'test/derived-observables.test.js',
       'test/temporal-budget-pure.test.js',
+      // ⚠️ The DETERMINISTIC half of the disk-writer gate. `disk-writers-gate.test.js`
+      //    spawns `git` and `ast-grep`, so it never enters this runner; absent
+      //    this line the verdict would be MUTATED and measured by NOTHING —
+      //    exactly the "misleading massacre" the header above warns about.
+      'test/disk-writers-pure.test.js',
+      // ⚠️ The DETERMINISTIC half of the quadratic gate. `quadratic-gate.test.js`
+      //    itself spawns `git` and `ast-grep`, so it never enters this runner:
+      //    only the PURE verdict is mutated, and this is the suite that kills
+      //    its mutants. Absent from this list, `quadratic-budget-pure.js` would
+      //    be mutated and measured by NOTHING — a misleading massacre.
+      'test/quadratic-budget-pure.test.js',
       // ⚠️ `memory-store.js` is the I/O shell and is NOT mutated; its DECISIONS
       //    live in `memory-store-pure.js`, which is — and this suite is what
       //    kills those mutants. Absent from this list, the LRU and the ceiling

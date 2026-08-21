@@ -76,9 +76,20 @@ function astGrepBinary() {
   return bin;
 }
 
+// 🛑 SCRUB THE WHOLE `GIT_*` FAMILY BEFORE SPAWNING `git`. Those variables are
+//    EXPORTED by git to every hook it runs, INHERITED by any child, and they
+//    BEAT `cwd` — measured 2026-08-21: a `git` aimed at a sandbox wrote into
+//    the REAL index. Never "unset the right one": nobody can enumerate what a
+//    future git version exports. Sealed repo-wide by `git-env-door-gate.test.js`.
+const ENV_WITHOUT_GIT = (() => {
+  const e = { ...process.env };
+  for (const k of Object.keys(e)) if (k.startsWith('GIT_')) delete e[k];
+  return e;
+})();
+
 /** Perimeter = the JavaScript files TRACKED BY GIT. Derived, never listed. */
 function perimeter() {
-  const out = execFileSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const out = execFileSync('git', ['ls-files'], { cwd: repo, env: ENV_WITHOUT_GIT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   return out.split('\n').map((s) => s.trim())
     .filter((f) => /[.](js|mjs|cjs)$/.test(f))
     .filter((f) => fs.existsSync(path.join(repo, f)));
@@ -86,14 +97,18 @@ function perimeter() {
 
 /**
  * @param {string[]} [targets] files to scan; absent ⇒ the whole perimeter.
+ * @param {string} [ruleFile] the ast-grep rule; absent ⇒ the repository's rule.
+ *   ⚠️ Only the OUT-OF-SCOPE probe below passes another one — it must scan for
+ *   an atom the rule deliberately does NOT carry, and adding it to the rule is
+ *   exactly what is forbidden.
  * @returns {{file: string, line: number, text: string}[]}
  */
-function scan(targets) {
+function scan(targets, ruleFile) {
   const files = targets || perimeter();
   if (files.length === 0) return [];
   let out = '';
   try {
-    out = execFileSync(astGrepBinary(), ['scan', '-r', RULE, '--json=compact'].concat(files), {
+    out = execFileSync(astGrepBinary(), ['scan', '-r', ruleFile || RULE, '--json=compact'].concat(files), {
       cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
       // ⚠️ stderr CAPTURED, not inherited: `ast-grep` writes "N error(s) found"
       //    on stderr for every scan, which would pour a fake ERROR into the
@@ -205,6 +220,75 @@ test('NEGATIVE: the WIRING really reddens on a fabricated occurrence', () => {
     manifest.budget);
   assert.ok(sabotaged.some((f) => f.startsWith('src/never-declared-xyz.js')),
     'SABOTAGE NOT DETECTED: a temporal call in an undeclared file would pass this gate.');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// OUT OF SCOPE, DECLARED WITH ITS MEASUREMENT — `setImmediate` (2026-08-21)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🛑 `setImmediate` IS A TICK, NOT A WAIT. It yields to the next iteration of
+//    the event loop: nothing is made slower and NO number of milliseconds is
+//    guessed. The doctrine budgets what SPENDS wall-clock time — exactly the
+//    reasoning that already puts the option keys `timeout`/`testTimeout`/
+//    `hookTimeout` out of scope (40 occurrences measured 2026-08-20: a BOUND,
+//    not a WAIT).
+//
+// 🛑 AND THIS IS WHY IT IS NOT ENROLLED AS AN ATOM INSTEAD. The budget admits
+//    exactly TWO motives, `distant` and `undecidable`, and a tick is NEITHER:
+//    declaring it would force an INVENTED justification — and an invented
+//    justification makes a settled-looking case out of a defect. A budget that
+//    accepts a fabricated motive stops meaning anything, for every other line.
+//
+// ⚠️ SO IT IS DECLARED HERE INSTEAD OF STAYING SILENT: the class was
+//    INVISIBLE to the gate and the gate could not SAY it was invisible — which
+//    is indistinguishable from an oversight. 📐 MEASURED 2026-08-21: 1
+//    occurrence, `test/client-core.test.js` (a tick used to prove a promise
+//    settles without a timer).
+//
+// ⚠️ THE COUNT IS AN EQUALITY, like the ratchet: a NEW `setImmediate` reddens
+//    here, and the fix is to RE-DECIDE it (still a tick ⇒ raise the number
+//    with the reason · a disguised wait ⇒ delete the call), never to widen the
+//    clause in silence.
+const OUT_OF_SCOPE_TICK = { atom: 'setImmediate', count: 1 };
+
+test('OUT OF SCOPE: `setImmediate` is a TICK, declared and counted — never an atom', () => {
+  // ① It must NOT be an atom of the detection rule: enrolling it would demand
+  //    a motive the budget does not have.
+  // ⚠️ COMMENT LINES STRIPPED FIRST (same shape as the no-exemption check
+  //    above): the rule's header stays FREE to explain why a tick is out of
+  //    scope. Forbidding the WORD would forbid the explanation, and a rule
+  //    whose reason may not be written is a rule someone deletes.
+  const ruleLines = fs.readFileSync(RULE, 'utf8').split('\n');
+  const ruleSrc = ruleLines.filter((l) => !/^\s*#/.test(l)).join('\n');
+  assert.ok(!ruleSrc.includes(OUT_OF_SCOPE_TICK.atom),
+    '`' + OUT_OF_SCOPE_TICK.atom + '` has been added to rules/temporal-call.yml — a TICK cannot be declared '
+    + 'with an admissible motive (`distant`/`undecidable` are the only two), so it could only enter the budget '
+    + 'with an INVENTED justification. Remove the atom, or change the doctrine on purpose.');
+
+  // ② The declared count equals the measured one — the same equality as the
+  //    ratchet, applied to the class we chose NOT to budget.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-out-of-scope-'));
+  let found = [];
+  try {
+    const probe = path.join(dir, 'tick.yml');
+    fs.writeFileSync(probe, 'id: out-of-scope-tick\nlanguage: JavaScript\nseverity: error\n'
+      + 'message: tick\nrule:\n  any:\n    - pattern: ' + OUT_OF_SCOPE_TICK.atom + '($$$)\n'
+      + '    - pattern: $T.' + OUT_OF_SCOPE_TICK.atom + '($$$)\n');
+    found = scan(undefined, probe);
+    // ⚠️ ANTI-INERT: the probe itself must be able to see something, or this
+    //    whole check is a green measuring nothing (the repo's worst defect).
+    const witness = path.join(dir, 'witness.js');
+    fs.writeFileSync(witness, 'setImmediate(() => resolve(1));\n');
+    assert.strictEqual(scan([witness], probe).length, 1,
+      'the out-of-scope probe detects NOTHING on a fabricated tick: its verdict below would be vacuous');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  assert.strictEqual(found.length, OUT_OF_SCOPE_TICK.count,
+    'OUT-OF-SCOPE COUNT DRIFT: ' + found.length + ' `setImmediate` measured, ' + OUT_OF_SCOPE_TICK.count
+    + ' declared —\n  ' + found.map((o) => o.file + ':' + o.line + ' ' + o.text).join('\n  ')
+    + '\n\n🛑 RE-DECIDE it, do not widen this clause in silence: a TICK (yields to the event loop, guesses no '
+    + 'delay) stays out of scope — raise the number here and say where. A disguised WAIT is a defect: delete it.');
 });
 
 test('NEGATIVE: ast-grep ignores a MENTION in a comment or a string', () => {

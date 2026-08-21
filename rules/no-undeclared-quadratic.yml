@@ -1,0 +1,91 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a nested traversal. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 3rd twin of TIME (`rules/temporal-call.yml`) and of SPACE. It detects ANY
+# traversal nested inside another traversal. It judges NOTHING and exempts
+# NOTHING: the policy (which file may hold how many, under which class, with
+# which justification) lives in ONE place only — `quadratic-budget.json` +
+# `test/quadratic-gate.test.js`, which consume this rule's JSON output.
+#
+# 🛑 STRICT SEPARATION, DO NOT BLUR IT. Adding a `files:`/`ignores:` here would
+#    silently hide occurrences from the budget — an exemption nobody would ever
+#    read again, since the budget is the only file people open. Two sets of
+#    exemptions diverge in silence; this repository has paid that bill on the
+#    temporal twin's doctrine and must not pay it a second time.
+#
+# ⚠️ WHY IT EXISTS. The target is a fleet of HUNDREDS of sites with THOUSANDS of
+#    pages. A scale defect does not "slow things down": it CLOSES A CONTRACT,
+#    and retrofitting it is prohibitive, so it belongs to the SPEC and never to
+#    a later tuning pass. The question before any loop is "and at 10,000?" —
+#    5,000 elements compared pairwise is 12.5 million pairs.
+#
+# ⚠️ AST, NEVER REGEX (fleet doctrine, load-bearing here): a nested loop quoted
+#    in a comment or inside a string is a FALSE POSITIVE, and a noisy gate is a
+#    gate people stop reading, then unplug. Proven by a dedicated negative check.
+#
+# ⚠️⚠️ A TRAVERSAL IS NOT ONLY A `for` LOOP. The only O(N²) ever MEASURED on this
+#    doctrine was a `.find()` INSIDE a loop — syntactically NOT a nested loop.
+#    A rule seeing only `for`-in-`for` would therefore be HOLLOW on the very
+#    shape that bites, and trivially bypassable by rewriting it as `.map()`.
+#    ⇒ `is-a-traversal` = the 4 loop NODES of the language **AND** the array
+#    methods that traverse. NEVER shrink that list.
+#
+# ⚠️ `for..of` and `for..in` are the SAME tree-sitter node (`for_in_statement`)
+#    and a node DISTINCT from `for_statement`: targeting `for_statement` alone
+#    misses every `for..of`, the majority form in this repository. Verified by
+#    witness, never assumed.
+#
+# ⚠️ EVERY `kind:` AND `pattern:` BELOW IS AN ATOM, and the gate DERIVES its
+#    witness table from this list: an atom added tomorrow stays RED until
+#    someone pairs it with a real line of code whose detection is REQUIRED.
+#    Never add an atom without adding its witness to `quadratic-budget.json`.
+id: no-undeclared-quadratic
+language: JavaScript
+severity: error
+message: >-
+  NESTED TRAVERSAL — complexity declares itself (and at 10,000?). Declare it in
+  `quadratic-budget.json` with its class. A traversal inside a traversal is
+  O(N²) until something proves otherwise. Way out: inverted index / Map / Set,
+  at PROVEN equivalence — never a probabilistic algorithm, a false negative has
+  a client cost.
+
+utils:
+  # ⚠️ SINGLE SOURCE of "what is a traversal?" — defined ONCE here and reused on
+  #    BOTH levels (outer and inner). Writing it twice would make the two halves
+  #    of the rule diverge at the first atom added to only one of them.
+  #
+  # 🛑 NON-CAPTURING METAVARIABLES (`$_IT`, `$$$_A`) — NEVER REMOVE THE `_`.
+  #    A CAPTURING metavariable UNIFIES across the two levels: `$IT` bound to
+  #    `xs` on the outer level would then REQUIRE the same `xs` on the inner one,
+  #    so `xs.map(x => ys.find(...))` — a functional traversal inside a
+  #    functional traversal, the most common shape of the modern O(N²) — went
+  #    GREEN. That first version saw 4 shapes out of 5 and looked perfectly
+  #    correct: it was caught by the WITNESSES before service, never by reading.
+  is-a-traversal:
+    any:
+      - kind: for_statement       # for (let i = 0; ...)
+      - kind: for_in_statement    # for..of AND for..in (same tree-sitter node)
+      - kind: while_statement
+      - kind: do_statement
+      - pattern: $_IT.forEach($$$_A)
+      - pattern: $_IT.map($$$_A)
+      - pattern: $_IT.filter($$$_A)
+      - pattern: $_IT.reduce($$$_A)
+      - pattern: $_IT.flatMap($$$_A)
+      - pattern: $_IT.some($$$_A)
+      - pattern: $_IT.every($$$_A)
+      - pattern: $_IT.find($$$_A)
+      - pattern: $_IT.findIndex($$$_A)
+      - pattern: $_IT.findLast($$$_A)
+      - pattern: $_IT.includes($$$_A)
+      - pattern: $_IT.indexOf($$$_A)
+      - pattern: $_IT.lastIndexOf($$$_A)
+      - pattern: $_IT.sort($$$_A)
+
+rule:
+  all:
+    - matches: is-a-traversal
+    - has:
+        stopBy: end
+        matches: is-a-traversal

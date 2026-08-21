@@ -42,6 +42,8 @@
     "src/derived-observables.js",
     "src/harness-conformance.js",
     "src/temporal-budget-pure.js",
+    "src/disk-writers-pure.js",
+    "src/quadratic-budget-pure.js",
     "src/memory-store-pure.js",
     "src/kernel-endpoint.js"
   ],

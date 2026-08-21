@@ -45,6 +45,8 @@ on:
       - 'src/budget.js'
       - 'src/harness-conformance.js'
       - 'src/temporal-budget-pure.js'
+      - 'src/disk-writers-pure.js'
+      - 'src/quadratic-budget-pure.js'
       - 'src/memory-store-pure.js'
       - 'src/kernel-endpoint.js'
       # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
@@ -77,6 +79,8 @@ on:
       - 'test/scope-reach-pure.test.js'
       - 'test/derived-observables.test.js'
       - 'test/temporal-budget-pure.test.js'
+      - 'test/disk-writers-pure.test.js'
+      - 'test/quadratic-budget-pure.test.js'
       - 'test/memory-store.test.js'
       - 'test/kernel-endpoint.test.js'
       # ── the mutation config itself + the deps ──

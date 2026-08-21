@@ -1,0 +1,145 @@
+{
+  "_doc": "DISK WRITERS — every runtime disk writer of this repository, DECLARED with its path, its class, its budget and its eviction policy (2026-08-21). SINGLE SOURCE, consumed by `test/disk-writers-gate.test.js`. DETECTION is NOT here: it lives in TWO ast-grep families — `rules/fs-call.yml`, keyed on the RECEIVER and the only half that sees an unknown method name, and a METHOD-keyed rule GENERATED at gate time from the `write` entries of `primitives` below. Strict separation — the rules detect with no exemption, this file plus its test carry the POLICY and the ratchet.",
+  "_doc_why": "SPACE DECLARES ITSELF. Disk and RAM are FINITE and this machine runs 24/7 for YEARS with no operator, so anything that WRITES declares its ceiling and its eviction IN THE SAME GESTURE AS ITS CREATION. Without a ceiling the component DOES NOT EXIST: an ARCHITECTURE bug, never an operations one. The question is never 'is it big?' but 'at 10 years, how much is this worth?' — monotonic growth is a DATED outage, and 'we will purge later' puts a human back inside the loop this project exists to remove.",
+  "_doc_two_traps": "① A THRESHOLD PROBE IS NOT AN EVICTION: it CONSTATES, and by then it is already too late — alert on the SLOPE, evict by age or by tier. ② AN EVICTION IS PROVEN BY WHAT IT DELETES: a real retention script in this fleet targeted `*.tar.gz` while the producer wrote `*.sql.gz`, so it removed 0 bytes since forever with the disk at 87 %. A cleaner that matches nothing is indistinguishable from a cleaner that works.",
+  "_doc_measured": "MEASURED on the live install, 2026-08-20: `state/` held 615 JSON files for 5.1 MB, of which 544 (88 %) were `plan-` files — one per tool INVOCATION, useful only while that single action runs. The RAM side of the same problem was closed in `src/memory-store-pure.js` (one LRU per key class, one ceiling each). The DISK side is what this manifest names.",
+  "_doc_perimeter": "PERIMETER = `src/` ONLY, and the exclusions are stated rather than assumed. `test/` writes into the OS tmpdir by construction and removes it. `tools/` is operator-invoked diagnostics, never on the 24/7 path: MEASURED 2026-08-21, `tools/doctor.js` writes exclusively inside `mkdtempSync` sandboxes it deletes, and `tools/language-doc.js` rewrites a TRACKED file in place under an explicit `--write`. Neither grows unattended. Widening the perimeter to them would enrol sandboxes into a retention discussion and make the gate noisy — a noisy gate gets disarmed.",
+  "_doc_ratchet": "BOTH DIRECTIONS. A file that writes and is NOT declared is held at ZERO (RED). A declaration whose writes have disappeared is a DORMANT PERMIT (RED): it gets re-inherited, budget included, by the next file that takes that name, without anyone deciding anything. A progress not recorded is a progress lost; a phantom entry is a permit that comes back.",
+  "_doc_primitives": "The WRITE SET IS DERIVED, NEVER COPIED, and it feeds BOTH detection families. ① The RECEIVER-anchored rule (`rules/fs-call.yml`) matches every `fs` method, known or not, and each one the scan meets must be classified here as `write` or `read` — an unclassified method is RED, so a method used for the first time tomorrow enters this table the day it is written and cannot slip in as a silent reader. ② The METHOD-anchored rule is GENERATED AT GATE TIME from the `write` entries of this very table (`M($$$)` and `$X.M($$$)` per method), so the detector and the policy are ONE truth and cannot drift. A classification nothing uses is harmless (it is a dictionary of the `fs` API, not a permit) and is therefore NOT ratcheted.",
+  "_doc_openSync": "DECLARED LIMITATION, and it is FAIL-CLOSED on purpose: `fs.openSync` writes or reads depending on its FLAGS, which are a runtime value the AST cannot decide. It is therefore classified `write`. Measured cost today: ZERO false accusations — its only call site (`src/hooks/canary-check.js`, flag 'r') is already a declared writer for other reasons. Classifying it `read` would leave `openSync(p, 'w')` as an open escape hatch, and an escape hatch nobody can see is exactly what this gate exists to remove.",
+  "_doc_closed_20260821": "🔴 THREE CLASSES WERE MEASURED FAIL-OPEN ON 2026-08-21 AND ARE NOW CLOSED. Appended to a real source file, `require(\"fs\").writeFileSync(...)` and `const fsSab = require('fs'); fsSab.writeFileSync(...)` both left the gate GREEN, because the first rule was keyed on the RECEIVER NAME. A detector keyed on a name goes blind in silence — this house forbids name heuristics for exactly that reason. The remedy is to key on the METHOD: `writeFileSync` is distinctive enough that the receiver never needs naming, which kills the alias class, the double-quote class and the destructured-import class in one move. Each generated atom is proven by a witness fabricated from the primitive itself, in both the bare and the aliased-receiver form. MEASURED after the change: still 10 writers in `src/` — the widened net found no new one, and that is a result, not a formality.",
+  "_doc_blind_cells": "DECLARED, WITH THE TRUE FAILURE DIRECTION — and for every cell below that direction is SILENCE, i.e. FAIL-OPEN. An unmatched form is not 'an undeclared writer that goes red': it is a writer NOBODY SEES. Never write a blind cell as if it failed closed; that tells the next reader the case is handled, which is worse than saying nothing. ① A method RENAMED at the destructure (`const { writeFileSync: put } = require('fs'); put(a, b)`) is called under a name no atom carries ⇒ the gate goes SILENT. Zero occurrence measured in `src/`; closing it means deriving both sides of the rename from the import forms, the way `test/git-env-door-gate.test.js` derives an `as` alias. ② A method name COMPUTED at runtime (`fs[verb](a, b)`) has no name in the source at all ⇒ the gate goes SILENT, and no static detector can close it. ③ A write performed through a module OTHER than `fs` (a third-party package that touches the disk) is outside every atom ⇒ the gate goes SILENT; the dependency-criticality manifest is where such a package is meant to be seen. ④ A file still UNTRACKED by git is invisible to `git ls-files`, hence to the perimeter ⇒ the gate goes SILENT until it is committed. Inherent, and the correct trade: honouring the ignore is what stops the scan drowning in drafts. ⑤ A write performed by a CHILD PROCESS belongs to another program and is out of this perimeter by construction — that one is a boundary, not a hole.",
+  "pathSources": [
+    "paths.",
+    "kernelEndpoint."
+  ],
+  "_doc_pathSources": "A writer names its destination through the SINGLE SOURCE of paths (`src/paths.js`), or through `src/kernel-endpoint.js`, which itself derives from it. Never a literal, and never an ad-hoc `path.join(__dirname, 'state')` — that exact duplication already diverged silently here, twice. A path from anywhere else must carry a written `pathSourceGap`.",
+  "primitives": {
+    "writeFileSync": "write",
+    "appendFileSync": "write",
+    "mkdirSync": "write",
+    "renameSync": "write",
+    "unlinkSync": "write",
+    "rmSync": "write",
+    "rmdirSync": "write",
+    "mkdtempSync": "write",
+    "copyFileSync": "write",
+    "truncateSync": "write",
+    "openSync": "write",
+    "createWriteStream": "write",
+    "writeFile": "write",
+    "appendFile": "write",
+    "mkdir": "write",
+    "rename": "write",
+    "unlink": "write",
+    "rm": "write",
+    "readFileSync": "read",
+    "readdirSync": "read",
+    "existsSync": "read",
+    "statSync": "read",
+    "lstatSync": "read",
+    "readSync": "read",
+    "closeSync": "read",
+    "realpathSync": "read",
+    "createReadStream": "read",
+    "readFile": "read",
+    "readdir": "read",
+    "stat": "read",
+    "watch": "read"
+  },
+  "writers": {
+    "src/session-store.js": {
+      "path": "paths.stateDir()",
+      "class": "state",
+      "budget": { "maxFiles": 0, "maxBytes": 0 },
+      "policy": "none",
+      "why": "One JSON file per store prefix and per agent scope: `doc-seen-`, `ctxroute-seen-`, `turn-count-`, `plan-`, `remainder-`, plus a uniquely named `.tmp` during the atomic replace. The write is bounded per FILE (a state is replaced, never appended to); the COUNT of files is bounded by nothing at all.",
+      "reason": "NO eviction exists for these files. `ctxroute-reset.js` purges only the CURRENT scope, and only when the harness sends a compaction — a session that ends without one leaves its files behind for ever. The 30-day TTL that would age them out lives in `src/hooks/legacy-mcp-inject.js`, which is UNWIRED since 2026-07-17, so it has never run in production: the classic cleaner that matches nothing. Measured consequence on the live install: 615 files, 5.1 MB, 544 of them ephemeral `plan-` files. The budget is written as 0 deliberately — declaring a comfortable number would be inventing a ceiling nothing enforces.",
+      "workItem": "WI-STATE-EVICTION"
+    },
+    "src/memory-store.js": {
+      "path": "paths.stateDir()",
+      "class": "snapshot",
+      "budget": { "maxFiles": 1 },
+      "policy": "bounded-count",
+      "why": "ONE file of fixed name (`daemon-state.json`), replaced in full by tmp+rename. Its SIZE mirrors the in-memory ceilings of `memory-store-pure.js` (4096 durable keys + 2048 ephemeral, evicted LRU in the same gesture as every write), so the file cannot grow past what RAM already refuses. Known and separately open: the snapshot is rewritten IN FULL on every mutation, which is a THROUGHPUT and SSD-wear question, not a growth one."
+    },
+    "src/hooks/canary-check.js": {
+      "path": "paths.stateDir()",
+      "class": "snapshot",
+      "budget": { "maxFiles": 2 },
+      "policy": "bounded-count",
+      "why": "`canary.json` plus its `.tmp` during the atomic replace — two fixed names, overwritten. The verdict carries an observation log (transcript path and sizes) whose length is bounded by the fields themselves, never accumulated. It also opens the transcript for READING, bounded to the last 2 MB."
+    },
+    "src/hooks/shadow-inject.js": {
+      "path": "paths.stateDir()",
+      "class": "log",
+      "budget": { "maxFiles": 0, "maxBytes": 0 },
+      "policy": "none",
+      "why": "Append-only JSONL, one file per calendar day (`shadow-YYYY-MM-DD.jsonl`), one line per tool call including the non-matches. A daily rollover bounds the SIZE of one file and bounds the COUNT of files by nothing.",
+      "reason": "There is no retention of any kind on these logs, and none is needed today because the hook is a RELIC: it was unwired from the harness on 2026-07-17 after the switch-over, so it writes nothing in production. That is precisely why it must stay declared rather than dropped — the day someone rewires it to rehearse another switch-over, an append-only log with no retention starts growing monotonically on a machine that runs for years, and nothing else in the repository would say so.",
+      "workItem": "WI-SHADOW-LOG"
+    },
+    "src/lock.js": {
+      "path": "paths.stateDir()",
+      "class": "lock",
+      "budget": { "maxFiles": 1 },
+      "policy": "lifetime",
+      "why": "A directory used as an atomic mutual-exclusion token: created by `mkdirSync` and removed in the `finally` of the same critical section, so nothing survives the operation. A token abandoned by a crashed holder is force-released by the next caller — which is an INFERENCE about death, named as such in `docs/framework/lock.md` and addressed by the state daemon, not by this manifest."
+    },
+    "src/hooks/ctxroute-reset.js": {
+      "path": "paths.stateDir()",
+      "class": "evictor",
+      "budget": { "maxFiles": 0 },
+      "policy": "event",
+      "why": "Creates nothing: it REMOVES the five store prefixes of one scope, and only on the PreCompact order the harness sends. An order received from outside, never a deduction made here that a session is over — that deduction is undecidable and guessing it is what the whole design removes."
+    },
+    "src/hooks/legacy-mcp-inject.js": {
+      "path": "paths.stateDir()",
+      "class": "evictor",
+      "budget": { "maxFiles": 0 },
+      "policy": "age",
+      "why": "Creates nothing: it removes `ctxroute-seen-*` files older than 30 days, on roughly one invocation in fifty. 🛑 This eviction is INERT — the hook was unwired on 2026-07-17 and is kept only as the differential oracle, so it has never run in production and covers only one of the five prefixes anyway. It is declared here so that the inertness is visible next to the gap it fails to cover (WI-STATE-EVICTION), instead of reading as an eviction that exists."
+    },
+    "src/hooks/http-server.js": {
+      "path": "paths.stateDir()",
+      "class": "state",
+      "budget": { "maxFiles": 1 },
+      "policy": "bounded-count",
+      "why": "Creates the state DIRECTORY before binding the rendezvous — macOS answers EACCES where Linux answers ENOENT on a fresh clone, a misleading error that sends the reader towards a permissions problem that does not exist. One idempotent directory; the daemon's own state goes through `memory-store.js` and is declared there."
+    },
+    "src/kernel-bind.js": {
+      "path": "kernelEndpoint.endpoint()",
+      "class": "rendezvous",
+      "budget": { "maxFiles": 1 },
+      "policy": "lifetime",
+      "why": "Removes a DEAD socket entry before rebinding. Windows removes its named pipe when the owner exits and a Linux abstract socket disappears with its last reference, so only macOS leaves a real file — cleared after ASKING the kernel who answers (`connect` succeeds = alive, ECONNREFUSED = dead), never on the guess that a file lying around means a dead owner."
+    },
+    "src/vendor-deadline.js": {
+      "path": "os.homedir() + /.claude/hooks",
+      "class": "vendor",
+      "budget": { "maxFiles": 1 },
+      "policy": "bounded-count",
+      "why": "Operator-invoked and DRY-RUN by default (`--write` to apply). It copies exactly one new file (`deadline.js`) into the operator's hook folder and patches existing hooks IN PLACE, idempotently — replaying converges and never doubles a banner, so the file count does not grow with the number of runs.",
+      "pathSourceGap": {
+        "reason": "The target is built from `os.homedir()` because `src/paths.js` exposes no accessor for the fleet HOOKS root — only `fileDocsDir()`, which sits BENEATH it, and `skillsDir()`, which is a sibling. Closing this properly means adding one accessor to the single source of paths and consuming it here, which is a runtime change and therefore the maintainer's call, not a gate's.",
+        "workItem": "WI-VENDOR-PATH"
+      }
+    }
+  },
+  "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else, and it has TWO halves. ① Every `pattern:` atom of `rules/fs-call.yml` (the RECEIVER-anchored family) MUST be paired below with a line of code whose detection is REQUIRED. An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. ② The METHOD-anchored family carries NO table here on purpose: its witnesses are FABRICATED from each write primitive itself, in both forms (`M(dest, payload)` for the destructured import and `aliased.M(dest, payload)` for any receiver), so a method classified `write` tomorrow is proven the same second and no list can fall out of step. Both halves write to the OS tmpdir and never to `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",
+  "witnesses": {
+    "fs.$M($$$)": "fs.writeFileSync(dest, payload);",
+    "require('fs').$M($$$)": "require('fs').mkdirSync(dir, { recursive: true });",
+    "fs.promises.$M($$$)": "fs.promises.writeFile(dest, payload).then(done);",
+    "fsp.$M($$$)": "fsp.appendFile(dest, line);"
+  },
+  "_doc_witness_origin": "The first two are copied from REAL occurrences of this repository (`src/session-store.js`, `src/hooks/http-server.js`). The last two have ZERO occurrence here and are PREVENTIVE: they are the canonical forms of the promise API and of its usual alias, i.e. the two ways a future write would arrive without touching the `fs.` form. Said plainly rather than passed off as encountered forms.",
+  "_doc_floors": "ANTI-VACUITY — a gate that analyses nothing goes green, this repository's worst defect class (paid three times: `deps-purity`, `deadline-gate`, `layers-gate`). FOUR independent floors: the perimeter must be populated, the write vocabulary DERIVED from `primitives` must be rich enough for the generated rule to mean anything, the scan must still find `fs` calls, and those calls must still resolve to WRITERS. All four sit deliberately far below the measurement (2026-08-21: 57 files scanned, 18 write primitives derived, 15 distinct methods met, 10 writers) — they catch a BLIND scan, they are not a second ratchet. 🛑 A floor measures a QUANTITY, never an IDENTITY: the perimeter is additionally checked to still BE `src/`, because a scan aimed elsewhere satisfies every floor it passes.",
+  "floors": {
+    "perimeterFiles": 40,
+    "writePrimitives": 12,
+    "distinctMethods": 10,
+    "writers": 8
+  }
+}

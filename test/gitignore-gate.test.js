@@ -15,8 +15,21 @@ import assert from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+// 🛑 SCRUB THE WHOLE `GIT_*` FAMILY BEFORE SPAWNING `git`. Git EXPORTS
+//    `GIT_DIR`/`GIT_INDEX_FILE` to every hook it runs, a child INHERITS them,
+//    and they BEAT `cwd` — measured 2026-08-21: a `git` aimed elsewhere acted
+//    on the REAL repository. Under a poisoned env this gate would judge
+//    somebody else's index and answer GREEN about a repo it never read.
+//    Never "unset the right one": nobody can enumerate what a future git
+//    version exports. Sealed repo-wide by `git-env-door-gate.test.js`.
+const ENV_WITHOUT_GIT = (() => {
+  const e = { ...process.env };
+  for (const k of Object.keys(e)) if (k.startsWith('GIT_')) delete e[k];
+  return e;
+})();
+
 test('GATE: git tracks NO file under state/', () => {
-  const out = execFileSync('git', ['ls-files', 'state/'], { cwd: path.join(__dirname, '..'), encoding: 'utf8' }).trim();
+  const out = execFileSync('git', ['ls-files', 'state/'], { cwd: path.join(__dirname, '..'), env: ENV_WITHOUT_GIT, encoding: 'utf8' }).trim();
   assert.strictEqual(out, '', `state/ files TRACKED (private runtime data → GitHub):\n${out}`);
 });
 
@@ -40,7 +53,7 @@ test('GATE: git tracks NO file under state/', () => {
 
 function estIgnore(rel) {
   try {
-    execFileSync('git', ['check-ignore', '-q', rel], { cwd: path.join(__dirname, '..') });
+    execFileSync('git', ['check-ignore', '-q', rel], { cwd: path.join(__dirname, '..'), env: ENV_WITHOUT_GIT });
     return true;
   } catch {
     return false; // exit 1 = not ignored

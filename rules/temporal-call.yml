@@ -26,6 +26,14 @@
 #    for ever. The doctrine budgets what SPENDS wall-clock time. Widening the
 #    rule to those keys would enrol 40 legitimate bounds into the budget, and
 #    a noisy gate is a gate people stop reading.
+# ⚠️ ALSO OUT OF SCOPE, DECIDED 2026-08-21 (1 occurrence measured,
+#    `test/client-core.test.js`): `setImmediate` is a TICK, not a WAIT — it
+#    yields to the next iteration of the event loop, makes nothing slower and
+#    guesses NO number of milliseconds. 🛑 It is deliberately NOT an atom: the
+#    budget admits exactly `distant` and `undecidable`, a tick is NEITHER, so
+#    enrolling it would force an INVENTED justification — and an invented
+#    justification makes a case look settled. The clause and its COUNT live in
+#    `test/temporal-budget-gate.test.js`, which also refuses this atom here.
 id: temporal-call
 language: JavaScript
 severity: error

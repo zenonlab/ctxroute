@@ -203,7 +203,14 @@ test('㉚ NEGATIVE — the count really goes red (IN-MEMORY sabotage)', () => {
  * modified). ⚠️ `null` = OUT OF SCOPE, never "all is well".
  */
 function commitsOublies(execFileSync, racine, tete) {
-  const git = (...a) => execFileSync('git', ['-C', racine, ...a], { encoding: 'utf8' });
+  // 🛑 SCRUB THE WHOLE `GIT_*` FAMILY: git EXPORTS `GIT_DIR`/`GIT_INDEX_FILE`
+  //    to every hook it runs, a child INHERITS them, and they BEAT `-C`/`cwd`
+  //    alike — measured 2026-08-21, a `git` aimed elsewhere acted on the REAL
+  //    repository. Here it would read ANOTHER repository's history and answer
+  //    about commits nobody wrote. Sealed by `git-env-door-gate.test.js`.
+  const envWithoutGit = { ...process.env };
+  for (const k of Object.keys(envWithoutGit)) if (k.startsWith('GIT_')) delete envWithoutGit[k];
+  const git = (...a) => execFileSync('git', ['-C', racine, ...a], { env: envWithoutGit, encoding: 'utf8' });
   try {
     // A shallow clone has no history: any range would be wrong there.
     if (git('rev-parse', '--is-shallow-repository').trim() === 'true') return null;

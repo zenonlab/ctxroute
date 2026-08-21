@@ -72,13 +72,26 @@ const ARBO = path.join(HERE, '..', 'FILE-MAP.md');
 //    --show-toplevel`), never inferred from where the test file happens to sit —
 //    the same repair `leak-gate.test.js` received this morning, in a class that
 //    was fixed in ONE file instead of being swept everywhere it lives.
+// 🛑 SCRUB THE WHOLE `GIT_*` FAMILY BEFORE SPAWNING `git`. Git EXPORTS
+//    `GIT_DIR`/`GIT_INDEX_FILE` to every hook it runs, a child INHERITS them,
+//    and they BEAT `cwd` — measured 2026-08-21: a `git` aimed at a sandbox
+//    wrote into the REAL index, and `--show-toplevel` under a poisoned env
+//    answers about somebody else's repository. Never "unset the right one":
+//    nobody can enumerate what a future git version exports. Sealed repo-wide
+//    by `git-env-door-gate.test.js`.
+const ENV_WITHOUT_GIT = (() => {
+  const e = { ...process.env };
+  for (const k of Object.keys(e)) if (k.startsWith('GIT_')) delete e[k];
+  return e;
+})();
+
 const REPO_ROOT = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: HERE, encoding: 'utf8',
+  cwd: HERE, env: ENV_WITHOUT_GIT, encoding: 'utf8',
 }).trim();
 
 const trackedFiles = () => {
   const git = (args) =>
-    execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
+    execFileSync('git', args, { cwd: REPO_ROOT, env: ENV_WITHOUT_GIT, encoding: 'utf8' })
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
