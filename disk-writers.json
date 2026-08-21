@@ -51,74 +51,90 @@
     "src/session-store.js": {
       "path": "paths.stateDir()",
       "class": "state",
-      "budget": { "maxFiles": 0, "maxBytes": 0 },
-      "policy": "none",
-      "why": "One JSON file per store prefix and per agent scope: `doc-seen-`, `ctxroute-seen-`, `turn-count-`, `plan-`, `remainder-`, plus a uniquely named `.tmp` during the atomic replace. The write is bounded per FILE (a state is replaced, never appended to); the COUNT of files is bounded by nothing at all.",
-      "reason": "NO eviction exists for these files. `ctxroute-reset.js` purges only the CURRENT scope, and only when the harness sends a compaction — a session that ends without one leaves its files behind for ever. The 30-day TTL that would age them out lives in `src/hooks/legacy-mcp-inject.js`, which is UNWIRED since 2026-07-17, so it has never run in production: the classic cleaner that matches nothing. Measured consequence on the live install: 615 files, 5.1 MB, 544 of them ephemeral `plan-` files. The budget is written as 0 deliberately — declaring a comfortable number would be inventing a ceiling nothing enforces.",
-      "workItem": "WI-STATE-EVICTION"
+      "budget": {
+        "maxFiles": 6144
+      },
+      "policy": "bounded-count",
+      "why": "One JSON file per store prefix and per agent scope: `doc-seen-`, `ctxroute-seen-`, `turn-count-`, `plan-`, `remainder-`, plus a uniquely named `.tmp` during the atomic replace. The write is bounded per FILE (a state is replaced, never appended to), and since 2026-08-21 the COUNT is bounded too: 4096 durable scopes + 2048 ephemeral `plan-` keys, the ceilings of `memory-store-pure.js` applied to the directory by `src/state-eviction.js`, coldest first. The ephemeral keys and the `.tmp` leftovers also age out at `deadline.DEFAULT_MS` × 10. WI-STATE-EVICTION is CLOSED; the measurement that opened it (615 files, 5.1 MB, 544 of them `plan-`) is what those two numbers were sized against."
+    },
+    "src/state-eviction.js": {
+      "path": "paths.stateDir()",
+      "class": "evictor",
+      "budget": {
+        "maxFiles": 0
+      },
+      "policy": "age",
+      "why": "Creates nothing: it lists `state/`, hands the listing to `src/state-eviction-pure.js` and unlinks exactly the names that come back — the shell of the ceiling `state/` never had. TWO bounds, one per lifetime. AGE, the only duration, DERIVED from `deadline.DEFAULT_MS` × 10: every hook process of this framework arms its own deadline, so past that bound no process that could still read a `plan-` or a half-written `.tmp` is alive — killed by our timer, never presumed dead. COUNT for what our timer cannot judge: 4096 durable scopes and 2048 ephemeral plans, imported from `memory-store-pure.js` so the RAM ceiling and the disk ceiling cannot drift, coldest first, ONE ceiling per class (shared, the ephemeral flood would evict the durable and one busy agent would erase the fleet's memory). FAIL-CLOSED on deletion: a name matching no declared prefix is never removed, only REPORTED as `unclassified` — the only thing in this repo that sees an undeclared writer. Swept once per human turn from `src/hooks/turn-count.js`, inside a hook that was going to run anyway: never a timer, never a new process, never a state WRITE (16 frames × every action)."
     },
     "src/memory-store.js": {
       "path": "paths.stateDir()",
       "class": "snapshot",
-      "budget": { "maxFiles": 1 },
+      "budget": {
+        "maxFiles": 1
+      },
       "policy": "bounded-count",
-      "why": "ONE file of fixed name (`daemon-state.json`), replaced in full by tmp+rename. Its SIZE mirrors the in-memory ceilings of `memory-store-pure.js` (4096 durable keys + 2048 ephemeral, evicted LRU in the same gesture as every write), so the file cannot grow past what RAM already refuses. Known and separately open: the snapshot is rewritten IN FULL on every mutation, which is a THROUGHPUT and SSD-wear question, not a growth one."
+      "why": "ONE file of fixed name (`daemon-state.json`), replaced in full by tmp+rename. Its SIZE mirrors the in-memory ceilings of `memory-store-pure.js` (4096 durable keys + 2048 ephemeral, evicted LRU in the same gesture as every write), so the file cannot grow past what RAM already refuses. The full rewrite on EVERY mutation — a THROUGHPUT and SSD-wear question, never a growth one — was CLOSED on 2026-08-21: the snapshot is flushed on a COUNT of mutations (`PERSIST_EVERY`) and on the daemon's clean exit, so a `kill -9` loses at most the last N mutations, i.e. at most a re-delivery."
     },
     "src/hooks/canary-check.js": {
       "path": "paths.stateDir()",
       "class": "snapshot",
-      "budget": { "maxFiles": 2 },
+      "budget": {
+        "maxFiles": 2
+      },
       "policy": "bounded-count",
       "why": "`canary.json` plus its `.tmp` during the atomic replace — two fixed names, overwritten. The verdict carries an observation log (transcript path and sizes) whose length is bounded by the fields themselves, never accumulated. It also opens the transcript for READING, bounded to the last 2 MB."
-    },
-    "src/hooks/shadow-inject.js": {
-      "path": "paths.stateDir()",
-      "class": "log",
-      "budget": { "maxFiles": 0, "maxBytes": 0 },
-      "policy": "none",
-      "why": "Append-only JSONL, one file per calendar day (`shadow-YYYY-MM-DD.jsonl`), one line per tool call including the non-matches. A daily rollover bounds the SIZE of one file and bounds the COUNT of files by nothing.",
-      "reason": "There is no retention of any kind on these logs, and none is needed today because the hook is a RELIC: it was unwired from the harness on 2026-07-17 after the switch-over, so it writes nothing in production. That is precisely why it must stay declared rather than dropped — the day someone rewires it to rehearse another switch-over, an append-only log with no retention starts growing monotonically on a machine that runs for years, and nothing else in the repository would say so.",
-      "workItem": "WI-SHADOW-LOG"
     },
     "src/lock.js": {
       "path": "paths.stateDir()",
       "class": "lock",
-      "budget": { "maxFiles": 1 },
+      "budget": {
+        "maxFiles": 1
+      },
       "policy": "lifetime",
       "why": "A directory used as an atomic mutual-exclusion token: created by `mkdirSync` and removed in the `finally` of the same critical section, so nothing survives the operation. A token abandoned by a crashed holder is force-released by the next caller — which is an INFERENCE about death, named as such in `docs/framework/lock.md` and addressed by the state daemon, not by this manifest."
     },
     "src/hooks/ctxroute-reset.js": {
       "path": "paths.stateDir()",
       "class": "evictor",
-      "budget": { "maxFiles": 0 },
+      "budget": {
+        "maxFiles": 0
+      },
       "policy": "event",
       "why": "Creates nothing: it REMOVES the five store prefixes of one scope, and only on the PreCompact order the harness sends. An order received from outside, never a deduction made here that a session is over — that deduction is undecidable and guessing it is what the whole design removes."
     },
     "src/hooks/legacy-mcp-inject.js": {
       "path": "paths.stateDir()",
       "class": "evictor",
-      "budget": { "maxFiles": 0 },
+      "budget": {
+        "maxFiles": 0
+      },
       "policy": "age",
-      "why": "Creates nothing: it removes `ctxroute-seen-*` files older than 30 days, on roughly one invocation in fifty. 🛑 This eviction is INERT — the hook was unwired on 2026-07-17 and is kept only as the differential oracle, so it has never run in production and covers only one of the five prefixes anyway. It is declared here so that the inertness is visible next to the gap it fails to cover (WI-STATE-EVICTION), instead of reading as an eviction that exists."
+      "why": "Creates nothing: it removes `ctxroute-seen-*` files older than 30 days, on roughly one invocation in fifty. 🛑 This eviction is INERT — the hook was unwired on 2026-07-17 and is kept only as the differential oracle, so it has never run in production and covers only one of the five prefixes anyway. It is declared here so that the inertness stays visible — the real eviction of `state/` is `src/state-eviction.js` — instead of reading as an eviction that exists."
     },
     "src/hooks/http-server.js": {
       "path": "paths.stateDir()",
       "class": "state",
-      "budget": { "maxFiles": 1 },
+      "budget": {
+        "maxFiles": 1
+      },
       "policy": "bounded-count",
       "why": "Creates the state DIRECTORY before binding the rendezvous — macOS answers EACCES where Linux answers ENOENT on a fresh clone, a misleading error that sends the reader towards a permissions problem that does not exist. One idempotent directory; the daemon's own state goes through `memory-store.js` and is declared there."
     },
     "src/kernel-bind.js": {
       "path": "kernelEndpoint.endpoint()",
       "class": "rendezvous",
-      "budget": { "maxFiles": 1 },
+      "budget": {
+        "maxFiles": 1
+      },
       "policy": "lifetime",
       "why": "Removes a DEAD socket entry before rebinding. Windows removes its named pipe when the owner exits and a Linux abstract socket disappears with its last reference, so only macOS leaves a real file — cleared after ASKING the kernel who answers (`connect` succeeds = alive, ECONNREFUSED = dead), never on the guess that a file lying around means a dead owner."
     },
     "src/vendor-deadline.js": {
       "path": "os.homedir() + /.claude/hooks",
       "class": "vendor",
-      "budget": { "maxFiles": 1 },
+      "budget": {
+        "maxFiles": 1
+      },
       "policy": "bounded-count",
       "why": "Operator-invoked and DRY-RUN by default (`--write` to apply). It copies exactly one new file (`deadline.js`) into the operator's hook folder and patches existing hooks IN PLACE, idempotently — replaying converges and never doubles a banner, so the file count does not grow with the number of runs.",
       "pathSourceGap": {

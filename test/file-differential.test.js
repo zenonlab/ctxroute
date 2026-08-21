@@ -55,7 +55,7 @@ const available = fs.existsSync(LEGACY) && fs.existsSync(RULES_PATH);
 // ⚠️ THE LESSON: PARSE THE FORMAT, NEVER IMPROVISE ON TEXT. The hook emits a JSON
 //    contract (`hookSpecificOutput.additionalContext`) — read it as JSON. Any
 //    regex "trick" on the raw stdout will fall back into one of the two traps.
-// ⚠️ EXTRACTED into oracle.js on 16/07/2026 (shared with shadow-reconcile.js):
+// ⚠️ EXTRACTED into oracle.js on 16/07/2026 (it had a second consumer, deleted with the shadow relic on 21/08/2026):
 //    there is only ONE reading of the oracle's output — two parsers = two
 //    ways of lying. The 2 traps (hardcoded marker, escaped JSON) are sealed there.
 import { legacyDocs as oracleDocs } from '../src/oracle.js';

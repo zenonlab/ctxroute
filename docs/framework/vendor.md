@@ -13,4 +13,5 @@ rank: 541
 ⚠️ "The process dies" DOES NOT PROVE "it works" — a process that CRASHES dies too. The death test was GREEN on a broken `browser-recover.js`. KEEP all 3: `node --check` (syntax) + the fleet's 9 suites before/after (regression) + the spawn (death). Never one without the others.
 ⚠️ NEVER a guessed patch: no safe insertion point ⇒ the script REPORTS it (`MANUELS`), a human decides. The gate requires `MANUELS: 0` — a fleet covered at 86% leaves a zombie possible.
 ⚠️ Fleet gates SKIPPED on a fresh clone (public repo: it must never require `~/.claude/hooks/`). Skipping is NOT failing — they scream at the maintainer's, where the fleet exists.
+⚠️ The TARGET directory comes from `paths.fleetHooksDir()`, resolved LAZILY inside `main()` — never a local `os.homedir()` and never a module-level const. This script WRITES there: a second definition of that path would arm the wrong fleet in silence. Override = `CTXROUTE_FLEET_HOOKS_DIR` (tests/doctor only; `VENDOR_TARGET_DIR` retired 2026-08-21).
 `npm run test:fleet` = fleet gate + drift + proof on a copy. Outside `npm test` (slow spawns).

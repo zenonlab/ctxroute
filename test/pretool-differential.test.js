@@ -20,7 +20,7 @@ import assert from 'node:assert';
 // ⚠️ SINGLE SOURCE shared with `mcp-differential` — never a copy:
 //    two normalizations diverge, and two nets that no longer filter the
 //    same thing no longer prove anything together.
-import { withoutOrdinal } from '../src/differential-normalize.js';
+import { withoutOrdinal, alignChunked } from '../src/differential-normalize.js';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -67,6 +67,27 @@ function unseal(ctx) {
   return m ? m[2] : ctx;
 }
 
+// ⚠️ CHUNKING — THE THIRD ENVELOPE BORN AFTER THE FROZEN ORACLE (21/08/2026).
+//    A fleet doc that grows past ONE frame (~7,661 c) is CHUNKED by the engine;
+//    the oracle returns the WHOLE document. This test went red THREE times in
+//    ONE afternoon on that, and the "fix" was each time to SHORTEN a doc.
+// 🛑 THAT FIX IS FORBIDDEN HERE ("never turn this red green by shortening a
+//    doc"): docs grow, and a gate silenced by trimming prose ends up trimming
+//    something that mattered.
+// ⚠️ WHAT THE COMPARISON BECOMES, AND WHAT IT NO LONGER PROVES: the
+//    differential drives ONE frame, so only chunk 1/m exists in that output —
+//    reassembly is impossible. The delivered chunk must therefore be an EXACT
+//    PREFIX of the oracle's document, cut on a LINE boundary. A prefix is
+//    WEAKER than an equality: on a chunked doc, a divergence located BEYOND the
+//    first chunk is INVISIBLE. Stated, not hidden. Everything else keeps its
+//    STRICT byte equality — `alignChunked` is the identity outside a
+//    well-formed `CHUNK 1/m` delivery (single source + negative-check in
+//    `differential-normalize.test.js`).
+function sameContent(fresh, old, message) {
+  const r = alignChunked(fresh, old);
+  assert.strictEqual(r.actual, r.expected, message);
+}
+
 function runHook(script, payload, env) {
   return new Promise((resolve) => {
     const child = execFile(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, ...env } }, (_err, stdout) => {
@@ -93,7 +114,7 @@ test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + s
   assert.ok(old && fresh, 'both engines must inject on this known payload');
   assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
   assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-  assert.strictEqual(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+  sameContent(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
   // ⚠️ DECLARED DIFFERENCE ON THE BADGE — THE NEW ONE NAMES MORE (07/08/2026).
   //
   // 🔴 REAL defect, measured HERE on the fleet: the old engine (and ours
@@ -141,7 +162,7 @@ test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', 
   if (RUSH) {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-    assert.strictEqual(RUSH_PREFIX + withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+    sameContent(RUSH_PREFIX + withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
   } else {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'ask');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'ask');
@@ -153,7 +174,7 @@ test.skipIf(!parcPresent)('BASH: cd && reconstruction — same docs injected', a
   const { old, fresh } = await both({ toolName: 'Bash', toolInput: { command: 'cd C:/Users/dev/Desktop/ctxroute && node doctor.js' } });
   // Both silent OR identical injection — never one without the other.
   assert.strictEqual(fresh === null, old === null, 'one engine speaks, the other keeps silent');
-  if (old) assert.strictEqual(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+  if (old) sameContent(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
 });
 
 test.skipIf(!parcPresent)('GIT + NON-MATCH: silence on both sides', async () => {

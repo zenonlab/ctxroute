@@ -54,6 +54,27 @@ readStdinJson(
       // enabled:false switches off the WHOLE framework, turn counter included.
       if (!lib.isFrameworkEnabled(config)) process.exit(0);
 
+      // 🛑 THE DISK EVICTION IS TRIGGERED HERE, AND THE PLACE IS THE DECISION.
+      //    `state/` writes one JSON file per scope and had NO eviction at all
+      //    (615 files / 5.1 MB measured on the live install, 88 % of them
+      //    ephemeral `plan-` keys). What was needed is a caller that CANNOT
+      //    forget and is NOT a timer:
+      //      · UserPromptSubmit fires exactly ONCE per turn, and a tool call is
+      //        always the consequence of a prompt ⇒ no session can produce state
+      //        files without this hook having run first;
+      //      · it is ONE process, not the 16 frames of a tool call, so the
+      //        readdir is paid once per human turn instead of once per action;
+      //      · it is already wired on BOTH harnesses and already fail-open.
+      //    🛑 NEVER move this into a state WRITE (`session-store.saveState`): the
+      //    16 frames of every action would each walk the directory — the
+      //    "and at 10,000?" defect, paid on every gesture.
+      //    ⚠️ HONEST LIMIT: a harness that does not wire UserPromptSubmit gets
+      //    NO eviction. That is a wiring fact the doctor must assert, not
+      //    something this file can guarantee.
+      // ⚠️ Fail-open twice over (the module swallows its own errors, and this
+      //    catch is the second wall): disk housekeeping never costs a turn.
+      try { require('../state-eviction').sweep(); } catch { /* fail-open */ }
+
       // ⚠️ SCOPE PER AGENT — same composite key as the gateway (lib.scopeId,
       // SINGLE SOURCE): a turn counter shared between master and sub-agents
       // would distort the 'turn' driftUnit of the sub-agents. Without agent_id = the

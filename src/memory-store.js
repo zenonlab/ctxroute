@@ -36,6 +36,20 @@
 // ⚠️ FAIL-OPEN, IDENTICAL TO THE DISK STORE: an unreadable snapshot yields an
 //    EMPTY state, never an exception. The worst case is a document delivered
 //    once more, never a hook that breaks an agent's action.
+//
+// 🔑 THE SNAPSHOT IS NO LONGER WRITTEN ON EVERY MUTATION (2026-08-21), AND THE
+//    PROVEN PROPERTY CHANGED — say it plainly rather than let a reader assume the
+//    old one. It WAS *"the state survives a restart"*. It IS NOW: **the state
+//    survives a CLEAN restart ENTIRELY, and a `kill -9` loses at most the last N
+//    mutations.** Losing a mutation costs at most a RE-DELIVERY of a document —
+//    never a wrong action, never a corrupt state. That is why the trade is
+//    acceptable, and it is the only reason that may be cited for it.
+// 🛑 TWO AUTHORITIES, BOTH FACTS, NEITHER A CLOCK: a COUNT of mutations
+//    (`memory-store-pure.persistTick`) and this process's own CLEAN EXIT
+//    (`flush`). The rule of both lives NEXT DOOR because Stryker never mutates an
+//    I/O file — a threshold written HERE would ship measured by nothing. This
+//    file only OBEYS: it counts, and it calls.
+// 🛑 NO TIMER, NO DEBOUNCE, NO TTL anywhere on this path.
 // ═══════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -52,10 +66,28 @@ const pur = require('./memory-store-pure');
 const MAX_SCOPES = pur.MAX_SCOPES;
 const MAX_EPHEMERAL = pur.MAX_EPHEMERAL;
 
+// ⚠️ THE DEFAULT CLEAN-EXIT REGISTRAR, INJECTABLE — a test must be able to fire
+//    the exit path without ending the process, and 2,000 stores must not pile
+//    2,000 listeners onto a long-lived emitter.
+// 🛑 `'exit'` AND NOTHING ELSE, AND THE REASON IS THE HOUSE RULE. Installing a
+//    `SIGTERM`/`SIGINT` listener SUPPRESSES Node's default termination, i.e. a
+//    STORE would start deciding whether its caller lives or dies — the exact
+//    defect found on macOS CI when `createServer` threw on `EADDRINUSE`. A store
+//    saves; a shell decides to die.
+// ⚠️ The handler must stay SYNCHRONOUS: nothing asynchronous scheduled from
+//    `'exit'` ever runs (Node doc). `fs.writeFileSync` is precisely what is
+//    allowed there.
+const DEFAULT_EXIT_HOOK = (fn) => {
+  process.on('exit', fn);
+  return () => process.off('exit', fn);
+};
+
 /**
- * @param {{ snapshotPath?: string|null }} [options]
+ * @param {{ snapshotPath?: string|null,
+ *           onExit?: (fn: () => void) => (() => void) }} [options]
  * @returns {{ loadState: Function, saveState: Function, purge: Function,
- *            restore: Function, size: Function, scopes: Function }}
+ *            restore: Function, size: Function, scopes: Function,
+ *            flush: Function, close: Function }}
  */
 function createMemoryStore(options) {
   const snapshotPath = (options && options.snapshotPath) || null;
@@ -82,8 +114,12 @@ function createMemoryStore(options) {
     //    at shutdown, is the same as not doing it: the timer is one more
     //    temporal call to justify, and a shutdown that never happens evicts
     //    nothing.
+    // 🛑 AND THIS IS WHY EVICTION DOES **NOT** FOLLOW THE SNAPSHOT'S CADENCE.
+    //    The ceiling bounds RAM, which the count would let overshoot by N
+    //    entries; the snapshot bounds DISK, which is what the count exists to
+    //    spare. Two budgets, two rhythms — never merge them "for symmetry".
     pur.evict(etat, MAX_SCOPES, MAX_EPHEMERAL);
-    ecrireSnapshot();
+    compter();
   }
 
   /**
@@ -95,8 +131,70 @@ function createMemoryStore(options) {
    */
   function purge(prefixeCle) {
     const n = pur.purge(etat, prefixeCle);
-    if (n > 0) ecrireSnapshot();
+    if (n > 0) compter();
     return n;
+  }
+
+  // ⚠️ THE BACKLOG: mutations NOT yet on disk. A plain integer, owned by this
+  //    shell, read by the pure rule. It is never a timestamp and never a size.
+  let enAttente = 0;
+
+  /**
+   * ONE MUTATION HAPPENED. The DECISION belongs to `memory-store-pure`; all this
+   * function may do is carry the number there and obey the answer.
+   * 🛑 NEVER inline a `>=` here: a threshold in an I/O file is a rule Stryker
+   *    cannot mutate, hence a rule nothing measures.
+   */
+  function compter() {
+    const t = pur.persistTick(enAttente, pur.PERSIST_EVERY);
+    enAttente = t.pending;
+    if (t.persist) ecrireSnapshot();
+  }
+
+  /**
+   * AUTHORITY ② — THE CLEAN EXIT. Writes what the count had not yet flushed.
+   *
+   * ✅ WHICH EXIT PATHS THIS REALLY COVERS, and it is a list of FACTS about the
+   *    runtime, not a hope:
+   *      · the event loop emptying (a normal end);
+   *      · `process.exit(code)` called explicitly — **this includes the
+   *        stale-code restart, `process.exit(90)` in `hooks/http-server.js`,
+   *        which is the daemon's MOST FREQUENT death by far** (every edit of this
+   *        repository triggers it);
+   *      · an uncaught exception, after the default fatal handler.
+   * 🛑 WHICH PATHS IT CANNOT COVER — STATED, never implied covered:
+   *      · `SIGKILL` / `kill -9` / a power loss: nothing runs, by definition.
+   *        That is the case the COUNT bounds, and its cost is at most N−1
+   *        re-delivered documents.
+   *      · `SIGTERM` / `SIGINT` / `SIGHUP` **with no listener installed** — Node
+   *        terminates on the default action and `'exit'` does NOT fire. **A
+   *        supervisor's `systemctl stop` takes that path today.** Closing it
+   *        requires a SIGNAL HANDLER, and a signal handler belongs to the
+   *        executable SHELL (it decides the process's fate), never to a store:
+   *        `store.flush()` then `process.exit()` is the shape it must take. Until
+   *        a shell does that, a supervisor stop degrades to the `kill -9` case —
+   *        bounded, and written here rather than discovered.
+   *      · `process.abort()` and a native crash: same, nothing runs.
+   * ⚠️ FAIL-OPEN like every write here: `ecrireSnapshot` swallows its own errors.
+   * @returns {boolean} whether anything was actually written
+   */
+  function flush() {
+    if (!pur.shouldFlush(enAttente)) return false;
+    enAttente = 0;
+    ecrireSnapshot();
+    return true;
+  }
+
+  // ⚠️ REGISTERED ONLY WHEN THERE IS A FILE TO WRITE. A volatile store (no
+  //    `snapshotPath`) has nothing to save, so it must not attach a listener to
+  //    a long-lived emitter — the suite builds hundreds of them.
+  const desarmer = snapshotPath
+    ? ((options && options.onExit) || DEFAULT_EXIT_HOOK)(flush)
+    : null;
+
+  /** Releases the exit hook. For a test, or a caller that owns several stores. */
+  function close() {
+    if (typeof desarmer === 'function') desarmer();
   }
 
   // 🛑 ATOMIC, FOR THE CRASH — never for a concurrent reader (there is none).
@@ -126,6 +224,10 @@ function createMemoryStore(options) {
    *    never a broken action.
    */
   function restore() {
+    // ⚠️ WHAT WAS JUST READ IS ALREADY ON DISK: the backlog is zero by
+    //    definition. Leaving a stale count here would make the first mutation
+    //    after a restart land at an arbitrary point in the cycle.
+    enAttente = 0;
     if (!snapshotPath) return 0;
     try {
       return pur.adopt(JSON.parse(fs.readFileSync(snapshotPath, 'utf8')), etat, MAX_SCOPES, MAX_EPHEMERAL);
@@ -139,9 +241,11 @@ function createMemoryStore(options) {
     saveState,
     purge,
     restore,
+    flush,
+    close,
     size: () => pur.size(etat),
     scopes: () => pur.keys(etat),
   };
 }
 
-module.exports = { createMemoryStore, MAX_SCOPES, MAX_EPHEMERAL };
+module.exports = { createMemoryStore, MAX_SCOPES, MAX_EPHEMERAL, PERSIST_EVERY: pur.PERSIST_EVERY };

@@ -48,7 +48,9 @@ on:
       - 'src/disk-writers-pure.js'
       - 'src/quadratic-budget-pure.js'
       - 'src/memory-store-pure.js'
+      - 'src/state-eviction-pure.js'
       - 'src/kernel-endpoint.js'
+      - 'src/differential-normalize.js'
       # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
       - 'test/harness-conformance.test.js'
       - 'test/lib-pure.test.js'
@@ -82,7 +84,9 @@ on:
       - 'test/disk-writers-pure.test.js'
       - 'test/quadratic-budget-pure.test.js'
       - 'test/memory-store.test.js'
+      - 'test/state-eviction-pure.test.js'
       - 'test/kernel-endpoint.test.js'
+      - 'test/differential-normalize.test.js'
       # ── the mutation config itself + the deps ──
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'

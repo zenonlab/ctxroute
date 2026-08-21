@@ -17,6 +17,7 @@ export default defineConfig({
   test: {
     include: [
       'test/harness-conformance.test.js',
+    'test/differential-normalize.test.js',
       'test/deps-criticality-pure.test.js',
       'test/lib-pure.test.js',
       'test/canary.test.js',
@@ -71,6 +72,12 @@ export default defineConfig({
       //    kills those mutants. Absent from this list, the LRU and the ceiling
       //    would be measured by nothing.
       'test/memory-store.test.js',
+      // ⚠️ `state-eviction.js` is the I/O shell (readdir/unlink) and is NOT mutated; the rule that
+      //    decides WHAT disappears lives in `state-eviction-pure.js`, which is — and this is the
+      //    deterministic suite that kills its mutants. Absent from this list, the age bound, the
+      //    per-class ceilings and the matcher would be measured by NOTHING: exactly the "cleaner
+      //    that selects nothing" the module exists to make impossible.
+      'test/state-eviction-pure.test.js',
       // ⚠️ The rendezvous address: a PURE function, deterministic, spawn-free.
       //    The behaviour under real processes lives in `state-daemon.test.js`,
       //    which spawns and therefore never enters this runner.

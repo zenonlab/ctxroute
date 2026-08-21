@@ -28,11 +28,21 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const paths = require('./paths');
 
 const SRC = path.join(__dirname, 'deadline.js');
-const PARC = process.env.VENDOR_TARGET_DIR || path.join(os.homedir(), '.claude', 'hooks');
 const WRITE = process.argv.includes('--write');
+
+// ⚠️ THE FLEET ROOT COMES FROM `paths.js`, NEVER FROM A LOCAL `os.homedir()`.
+//    Until 21/08/2026 this file rebuilt `~/.claude/hooks` itself, under its own
+//    env var (`VENDOR_TARGET_DIR`) — a SECOND definition of a directory
+//    `paths.js` already owns (`fileDocsDir()` lives beneath it). Two copies of
+//    one path diverge in silence: this script WRITES into that directory, so the
+//    divergence would arm the wrong fleet and nothing would say so.
+// ⚠️ LAZY (resolved inside main(), never frozen in a module-level const):
+//    otherwise the env var a test sets at spawn time is ignored.
+// ⚠️ The override is `CTXROUTE_FLEET_HOOKS_DIR`, RESERVED FOR TESTS AND
+//    doctor.js — NEVER a user setting (the user config is ctxroute-config.json).
 
 const BANNIERE = [
   '',
@@ -83,6 +93,7 @@ function pointInsertion(lines) {
 }
 
 function main() {
+  const PARC = paths.fleetHooksDir();
   if (!fs.existsSync(PARC)) {
     console.error(`target not found: ${PARC}`);
     process.exit(1);

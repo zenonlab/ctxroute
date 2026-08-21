@@ -27,8 +27,9 @@ import { createRequire } from 'node:module';
 //    so Stryker saw no test at all. The rule was already written; it was broken
 //    here. Reaching the pure module directly is what makes the score real.
 import {
-  key, evict, touch, adopt, purge, isEphemeral,
-  createState, set as poser, keys as clefs, size as taille, MAX_SCOPES, MAX_EPHEMERAL,
+  key, evict, touch, adopt, purge, isEphemeral, persistTick, shouldFlush,
+  createState, set as poser, keys as clefs, size as taille,
+  MAX_SCOPES, MAX_EPHEMERAL, PERSIST_EVERY,
 } from '../src/memory-store-pure.js';
 
 // ⚠️ A HELPER, NOT A TWIN: the pure state is TWO maps (one LRU per lifetime)
@@ -50,7 +51,14 @@ const { createMemoryStore } = require('../src/memory-store.js');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-mem-'));
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
-const neuf = (nom) => createMemoryStore({ snapshotPath: path.join(TMP, nom, 'snapshot.json') });
+// ⚠️ A STORE WITH A PATH REGISTERS A `process.on('exit')` HOOK — that is the
+//    CLEAN-EXIT authority, and it is right. But a suite builds a dozen stores in
+//    one process, so every cell that is NOT about the exit path injects a no-op
+//    registrar: piling listeners onto a long-lived emitter is the accumulation
+//    class this repo audits everywhere else, and it would surface as a warning
+//    nobody reads rather than as a red.
+const SANS_SORTIE = { onExit: () => () => {} };
+const neuf = (nom) => createMemoryStore({ snapshotPath: path.join(TMP, nom, 'snapshot.json'), ...SANS_SORTIE });
 
 // ── ① THE API IS THE SAME, OR NOTHING CAN BE SWAPPED ────────────────────
 // ⚠️ The whole migration rests on this: `pretool-core` and `emission-core` call
@@ -93,13 +101,13 @@ test('A HOSTILE KEY IS DATA, never a prototype', () => {
 // ⚠️ The bound is a COUNT, never a deduction about death: we keep the N most
 //    recently used and drop the coldest. No clock, no liveness probe.
 test('CEILING: the memory is bounded, and it is the COLDEST scope that goes', () => {
-  // 🛑 NO SNAPSHOT HERE, AND IT IS A MEASUREMENT, NOT A CONVENIENCE. The store
-  //    rewrites its WHOLE snapshot on every state write, so filling it to the
-  //    ceiling costs O(entries) of disk per write — quadratic, and at 4096 it
-  //    times the cell out. The CEILING is a property of the MEMORY; the snapshot
-  //    has its own cells right below. ⚠️ That cost is REAL and is written down as
-  //    an open point (`kernel-state.md`): it was invisible at the old ceiling and
-  //    must be decided before the switch-over, never discovered in production.
+  // 🛑 NO SNAPSHOT HERE, AND IT IS A MEASUREMENT, NOT A CONVENIENCE. The CEILING
+  //    is a property of the MEMORY; the snapshot has its own cells (⑧ below).
+  // ⚠️ Until 2026-08-21 the store rewrote its WHOLE snapshot on EVERY state
+  //    write, so filling it to the ceiling cost O(entries) of disk per write and
+  //    timed this cell out at 4096 — that TIMEOUT is how the defect was found.
+  //    It is closed (count + clean exit), and this cell still asks for no
+  //    snapshot: what it proves has nothing to do with the disk.
   const s = createMemoryStore({ snapshotPath: null });
   for (let i = 0; i < MAX_SCOPES + 50; i += 1) s.saveState('doc-seen-', 'sess-' + i, { i });
 
@@ -111,9 +119,8 @@ test('CEILING: the memory is bounded, and it is the COLDEST scope that goes', ()
 });
 
 test('LRU: READING a scope protects it from the next eviction', () => {
-  // 🛑 NO SNAPSHOT, same reason as the ceiling cell above: filling to the ceiling
-  //    with a snapshot per write is O(entries) of disk per write. What is under
-  //    test here is the LRU, which lives entirely in memory.
+  // 🛑 NO SNAPSHOT, same reason as the ceiling cell above: what is under test
+  //    here is the LRU, which lives entirely in memory.
   const s = createMemoryStore({ snapshotPath: null });
   for (let i = 0; i < MAX_SCOPES; i += 1) s.saveState('doc-seen-', 'sess-' + i, { i });
   // `sess-0` is the coldest… until it is read.
@@ -145,12 +152,19 @@ test('PURGE BY PREFIX: a compaction empties that session and touches no other', 
 // 🛑 THE WRITE STAYS ATOMIC AND ITS REASON CHANGED. It no longer protects a
 //    concurrent reader — there is none. It protects against a machine dying
 //    mid-write: a corrupt save is worse than no save.
+// 🔴 AND THE PROPERTY THIS CELL PROVES WAS RESTATED ON 2026-08-21. It used to be
+//    "the state survives a restart", because every mutation wrote the whole
+//    snapshot — O(total state) of disk per tool call. It is now "the state
+//    survives a CLEAN restart entirely": the daemon's exit flushes what the count
+//    had not. Hence the explicit `flush()` below — it is the SECOND authority,
+//    fired here by hand exactly as `process.on('exit')` fires it in production.
 test('SNAPSHOT: what a daemon knew, the next daemon finds again', () => {
   const chemin = path.join(TMP, 'reprise', 'snapshot.json');
-  const a = createMemoryStore({ snapshotPath: chemin });
+  const a = createMemoryStore({ snapshotPath: chemin, ...SANS_SORTIE });
   a.saveState('doc-seen-', 'sess', { 'docs/x.md': { seen: true } });
+  assert.equal(a.flush(), true, 'a clean exit must write what the count had not yet flushed');
 
-  const b = createMemoryStore({ snapshotPath: chemin });
+  const b = createMemoryStore({ snapshotPath: chemin, ...SANS_SORTIE });
   assert.equal(b.restore(), 1, 'the new daemon must restore exactly what the previous one held');
   assert.deepEqual(b.loadState('doc-seen-', 'sess'), { 'docs/x.md': { seen: true } },
     'without this, every daemon restart re-delivers every `once` — the flaky we just closed, through a new door');
@@ -160,8 +174,14 @@ test('SNAPSHOT: what a daemon knew, the next daemon finds again', () => {
 //    state directory fills with orphans nobody watches.
 test('SNAPSHOT: no temporary file survives the write', () => {
   const dossier = path.join(TMP, 'restes');
-  const s = createMemoryStore({ snapshotPath: path.join(dossier, 'snapshot.json') });
-  for (let i = 0; i < 20; i += 1) s.saveState('doc-seen-', 'sess', { i });
+  const s = createMemoryStore({ snapshotPath: path.join(dossier, 'snapshot.json'), ...SANS_SORTIE });
+  // ⚠️ ENOUGH MUTATIONS TO CROSS THE COUNT SEVERAL TIMES, plus a flush: this cell
+  //    must exercise REAL writes, and since 2026-08-21 twenty mutations no longer
+  //    guarantee a single one. A cell that stopped writing would still be green
+  //    on "no .tmp survives" — and green while measuring nothing.
+  for (let i = 0; i < PERSIST_EVERY * 3; i += 1) s.saveState('doc-seen-', 'sess', { i });
+  s.flush();
+  assert.ok(fs.existsSync(path.join(dossier, 'snapshot.json')), 'anti-vacuity: something must really have been written');
   assert.deepEqual(fs.readdirSync(dossier).filter((f) => f.endsWith('.tmp')), [],
     'an abandoned .tmp piles up unseen');
 });
@@ -173,13 +193,13 @@ test('FAIL-OPEN: a CORRUPT snapshot yields an empty state, never an exception', 
   const chemin = path.join(TMP, 'corrompu', 'snapshot.json');
   fs.mkdirSync(path.dirname(chemin), { recursive: true });
   fs.writeFileSync(chemin, '{ this is not json');
-  const s = createMemoryStore({ snapshotPath: chemin });
+  const s = createMemoryStore({ snapshotPath: chemin, ...SANS_SORTIE });
   assert.equal(s.restore(), 0);
   assert.deepEqual(s.loadState('doc-seen-', 'sess'), {});
 });
 
 test('FAIL-OPEN: an ABSENT snapshot is a normal start, not a failure', () => {
-  const s = createMemoryStore({ snapshotPath: path.join(TMP, 'jamais', 'snapshot.json') });
+  const s = createMemoryStore({ snapshotPath: path.join(TMP, 'jamais', 'snapshot.json'), ...SANS_SORTIE });
   assert.equal(s.restore(), 0);
 });
 
@@ -190,10 +210,10 @@ test('FAIL-OPEN: a snapshot with the wrong SHAPE poisons nothing', () => {
   const chemin = path.join(TMP, 'forme', 'snapshot.json');
   fs.mkdirSync(path.dirname(chemin), { recursive: true });
   fs.writeFileSync(chemin, JSON.stringify({ pas: 'un tableau' }));
-  assert.equal(createMemoryStore({ snapshotPath: chemin }).restore(), 0);
+  assert.equal(createMemoryStore({ snapshotPath: chemin, ...SANS_SORTIE }).restore(), 0);
 
   fs.writeFileSync(chemin, JSON.stringify([['bonne-cle', { ok: 1 }], ['seule'], [42, {}], ['nul', null]]));
-  const s = createMemoryStore({ snapshotPath: chemin });
+  const s = createMemoryStore({ snapshotPath: chemin, ...SANS_SORTIE });
   assert.equal(s.restore(), 1, 'only the well-formed pair enters');
   assert.deepEqual(s.scopes(), ['bonne-cle']);
 });
@@ -377,6 +397,98 @@ test('EVICT with no ephemeral ceiling given falls back to the DECLARED default',
     'one over the DECLARED default must be dropped: without a real fallback the ephemeral class '
     + 'grows for ever, silently, on a daemon that runs for weeks');
   assert.equal(clefs(plein).length, MAX_EPHEMERAL, 'and it lands exactly on the ceiling');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑧ THE SNAPSHOT IS NOT WRITTEN ON EVERY MUTATION (2026-08-21)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE DEFECT: the shell rewrote the WHOLE snapshot on EVERY state write —
+//    O(total state) of disk per tool call. Invisible at the old 512 ceiling; at
+//    4096 + 2048 it is megabytes per action, on a machine with an open work item
+//    on SSD wear. It surfaced as a TEST TIMEOUT, not as a design review.
+// 🛑 THE PROPERTY THIS CELL NOW PROVES, and it is the RESTATED one: a CLEAN
+//    restart loses NOTHING, and a `kill -9` loses at most the last N mutations —
+//    i.e. at most N documents delivered once more, never a wrong action.
+// ⚠️ THE FILE'S EXISTENCE IS THE OBSERVABLE, deliberately: it is a FACT of the
+//    filesystem, not a counter we would have to trust. Deleting it between the
+//    two halves is what turns "it was written at some point" into "it was
+//    written EXACTLY on the Nth mutation and not once in between".
+test('COUNT + CLEAN EXIT: one snapshot per N mutations, carrying the CURRENT state', () => {
+  const chemin = path.join(TMP, 'cadence', 'snapshot.json');
+  // ⚠️ A THUNK-FREE local: everything here is built INSIDE the callback, which is
+  //    what makes Stryker's perTest coverage map these mutants to this cell.
+  let surSortie = null;
+  const s = createMemoryStore({ snapshotPath: chemin, onExit: (fn) => { surSortie = fn; return () => { surSortie = null; }; } });
+
+  // ── ① N−1 mutations write NOTHING. Under the old behaviour the file existed
+  //    after the FIRST one, so this half alone forbids the return of "one write
+  //    per mutation".
+  for (let i = 1; i < PERSIST_EVERY; i += 1) s.saveState('doc-seen-', 'sess', { i });
+  assert.equal(fs.existsSync(chemin), false,
+    `${PERSIST_EVERY - 1} mutations must not have touched the disk — one snapshot per write is O(total state) per tool call`);
+
+  // ── ② the Nth writes, exactly once, and carries the state as it is NOW.
+  s.saveState('doc-seen-', 'sess', { i: PERSIST_EVERY });
+  assert.equal(fs.existsSync(chemin), true, 'the Nth mutation must flush');
+  const ecrit = new Map(JSON.parse(fs.readFileSync(chemin, 'utf8')));
+  assert.deepEqual(ecrit.get('doc-seen-sess'), { i: PERSIST_EVERY },
+    'a stale snapshot is worse than a rare one: what is written must be the CURRENT state, not the state at the last write');
+
+  // ── ③ THE PERIOD IS REALLY N, not "once and then whenever". The file is
+  //    removed; nothing may recreate it until the count comes round again. This
+  //    is the half that kills an off-by-one in the threshold.
+  fs.rmSync(chemin);
+  for (let i = 1; i < PERSIST_EVERY; i += 1) s.saveState('doc-seen-', 'sess', { tour2: i });
+  assert.equal(fs.existsSync(chemin), false, 'the counter must RESET on a write, not drift');
+  s.saveState('doc-seen-', 'sess', { tour2: PERSIST_EVERY });
+  assert.equal(fs.existsSync(chemin), true, 'and the next full cycle writes again');
+
+  // ── ④ THE CLEAN EXIT PERSISTS WHAT THE COUNT HAD NOT. Without this authority a
+  //    stale-code restart (exit 90, the daemon's most frequent death) would lose
+  //    up to N−1 mutations EVERY time an agent edits this repository.
+  fs.rmSync(chemin);
+  s.saveState('doc-seen-', 'sess', { final: true });
+  assert.equal(typeof surSortie, 'function', 'a store with a snapshot path must REGISTER its exit hook, or the second authority does not exist');
+  surSortie();
+  assert.deepEqual(new Map(JSON.parse(fs.readFileSync(chemin, 'utf8'))).get('doc-seen-sess'), { final: true },
+    'a clean exit must write the mutations the count was still holding');
+
+  // ── ⑤ AND AN EXIT WITH NOTHING PENDING WRITES NOTHING. Otherwise the flush
+  //    puts back one full O(total state) write on a path that runs ten times in
+  //    two minutes while an agent edits this repo.
+  fs.rmSync(chemin);
+  assert.equal(s.flush(), false, 'an empty backlog has nothing to save');
+  assert.equal(fs.existsSync(chemin), false, 'and it must not have written anyway');
+
+  s.close();
+  assert.equal(surSortie, null, 'close() releases the listener — a store must not pile handlers onto a long-lived emitter');
+});
+
+// ⚠️ THE DECISIONS, REACHED DIRECTLY — the rule lives in the pure module PRECISELY
+//    because Stryker never mutates the I/O shell, so it must also be JUDGED there.
+test('PERSIST TICK: the backlog grows, fires on the Nth, and resets', () => {
+  assert.deepEqual(persistTick(0, 3), { pending: 1, persist: false }, 'the first mutation only increments');
+  assert.deepEqual(persistTick(1, 3), { pending: 2, persist: false });
+  assert.deepEqual(persistTick(2, 3), { pending: 0, persist: true },
+    'the Nth writes AND clears the backlog: not clearing it would write on every mutation from then on');
+  assert.deepEqual(persistTick(0, 1), { pending: 0, persist: true },
+    'N = 1 must degrade to the historical behaviour — one write per mutation, no special case');
+  assert.deepEqual(persistTick(5, 3), { pending: 0, persist: true },
+    'a backlog already past the threshold still fires: a strict `>` would let it run away for ever');
+});
+
+test('SHOULD FLUSH: a clean exit writes only when something is pending', () => {
+  assert.equal(shouldFlush(0), false, 'an empty backlog must not trigger a full snapshot write');
+  assert.equal(shouldFlush(1), true, 'one unwritten mutation is exactly what the exit authority exists for');
+});
+
+test('PERSIST_EVERY IS A REAL NUMBER, and its bounds are the ones written down', () => {
+  assert.equal(typeof PERSIST_EVERY, 'number');
+  assert.ok(PERSIST_EVERY > 16,
+    'below the 16 declared frames a full snapshot is still written once per action: the defect intact, with extra code');
+  assert.ok(PERSIST_EVERY < 1024,
+    'above that, one kill -9 re-delivers a whole session worth of documents — a flood, no longer "one extra delivery"');
 });
 
 test('EVICT returns what it removed across BOTH classes, added', () => {

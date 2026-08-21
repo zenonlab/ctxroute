@@ -70,7 +70,11 @@ function observedToolNames(root) {
 }
 
 function main() {
-  const docsDir = path.join(os.homedir(), '.claude', 'hooks', 'docs');
+  // ⚠️ THE FLEET CORPUS IS ADDRESSED BY `paths.js`, NEVER REBUILT HERE.
+  //    A second definition of the same directory diverges in silence — and this
+  //    tool's whole value is that its measurement can be REPLAYED: replayed
+  //    against another folder than the engine reads, it answers about nothing.
+  const docsDir = require('../src/paths').fileDocsDir();
   if (!fs.existsSync(docsDir)) {
     console.log('NOT MEASURED — no fleet corpus at ' + docsDir);
     process.exit(2);

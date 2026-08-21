@@ -47,7 +47,9 @@ function clonerParc(avecDocs) {
 
 function patcher(dir, write) {
   return spawnSync(process.execPath, [path.join(__dirname, '..', 'src', 'vendor-deadline.js'), ...(write ? ['--write'] : [])], {
-    env: { ...process.env, VENDOR_TARGET_DIR: dir },
+    // ⚠️ `CTXROUTE_FLEET_HOOKS_DIR` = the `paths.js` override (ex-`VENDOR_TARGET_DIR`,
+    //    retired 21/08/2026: one directory, ONE name, ONE definition).
+    env: { ...process.env, CTXROUTE_FLEET_HOOKS_DIR: dir },
     encoding: 'utf8',
   });
 }

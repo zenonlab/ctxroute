@@ -10,7 +10,7 @@
 //    `pretool-differential.test.js` — NEVER ship one without the other.
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { withoutOrdinal } from '../src/differential-normalize.js';
+import { withoutOrdinal, alignChunked } from '../src/differential-normalize.js';
 
 const NU = 'doc body\n[source: .claude/hooks/docs/a.md]';
 
@@ -53,4 +53,54 @@ test('withoutOrdinal: a CONTENT divergence stays VISIBLE after normalization', (
 // reads like an engine failure.
 test('withoutOrdinal: TOTAL — a non-string input is returned as is, never a throw', () => {
   for (const x of [undefined, null, 42, {}]) assert.strictEqual(withoutOrdinal(x), x);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// alignChunked — the CHUNKING gap, and its MANDATORY negative-check
+// ═══════════════════════════════════════════════════════════════════════
+// ⚠️ Fixtures are THUNKS evaluated inside the cells (perTest: a module-level
+//    const calling mutated code is a static mutant, hence a false survivor).
+const ORACLE = () => 'line one\nline two\nline three\n[source: docs/x.md]';
+// The engine's frame, envelope EXACTLY as `budget.js` composes it: chunk header
+// + the first tranche + the deferral announcement for the surplus chunks.
+const chunkHeader = (j, m) => '⟦ docs/x.md — CHUNK ' + j + '/' + m + ' : reassemble the ' + m + ' chunks in order before reading ⟧\n';
+const deferred = () => '\n\n⚠️ 1 doc(s) DEFERRED — the frame is full, they follow on the next tool call(s).\n'
+  + '   Nothing is lost: they are queued, in order. If your action touches them NOW, read them:\n'
+  + '   - docs/x.md';
+const frame = (body, j = 1, m = 2) => chunkHeader(j, m) + body + deferred();
+
+// ① THE FIX: a doc that outgrew one frame no longer breaks parity.
+test('alignChunked: a CHUNKED delivery compares equal to the oracle whole doc (prefix, line boundary)', () => {
+  const r = alignChunked(frame('line one\nline two'), ORACLE());
+  assert.strictEqual(r.actual, r.expected, 'chunk 1/m, envelope removed, IS a prefix of the oracle doc');
+  assert.strictEqual(r.actual, 'line one\nline two', 'the envelope is removed, the CONTENT is not touched');
+  // Nothing chunked ⇒ IDENTITY: the nominal path stays a STRICT equality.
+  const nu = alignChunked(ORACLE(), ORACLE());
+  assert.strictEqual(nu.actual, ORACLE());
+  assert.strictEqual(nu.expected, ORACLE());
+  // TOTAL: a differential that crashes reads like an engine outage.
+  for (const x of [undefined, null, 42, {}]) {
+    assert.strictEqual(alignChunked(x, ORACLE()).actual, x);
+    assert.strictEqual(alignChunked(ORACLE(), x).expected, x);
+  }
+});
+
+// ② 🛑 WITHOUT THIS CELL THE FILTER IS A WAY TO MAKE EVERY FUTURE REGRESSION
+//    INVISIBLE. Four sabotages, each a REAL defect the filter must not swallow.
+test('alignChunked: a CONTENT divergence still FAILS, chunked or not', () => {
+  const O = ORACLE();
+  // ⓐ the content of the delivered chunk changed ⇒ visible.
+  const a = alignChunked(frame('line one\nLINE TWO'), O);
+  assert.notStrictEqual(a.actual, a.expected, 'a divergence INSIDE the delivered chunk must stay red');
+  // ⓑ not chunked at all, content changed ⇒ visible (identity path untouched).
+  const b = alignChunked(O.replace('line two', 'LINE TWO'), O);
+  assert.notStrictEqual(b.actual, b.expected);
+  // ⓒ a cut that is NOT on a line boundary is not the protocol's cut ⇒ refused,
+  //    hence red. This is what keeps the comparison from degenerating into a
+  //    bare `startsWith` that any truncation would satisfy.
+  const c = alignChunked(frame('line one\nline t'), O);
+  assert.notStrictEqual(c.actual, c.expected);
+  // ⓓ chunk 3/5 is NOT a prefix of anything: never normalized.
+  const d = alignChunked(frame('line three', 3, 5), O);
+  assert.notStrictEqual(d.actual, d.expected);
 });

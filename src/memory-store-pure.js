@@ -57,6 +57,90 @@ const MAX_SCOPES = 4096;
 const PREFIXE_EPHEMERE = 'plan-';
 const MAX_EPHEMERAL = 2048;
 
+// ═══════════════════════════════════════════════════════════════════════
+// HOW OFTEN THE SNAPSHOT IS WRITTEN — a COUNT, and the daemon's CLEAN EXIT.
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE DEFECT, MEASURED 2026-08-21 AND IT SURFACED AS A TEST TIMEOUT, NOT AS A
+//    DESIGN REVIEW — which is the honest way to say nobody had measured it. The
+//    shell rewrote the WHOLE snapshot on EVERY state write: O(total state) of
+//    disk per tool call. Invisible while the ceiling was 512; at the sizing this
+//    project targets (hundreds of parallel agents, ceilings 4096 + 2048) it is
+//    megabytes written per action, on a machine with an open work item on SSD
+//    wear.
+//
+// 🛑 TWO AUTHORITIES, NOT ONE, AND NEITHER IS A CLOCK.
+//    ① a COUNT of mutations (`persistTick`) — a FACT this module owns;
+//    ② the daemon's own CLEAN EXIT (`shouldFlush`) — an EVENT the runtime tells
+//       us about.
+//    A count ALONE still writes far too often for nothing at low traffic. A
+//    clean exit ALONE loses everything on `kill -9`, and this daemon is killed
+//    on purpose every time its code changes (`watchOwnCode` ⇒ exit 90). TOGETHER
+//    the worst case is bounded and small.
+// 🛑 NO TIMER, EVER — no `setInterval` flush, no debounce, no TTL. A temporal
+//    call is detected by AST here and the budget admits only `distant` and
+//    `undecidable` as motives; neither fits a count the process itself holds.
+//
+// 🛑 WHAT THE PROVEN PROPERTY BECOMES, SAID PLAINLY. It was *"the state survives
+//    a restart"*. It is now *"the state survives a CLEAN restart ENTIRELY, and a
+//    `kill -9` loses at most the last N mutations"*. **Losing a mutation costs at
+//    most a RE-DELIVERY of a document — never a wrong action, never a corrupt
+//    state.** That is the whole reason this trade is acceptable, and it is the
+//    same cost the architecture already accepts in three other places (LRU
+//    eviction, a fail-open corrupt snapshot, a lock-less local decision).
+//
+// ⚠️ N = 64, AND HERE IS THE ARITHMETIC, WRITTEN SO IT CAN BE REFUTED.
+//    · LOWER BOUND — N must exceed the mutations of ONE action, or nothing is
+//      fixed. The wiring declares **16 frames per tool call**, each able to
+//      mutate the state; add the turn counter and the remainder queue. Any N
+//      below ~20 still writes at least one full snapshot per action, i.e. the
+//      defect intact with extra code. ⇒ N > 16.
+//    · UPPER BOUND — the loss window. A `kill -9` loses at most N−1 = **63**
+//      mutations, hence at most 63 documents delivered once more. Measured on the
+//      live install, the whole state was **615 entries**: 63 is ~10 % of it, so
+//      the worst case is a tenth of one machine's memory re-delivered ONCE, never
+//      the memory itself. At N = 1024 the same crash would re-deliver up to 1023
+//      documents — an entire session's knowledge budget, which stops being "one
+//      extra delivery" and becomes a visible flood.
+//    · WHAT IT BUYS — the amortised disk cost per mutation drops from S to S/64
+//      (S = the whole snapshot). That is the same factor as putting the write
+//      path back at the scale it was silently sized for.
+//    ⚠️ 64 is not a round number chosen for looking nice: it is the power of two
+//      inside [17, 1023] that sits furthest from BOTH bounds. If you move it,
+//      rewrite this paragraph — a number nobody re-derives is how a limit ships
+//      unnoticed, and this module has already paid that bill once (`512: far
+//      above any real fleet use`).
+const PERSIST_EVERY = 64;
+
+/**
+ * AUTHORITY ①: THE COUNT. One mutation happened — must the snapshot be written
+ * NOW, and what is the new backlog?
+ * ⚠️ PURE ON PURPOSE, and that is not cosmetic: Stryker never mutates the I/O
+ *    shell, so this rule written next door would ship measured by NOTHING.
+ * ⚠️ The counter RESETS on a write, it does not wrap: the backlog is "mutations
+ *    NOT yet on disk", so after a write there are none by definition.
+ * @param {number} pending mutations not yet written
+ * @param {number} every the N above
+ * @returns {{pending: number, persist: boolean}}
+ */
+function persistTick(pending, every) {
+  const n = pending + 1;
+  if (n >= every) return { pending: 0, persist: true };
+  return { pending: n, persist: false };
+}
+
+/**
+ * AUTHORITY ②: THE CLEAN EXIT. Is there anything the count had not yet flushed?
+ * 🛑 A FLUSH WITH AN EMPTY BACKLOG MUST NOT WRITE. Writing anyway would put back
+ *    one full O(total state) write on a path that runs on every stale-code exit —
+ *    i.e. ten times in two minutes while an agent edits this repository.
+ * @param {number} pending mutations not yet written
+ * @returns {boolean}
+ */
+function shouldFlush(pending) {
+  return pending > 0;
+}
+
 /** @param {string} k */
 function isEphemeral(k) {
   return k.startsWith(PREFIXE_EPHEMERE);
@@ -195,5 +279,6 @@ function purge(etat, prefixeCle) {
 module.exports = {
   key, createState, mapFor, set, size, keys, entries,
   evict, touch, adopt, purge, isEphemeral,
-  MAX_SCOPES, MAX_EPHEMERAL, PREFIXE_EPHEMERE,
+  persistTick, shouldFlush,
+  MAX_SCOPES, MAX_EPHEMERAL, PREFIXE_EPHEMERE, PERSIST_EVERY,
 };

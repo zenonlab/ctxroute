@@ -132,6 +132,23 @@ function tuer(d) {
   return new Promise((mort) => { d.once('exit', mort); d.kill(); });
 }
 
+/**
+ * A CLEAN STOP, and since 2026-08-21 the distinction is LOAD-BEARING, not a
+ * nicety. The snapshot is no longer written on every mutation (it was O(total
+ * state) of disk per tool call); it is written every N mutations AND on the
+ * daemon's own clean exit. So the property is now **"the state survives a CLEAN
+ * restart entirely, and a `kill -9` loses at most the last N mutations"**.
+ * 🛑 `tuer()` sends a SIGNAL: with no handler installed, Node terminates on the
+ *    default action and `'exit'` never fires — nothing flushes, by design. It is
+ *    the right tool for proving what a HARD death costs; it is the wrong tool for
+ *    proving a restart keeps its state.
+ * ⚠️ The `stop` message makes the daemon call `process.exit(0)` itself, which is
+ *    the CLEAN path, i.e. the one a supervisor's shell must reproduce.
+ */
+function arreter(d) {
+  return new Promise((mort) => { d.once('exit', mort); d.send('stop'); });
+}
+
 function frapper(adresse, frame, frames) {
   return new Promise((res) => {
     const c = fork(CLIENT, [adresse, String(frame), String(frames)], { env: ENV, stdio: 'ignore' });
@@ -253,12 +270,18 @@ test('A RESTART DOES NOT RE-DELIVER: the state survives the death of the daemon'
 
     const un = await demarrerDaemon(adresse, snapshot);
     const premier = await frapper(adresse, 1, 1);
-    await tuer(un);
+    // 🛑 A CLEAN STOP, AND IT IS THE PROPERTY UNDER TEST SINCE 2026-08-21. The
+    //    snapshot is written every N mutations AND on the daemon's own clean
+    //    exit; one delivery is far below N, so what is proven here is exactly
+    //    "a CLEAN restart loses NOTHING". A signal (`tuer`) fires no `'exit'`
+    //    handler at all and would be measuring the `kill -9` case instead —
+    //    which costs at most N re-delivered documents, by design.
+    await arreter(un);
 
     const deux = await demarrerDaemon(adresse, snapshot);
     const apres = await frapper(adresse, 1, 1);
     const pid1 = un.pid;
-    await tuer(deux);
+    await arreter(deux);
 
     assert.ok(premier.texte.includes('CORPS-UNIQUE'), 'the first daemon must deliver — otherwise this cell proves nothing');
     assert.notEqual(deux.pid, pid1, 'the two daemons must really be different processes');

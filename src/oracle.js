@@ -2,10 +2,13 @@
 // ORACLE — spawns the REAL protect-files.js and extracts the injected docs.
 // ═══════════════════════════════════════════════════════════════════════
 //
-// ⚠️ SHARED by file-differential.test.js AND shadow-reconcile.js — extracted on
-//    16/07/2026 so that there is only ONE reading of the oracle's output.
-//    Two parsers = two ways of lying (experienced 3× on 15/07/2026: every
-//    improvised oracle wrongly accused the engine).
+// ⚠️ SINGLE READER of the oracle's output — extracted on 16/07/2026 so that only
+//    ONE reading of it exists. Two parsers = two ways of lying (experienced 3×
+//    on 15/07/2026: every improvised oracle wrongly accused the engine).
+//    ⚠️ ONE consumer left since 21/08/2026 (`file-differential.test.js`): the
+//    second consumer went with the shadow relic, deleted on 21/08/2026. A single
+//    consumer is NOT a reason to inline this back — the rule guarded here is
+//    "one parser", and it is violated the moment a SECOND caller improvises one.
 //
 // ⚠️ PARSE THE FORMAT, NEVER IMPROVISE ON TEXT — the 2 traps sealed here:
 //    1. some docs contain a HARDCODED `[source: ...]` in their CONTENT (61

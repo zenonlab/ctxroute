@@ -41,10 +41,24 @@ function stateDir() {
   return process.env.CTXROUTE_STATE_DIR || path.join(ROOT, 'state');
 }
 
+// ROOT of the harness HOOK FLEET (Claude Code: ~/.claude/hooks/). Everything the
+// framework vendors into the fleet, and everything it reads back from it, hangs
+// HERE — `fileDocsDir()` is BENEATH it, `skillsDir()` is BESIDE it.
+// ⚠️ NEVER rebuild it with `path.join(os.homedir(), '.claude', 'hooks')` in a
+//    script: that hardcoded form lived in vendor-deadline.js, lint-corpus.js and
+//    scope-reach.js under THREE different env-var names (`VENDOR_TARGET_DIR`,
+//    `CTXROUTE_HOOKS_DIR`, none at all) — three copies of ONE truth, i.e. exactly
+//    the `stateDir` defect this file was born to kill, one level up.
+// Env var RESERVED for tests and for doctor.js.
+function fleetHooksDir() {
+  return process.env.CTXROUTE_FLEET_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
+}
+
 // Corpus of the FILE docs (frontmatters migrated on 16/07/2026) — consumed by the
-// shadow (then by the unified engine after the switch). Env var RESERVED for tests.
+// unified engine. DERIVED from fleetHooksDir() so the root has ONE definition.
+// Env var RESERVED for tests.
 function fileDocsDir() {
-  return process.env.CTXROUTE_FILEDOCS_DIR || path.join(os.homedir(), '.claude', 'hooks', 'docs');
+  return process.env.CTXROUTE_FILEDOCS_DIR || path.join(fleetHooksDir(), 'docs');
 }
 
 // Corpus of the SESSION docs (injected at EVERY SessionStart: startup/resume/
@@ -61,4 +75,4 @@ function skillsDir() {
   return process.env.CTXROUTE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'commands');
 }
 
-module.exports = { configPath, docsDir, stateDir, fileDocsDir, sessionDocsDir, skillsDir, ROOT };
+module.exports = { configPath, docsDir, stateDir, fleetHooksDir, fileDocsDir, sessionDocsDir, skillsDir, ROOT };

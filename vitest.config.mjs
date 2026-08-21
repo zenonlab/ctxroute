@@ -113,7 +113,7 @@ export default defineConfig({
     ],
     // ⚠️ 30 s DELAY — NEVER LOWER IT (set 27/07/2026, MEASURED).
     //    The vitest default (5 s) produced repeated FALSE REDS on suites that
-    //    SPAWN real processes (doc-inject, turn-count, shadow-inject,
+    //    SPAWN real processes (doc-inject, turn-count, fleet-hooks-path,
     //    pretool-differential): measured 6,082 ms for a test launching
     //    4 processes, and 4,992 ms for a GREEN one — we were deciding within
     //    8 ms of the wall. The test wasn't broken, the stopwatch was.

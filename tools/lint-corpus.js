@@ -43,10 +43,13 @@ const { rulesFromCorpus } = require('../src/loader');
 
 // ⚠️ The FILE doc fleet lives at the user's home (~/.claude/hooks/), NOT in
 //    this repo: the framework is PUBLIC, it must depend on NOBODY's home
-//    path. Hence the env var + the relative default.
-//    ⚠️ NEVER hardcode a maintainer path here.
+//    path. ⚠️ NEVER hardcode a maintainer path here, and never rebuild the
+//    fleet root either — `paths.js` OWNS it (`fleetHooksDir`). This function
+//    had its own `os.homedir()` under its own env var (`CTXROUTE_HOOKS_DIR`,
+//    retired 21/08/2026): a second definition of one directory, which is the
+//    `stateDir` defect paths.js exists to kill. Override = the paths.js one.
 function hooksDir() {
-  return process.env.CTXROUTE_HOOKS_DIR || path.join(require('os').homedir(), '.claude', 'hooks');
+  return require('../src/paths').fleetHooksDir();
 }
 
 function readJSON(p) {
@@ -193,7 +196,7 @@ function collectDocs() {
   //    something, a green result is worth NOTHING.
   if (!rules.length) {
     console.error(`🚨 lint-corpus: NO rule loaded from the frontmatters of ${DOCS}`);
-    console.error('   The lint can prove NOTHING in this state (hollow harness). Check CTXROUTE_HOOKS_DIR.');
+    console.error('   The lint can prove NOTHING in this state (hollow harness). Check CTXROUTE_FLEET_HOOKS_DIR.');
     process.exit(2);
   }
 

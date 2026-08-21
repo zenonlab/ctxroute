@@ -808,4 +808,53 @@ if (require.main === module) {
     require.cache,
     () => process.exit(EXIT_STALE_CODE)
   );
+
+  // ── A SUPERVISOR'S STOP IS A CLEAN DEATH, AND IT MUST BE TREATED AS ONE ──
+  // 🛑 THE SNAPSHOT IS WRITTEN EVERY N MUTATIONS **AND** ON `process.on('exit')`.
+  //    That covers a normal end, an explicit `process.exit(n)` — including the
+  //    stale-code exit above, this daemon's most frequent death — and an uncaught
+  //    exception. It does NOT cover `SIGTERM`/`SIGINT`: with no listener, Node
+  //    takes the DEFAULT action and `'exit'` never fires, so `systemctl stop` and
+  //    every supervisor stop degraded to the bounded `kill -9` case, losing up to
+  //    N mutations for nothing. Each loss costs a re-delivery, so it was never
+  //    dangerous — only wasteful, and silent.
+  // 🛑 THE HANDLER LIVES HERE, IN THE EXECUTABLE SHELL, NEVER IN THE STORE.
+  //    Installing a signal listener SUPPRESSES Node's default termination, i.e.
+  //    it decides whether the process lives — and a builder that decides its
+  //    caller's lifetime is exactly the defect `createServer` shipped in August
+  //    (an `EADDRINUSE` throw that killed the daemon before `kernel-bind` could
+  //    look). A store returns a verdict; the shell decides to die.
+  // ⚠️ `SIGKILL` stays uncoverable BY DESIGN — it cannot be caught, which is why
+  //    the COUNT exists. Two authorities, and neither pretends to be the other.
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, () => {
+      try { etat.flush(); } catch { /* housekeeping must never delay a stop */ }
+      process.exit(0);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔑 THE CORPUS STAYS IN MEMORY — where the remaining win actually is.
+  // ═══════════════════════════════════════════════════════════════════════
+  // 📐 MEASURED 2026-08-20 on the real corpus: a round trip is **41.49 ms**, of
+  //    which the **transport is 0.17 ms**. The other 41 ms are the CORPUS RE-READ,
+  //    the same cost the spawn lane pays hidden inside node's startup. The daemon
+  //    alone takes an action from ~5.3 s to ~660 ms; this line is the rest.
+  //    🛑 So do NOT go optimising the pipe: it has been measured at 0.4 %.
+  // 🛑 TWO WATCHES, TWO OPPOSITE ANSWERS, AND THAT IS THE WHOLE DESIGN. Above,
+  //    `watchOwnCode` EXITS when the CODE moves — serving stale logic is the green
+  //    that lies. Here, a DOC moving is the fleet's normal working day, so the
+  //    snapshot is DROPPED and rebuilt on the next request. Never make either one
+  //    behave like the other.
+  // 🛑 IT IS ENABLED HERE AND NOWHERE ELSE — an ARGUMENT of the executable shell,
+  //    never an environment variable and never a module default. A spawned hook
+  //    that inherited a cache could never be told to drop it: it would serve
+  //    yesterday's knowledge, in silence, which is the one failure this project
+  //    refuses outright. `require('../corpus')` is a no-op for everyone else.
+  // ⚠️ ARMED AFTER `listen`, deliberately: the first request pays one walk and
+  //    every later one is served from memory. Warming it here would only move that
+  //    walk earlier while adding a startup path nothing exercises.
+  // ⚠️ `persistent: false`, like the code watch: a watcher must never be the reason
+  //    a process refuses to die.
+  require('../corpus').enableCache((dir, cb) => fs.watch(dir, { persistent: false }, cb));
 }

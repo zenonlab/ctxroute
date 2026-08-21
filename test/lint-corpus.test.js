@@ -39,7 +39,7 @@ function runLint(parc, args = []) {
   const r = spawnSync(process.execPath, [LINT, ...args], {
     encoding: 'utf8',
     // ⚠️ TOTAL isolation: the lint must never see the real fleet nor the real home.
-    env: { ...process.env, CTXROUTE_HOOKS_DIR: parc.hooks, CTXROUTE_HOME: parc.home },
+    env: { ...process.env, CTXROUTE_FLEET_HOOKS_DIR: parc.hooks, CTXROUTE_HOME: parc.home },
   });
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
 }
