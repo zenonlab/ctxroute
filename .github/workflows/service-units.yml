@@ -1,0 +1,189 @@
+# ═══════════════════════════════════════════════════════════════════════
+# THE THREE OS UNITS, LOADED BY A REAL SUPERVISOR.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔑 WHY THIS WORKFLOW EXISTS. Until it, `service/` was three files that had
+#    never been loaded by anything: correct against the documentation, never
+#    against a machine — the state this repository considers the worst a
+#    guardrail can be in, because it CERTIFIES instead of protecting. We own no
+#    Mac and no Linux desktop; GitHub RENTS a real launchd, a real systemd and a
+#    real Task Scheduler by the minute. That is the whole idea.
+#
+# 🛑 WHAT NO RUNNER CAN EVER PROVE — declared, never simulated:
+#    · the LOGON trigger (systemd `WantedBy=sockets.target`, launchd `RunAtLoad`,
+#      the task's `LogonTrigger`): a runner starts the job from a session that
+#      already exists and never performs a fresh interactive logon;
+#    · surviving a REBOOT, and coming back with the machine;
+#    · surviving SLEEP / WAKE, which is where the Windows battery flags and
+#      `ExecutionTimeLimit` would show;
+#    · the exit-90 restart PATH END TO END (a code change, the daemon standing
+#      down, the supervisor bringing it back) — it needs a live edit of the
+#      running clone, and on Windows a real event 201.
+#    Everything above stays in `service/README.md` under "what could NOT be
+#    verified". A green here means "the unit is ACCEPTED and the daemon ANSWERS",
+#    never "the unit is proven".
+#
+# 🛑 ZERO PROCEDURE IS WRITTEN HERE. Every command below calls the installer of
+#    its OS (`service/install-*.{sh,ps1}`) — the single place each procedure
+#    lives, the same one the README points to and an adopter runs by hand. A
+#    `systemctl`/`launchctl`/`Register-ScheduledTask` line copied into this file
+#    would be a second truth, and CI would keep proving the copy while people ran
+#    the original.
+#
+# ⚠️ TRI-STATE, AND IT IS THE POINT OF THE `code -eq 78` BRANCHES. An installer
+#    exits 78 (sysexits EX_CONFIG) when the RUNNER cannot host the measurement —
+#    no systemd user bus, no launchd domain, no elevation for the event channel.
+#    That is NOT a defect of the unit and it is NEVER a silent pass: the job
+#    fails LOUDLY and names the missing precondition, so nobody can mistake
+#    "we could not judge" for "we judged and it was fine".
+# ═══════════════════════════════════════════════════════════════════════
+name: service-units
+
+on:
+  workflow_dispatch:
+  # ⚠️ STRICT `paths:` IS WHAT MAKES THIS JOB PAYABLE. A macOS runner bills at
+  #    ×10 the Actions minutes (Windows ×2, Linux ×1); running this on every
+  #    push would be the quota mistake. It fires only when a unit, an installer
+  #    or the daemon's entry point actually moves.
+  push:
+    paths:
+      - 'service/**'
+      - 'src/hooks/http-server.js'
+      - '.github/workflows/service-units.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # ⚠️ PRECONDITION, NOT A PROOF. `systemctl --user` needs a per-user manager
+      #    and a session bus; a runner account has neither until lingering is
+      #    enabled. Arming it here keeps the installer free of any CI-ism — and
+      #    if it does not take, the installer says so with 78 instead of
+      #    pretending to have judged the units.
+      - name: arm the systemd user manager
+        run: |
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+
+      - name: load the units through systemd
+        shell: bash
+        run: |
+          set +e
+          sh service/install-linux.sh install | tee install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 78 ]; then
+            echo "::error::PRECONDITION NOT MET on this runner — the systemd units were NOT judged. Read the message above; this is not a verdict about the units."
+            exit 1
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          # ⚠️ `tr -d '\r'`: a PowerShell installer writes CRLF, and a carriage
+          #    return glued to the port would build a malformed URL — a failure
+          #    that reads like "the daemon never answered". Harmless elsewhere.
+          echo "CTXROUTE_PORT=$(sed -n 's/^ctxroute-port=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+
+      # ⚠️ THE ANSWER IS THE PROOF — a real POST, never "a node process exists".
+      #    On Linux this also exercises socket activation itself: systemd holds
+      #    the socket and THIS request is what starts the instance.
+      - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
+        shell: bash
+
+      # ⚠️ Always, even on failure: a runner is thrown away, but an installer
+      #    that cannot undo itself is an installer nobody dares run twice.
+      - if: always()
+        run: sh service/install-linux.sh uninstall
+        shell: bash
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: load the agent through launchd
+        shell: bash
+        run: |
+          set +e
+          sh service/install-macos.sh install | tee install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 78 ]; then
+            echo "::error::PRECONDITION NOT MET on this runner — no reachable launchd domain, the agent was NOT judged. Read the message above; this is not a verdict about the plist."
+            exit 1
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          # ⚠️ `tr -d '\r'`: a PowerShell installer writes CRLF, and a carriage
+          #    return glued to the port would build a malformed URL — a failure
+          #    that reads like "the daemon never answered". Harmless elsewhere.
+          echo "CTXROUTE_PORT=$(sed -n 's/^ctxroute-port=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+
+      # ⚠️ Here the supervisor is EAGER (`RunAtLoad`), so the daemon is starting
+      #    while we ask — that is what the verifier's declared bound is for.
+      - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
+        shell: bash
+
+      - if: always()
+        run: sh service/install-macos.sh uninstall
+        shell: bash
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # ⚠️ Driven from bash so the 78 branch is written ONCE per job in the same
+      #    form as the other two — the installer itself is PowerShell, as an
+      #    operator would run it. `-File` keeps the script's own exit code.
+      - name: register the task through Task Scheduler
+        shell: bash
+        run: |
+          set +e
+          powershell -NoProfile -ExecutionPolicy Bypass -File service/install-windows.ps1 -Action install | tee install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 78 ]; then
+            echo "::error::PRECONDITION NOT MET on this runner — the Operational channel could not be enabled, so the task was NOT judged. Read the message above."
+            exit 1
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          # ⚠️ `tr -d '\r'`: a PowerShell installer writes CRLF, and a carriage
+          #    return glued to the port would build a malformed URL — a failure
+          #    that reads like "the daemon never answered". Harmless elsewhere.
+          echo "CTXROUTE_PORT=$(sed -n 's/^ctxroute-port=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+
+      - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
+        shell: bash
+
+      # ⚠️ ON FAILURE, ASK THE SUPERVISOR WHAT IT DID — `LastTaskResult` tells a
+      #    task that RAN AND EXITED apart from one that never started (a runner
+      #    with no interactive session cannot honour `InteractiveToken`). Without
+      #    it, "no answer" would be one undifferentiated failure and the next
+      #    reader would guess.
+      - if: failure()
+        shell: powershell
+        run: Get-ScheduledTask -TaskName 'ctxroute-http' | Get-ScheduledTaskInfo | Format-List
+
+      - if: always()
+        shell: bash
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File service/install-windows.ps1 -Action uninstall

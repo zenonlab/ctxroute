@@ -225,42 +225,39 @@ and half of it is worthless.
 
 ## Installing (for the day the switch-over is decided)
 
-Edit the paths first — every file has `CHANGE_ME` markers or a distribution-dependent binary path.
+🛑 **THE PROCEDURE IS NOT WRITTEN HERE ANY MORE — IT IS A SCRIPT PER OS, AND THAT IS THE POINT.**
+It used to live in this section as a list of commands, which meant the same gestures existed twice
+the moment CI started loading the units: two truths, and the one that rots is always the one nobody
+runs. Each installer below is now the SINGLE place its OS's procedure lives; this README calls it,
+`.github/workflows/service-units.yml` calls it, an adopter calls it.
 
-**Linux**
+| OS | Run from the repository root |
+|---|---|
+| Linux | `sh service/install-linux.sh install` (`uninstall` to remove) |
+| macOS | `sh service/install-macos.sh install` (`uninstall` to remove) |
+| Windows | `powershell -ExecutionPolicy Bypass -File service/install-windows.ps1 -Action install` |
 
-```sh
-systemctl --user daemon-reload
-# 🛑 THE SOCKET, NEVER THE SERVICE. Enabling the service would start the daemon
-#    eagerly at login and give back the window this whole design removes.
-systemctl --user enable --now ctxroute-http.socket
-systemctl --user status ctxroute-http.socket ctxroute-http.service
-```
+Then, whatever the OS: `sh service/verify-responds.sh <port>` — the installer prints the port it
+resolved on its last line (`ctxroute-port=…`), read from the unit it just installed. **A real POST
+is the only proof; a running process is not one.**
 
-**macOS**
+**There is nothing to edit first.** The `CHANGE_ME` markers, the node binary and the clone location
+are substituted on the fly into the copy that lands in `~/.config/systemd/user/`,
+`~/Library/LaunchAgents/` or in the registered task. Nothing machine-specific ever enters a tracked
+file — this repository is public.
 
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ctxroute.http.plist
-launchctl print gui/$(id -u)/com.ctxroute.http
-# stop:
-launchctl bootout gui/$(id -u)/com.ctxroute.http
-```
+Each script refuses loudly rather than half-installing, and distinguishes **"this unit is wrong"**
+from **"this machine cannot host the measurement"** (status `78`, sysexits `EX_CONFIG`): no systemd
+user manager, no reachable launchd domain, no elevation to enable the Windows event channel. On
+Windows that last
+one is a PREREQUISITE, never an option — the channel ships disabled (measured 2026-08-21) and a
+disabled channel makes the restart trigger inert *in silence*. The installer enables it, with the
+log ceiling, in the same gesture.
 
-**Windows** (registering a task for yourself needs no elevation; step 1 does)
-
-```powershell
-# 🛑 STEP 1, ELEVATED, MANDATORY — the channel ships DISABLED (measured 2026-08-21).
-#    Skip it and the EventTrigger never fires: no 201 event, no restart, no error.
-wevtutil sl "Microsoft-Windows-TaskScheduler/Operational" /e:true /rt:false /ms:10485760
-wevtutil gl "Microsoft-Windows-TaskScheduler/Operational"   # must now print enabled: true
-
-# step 2 — register
-Register-ScheduledTask -TaskName 'ctxroute-http' -Xml (Get-Content -Raw .\ctxroute-http.task.xml)
-Get-ScheduledTask -TaskName 'ctxroute-http' | Get-ScheduledTaskInfo
-```
-
-Use `Register-ScheduledTask`, not `schtasks /Create /XML`: this file is UTF-8 and says so, while
-`schtasks` expects the UTF-16 that Task Scheduler exports.
+⚠️ Windows uses `Register-ScheduledTask`, not `schtasks /Create /XML` — and the installer strips the
+XML prolog before handing it over (see the head of the task file: PowerShell passes UTF-16, the
+prolog declares UTF-8, the API refuses with `HRESULT 0x8004131a`). The file keeps its prolog because
+`schtasks` needs it.
 
 **Changing the port.** Linux: `ListenStream=` in the **socket** unit — that is the address systemd
 binds, and the `Environment=` line in the service only covers a daemon started without the socket
@@ -276,8 +273,13 @@ number, and the two ends must agree.
 
 Stated so nobody inherits these as facts:
 
-- **That any of the three units actually starts the daemon.** Nothing here was installed, registered
-  or run. They are correct against the documentation, not against a machine.
+- **That any of the three units actually starts the daemon.** ⚠️ This is what
+  `.github/workflows/service-units.yml` now measures: it loads each unit with the OS's REAL
+  supervisor on a rented runner (`ubuntu-latest` has systemd, `macos-latest` launchd,
+  `windows-latest` Task Scheduler) and then POSTs to the lane. 🔴 **Written the day the workflow was
+  written, and honest about it: it has never reported yet.** Read its verdict before treating this
+  line as answered — and read the header of that file for the four things NO runner can ever prove
+  (the logon trigger, a reboot, a wake from sleep, and the exit-code restart end to end).
 - **Windows, the `201` XPath.** That the `EventData` filter on `ResultCode` and `TaskName` matches a
   real event was not measured, and ⚠️ **it CANNOT be while the channel is off** — measured
   2026-08-21, `wevtutil gl Microsoft-Windows-TaskScheduler/Operational` returns `enabled: false`, so

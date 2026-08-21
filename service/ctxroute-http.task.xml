@@ -4,8 +4,18 @@
      as UTF-8 and says so. Task Scheduler EXPORTS its XML as UTF-16, so most
      examples on the web carry an encoding="UTF-16" header; copying that header
      onto UTF-8 bytes produces a file that `schtasks /Create /XML` rejects with an
-     unhelpful parse error. Register it with PowerShell's Register-ScheduledTask
-     (README), which takes the XML as a string and does not care.
+     unhelpful parse error.
+  🔴 AND THE SENTENCE THAT USED TO END THIS BLOCK WAS FALSE — MEASURED
+     2026-08-21 WHILE INSTALLING FOR REAL. It claimed `Register-ScheduledTask`
+     "takes the XML as a string and does not care". It cares: PowerShell hands it
+     a UTF-16 string while this prolog declares UTF-8, and it refuses with
+     `Le code XML de la tache est mal forme. (1,40):: impossible de changer
+     d'encodage` (HRESULT 0x8004131a) — an error that names the ENCODING and
+     points at column 40, i.e. at this very line.
+  ✅ THE FIX IS ONE LINE, and the README carries it: STRIP the prolog before
+     registering (`$xml -replace '(?s)^\s*<\?xml.*?\?>\s*', ''`). The prolog is
+     kept in the file because `schtasks /Create /XML` needs it; only the
+     PowerShell path must drop it.
 -->
 
 <!--
@@ -107,8 +117,13 @@
          ⇒ Enabling it is a PREREQUISITE of installing this task, never an
          option, and it is the same gesture that declares the log CEILING:
          `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true /rt:false /ms:10485760`
-         ⚠️ The XPath itself STAYS unverified until the channel is on and a real
-         201 has been produced: an empty log cannot confirm a field name.
+         ✅ VERIFIED 2026-08-21, once the channel was on: real 201 events on this
+         machine carry EXACTLY `<Data Name='TaskName'>` and `<Data
+         Name='ResultCode'>` inside `<EventData Name='ActionSuccess'>` — the two
+         fields this XPath filters on. What was a hypothesis for a day is now a
+         measurement against live events. ⚠️ It confirms the FIELD NAMES, not that
+         the subscription fires: only a real exit 90 can show that, and it will
+         happen by itself the first time the daemon's own code is edited.
     -->
     <EventTrigger>
       <Enabled>true</Enabled>
