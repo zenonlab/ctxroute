@@ -377,6 +377,11 @@
       "max": 14,
       "class": "O(N)",
       "why": "Every nesting here walks a BOUNDED declaration: the manifest primitives (18), the rule atoms (4), the fabricated call forms (4), or the tracked runtime sources (57). They are the gate's own data, sized by what this repository declares about itself, never by client volume — the quantity that scales is pages per site, and no page ever reaches this file."
+    },
+    "src/differential-normalize.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The outer walk is over the FRAMES of ONE action and the inner one over the chunk headers of ONE frame body. Both are bounded by the wiring: an action declares 16 frames, and a frame carries at most a handful of chunk boundaries because its own capacity is ~7,661 characters. Neither side grows with client volume — a site adds pages, it never adds a frame to a tool call."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

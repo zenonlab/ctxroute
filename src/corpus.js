@@ -50,6 +50,25 @@ function walk(dir, prefix, dirsOut) {
   return out;
 }
 
+/**
+ * Reads ONE file and reports the directory that must be watched for it.
+ * ⚠️ THE DIRECTORY, NEVER THE FILE, and the set is DERIVED from the read exactly
+ *    as `walk`'s is — same reason: an editor and a git checkout both write a
+ *    temporary file and RENAME it over the target, so a watch on the file follows
+ *    the dead inode and goes SILENTLY deaf, which is worse than no watch at all.
+ * ⚠️ NO try/catch (same law as `walk`): fail-open belongs to the CALLER — here the
+ *    skill adapter, which falls back to its pointer body when the file is
+ *    unreadable. Swallowing it would make a missing skill indistinguishable from
+ *    an empty one.
+ * @param {string} file absolute path of the file
+ * @param {string[]} [dirsOut] OPTIONAL collector of the directory to watch
+ * @returns {string}
+ */
+function readOne(file, dirsOut) {
+  if (dirsOut) dirsOut.push(path.dirname(file));
+  return fs.readFileSync(file, 'utf8');
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // THE RESIDENT SNAPSHOT — off unless a LONG-LIVED process asks for it.
 // ═══════════════════════════════════════════════════════════════════════
@@ -64,7 +83,7 @@ function walk(dir, prefix, dirsOut) {
 // 🛑 AN ARGUMENT, NEVER AN ENVIRONMENT VARIABLE — the same rule as the state
 //    backend, for the same measured reason: env vars are INHERITED, and one leak
 //    would give a spawned hook a cache it can never invalidate.
-/** @type {{read: Function, invalidateAll: Function, size: Function}|null} */
+/** @type {{read: Function, readFile: Function, invalidateAll: Function, size: Function, fileCount: Function, watcherCount: Function}|null} */
 let cache = null;
 
 /**
@@ -74,10 +93,12 @@ let cache = null;
  *   invalidation deterministically instead of racing a real filesystem.
  * @param {number} [maxRoots] the ceiling, for a test that must reach it without
  *   inventing eight corpora.
+ * @param {number} [maxFiles] the FILE ceiling (skill bodies), same purpose.
+ * @param {number} [maxFileChars] the resident-characters ceiling, same purpose.
  */
-function enableCache(watch, maxRoots) {
+function enableCache(watch, maxRoots, maxFiles, maxFileChars) {
   disableCache();
-  cache = createCorpusCache({ read: walk, watch, maxRoots });
+  cache = createCorpusCache({ read: walk, readOne, watch, maxRoots, maxFiles, maxFileChars });
 }
 
 /** Turns it OFF and releases every watcher. Idempotent. */
@@ -91,6 +112,22 @@ function cacheSize() {
   return cache ? cache.size() : 0;
 }
 
+/** @returns {number} resident FILES (skill bodies) — 0 when the cache is off. */
+function cachedFiles() {
+  return cache ? cache.fileCount() : 0;
+}
+
+/**
+ * @returns {number} kernel watchers armed by the snapshot — 0 when the cache is off.
+ * 🛑 THE OBSERVABLE OF A BOUNDED OS RESOURCE (inotify watches, file descriptors) on a
+ *    process that runs for weeks, and the ONLY way to prove from outside that the
+ *    cache armed ONE watch per walked directory — no more (a leak), no fewer (a
+ *    directory it can never be told about, i.e. a stale corpus served in silence).
+ */
+function cachedWatchers() {
+  return cache ? cache.watcherCount() : 0;
+}
+
 /**
  * THE single reading of the corpus. Signature and result unchanged.
  * ⚠️ `dirsOut` present ⇒ the caller wants the WALK itself (that caller is the
@@ -102,4 +139,24 @@ function readCorpus(dir, prefix, dirsOut) {
   return walk(dir, prefix, dirsOut);
 }
 
-module.exports = { readCorpus, enableCache, disableCache, cacheSize };
+/**
+ * THE single reading of ONE document that is NOT part of a corpus root — today the
+ * SKILL BODIES, 90–120 KB each, read by `source-adapters.js`.
+ *
+ * 🛑 IT GOES THROUGH THE SAME RESIDENCY MECHANISM AS `readCorpus`, NOT A SECOND
+ *    ONE. Two caches drift; two KINDS of entry inside one cache share every line
+ *    that decides anything (drop, watch, fail-open, read-through). See the header
+ *    of `corpus-cache.js` for why the alternative — reading the skills through
+ *    `readCorpus` — was refused: it would walk the ~45 skills of the harness folder
+ *    to obtain the ONE body that matched, and would do so on the UNCACHED path,
+ *    which every spawned hook of the fleet still runs today.
+ * 🛑 OFF BY DEFAULT, exactly like `readCorpus`: with no `enableCache`, this is a
+ *    plain `readFileSync` and the delivered bytes are the ones the differentials
+ *    already froze.
+ */
+function readDoc(file) {
+  if (cache) return cache.readFile(file);
+  return readOne(file);
+}
+
+module.exports = { readCorpus, readDoc, enableCache, disableCache, cacheSize, cachedFiles, cachedWatchers };

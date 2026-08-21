@@ -18,6 +18,7 @@ export default defineConfig({
     include: [
       'test/harness-conformance.test.js',
     'test/differential-normalize.test.js',
+    'test/corpus-cache.test.js',
       'test/deps-criticality-pure.test.js',
       'test/lib-pure.test.js',
       'test/canary.test.js',

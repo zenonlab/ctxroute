@@ -856,5 +856,9 @@ if (require.main === module) {
   //    walk earlier while adding a startup path nothing exercises.
   // ⚠️ `persistent: false`, like the code watch: a watcher must never be the reason
   //    a process refuses to die.
+  // ⚠️ ONE CALL COVERS BOTH KINDS since 2026-08-21: the corpus ROOTS and the SKILL
+  //    BODIES (90–120 KB each, ~45 of them on this fleet) go through the same
+  //    residency, the same kernel invalidation and the same ceilings. There is
+  //    nothing else to enable, and there must never be a second switch.
   require('../corpus').enableCache((dir, cb) => fs.watch(dir, { persistent: false }, cb));
 }

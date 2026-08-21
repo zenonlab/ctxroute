@@ -33,7 +33,7 @@ function withoutOrdinal(ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// CHUNKING — the third thing born AFTER the frozen oracle
+// FRAMES + CHUNKING — REASSEMBLE BY THE PROTOCOL'S OWN NUMBERS
 // ═══════════════════════════════════════════════════════════════════════
 //
 // 🛑 THE DEFECT THIS CLOSES, AND WHY THE OBVIOUS FIX WAS THE WRONG ONE.
@@ -46,83 +46,184 @@ function withoutOrdinal(ctx) {
 //    gate people silence by trimming prose, until they trim something that
 //    mattered.
 //
-// 🛑 WHAT THE COMPARISON BECOMES, SAID PLAINLY — AND WHAT IT STOPS PROVING.
-//    The differential drives ONE frame, so only chunk `1/m` is in that output:
-//    chunks `2..m` are NOT there and cannot be reassembled from it. So the
-//    comparison can NOT be "reassemble then compare whole". It becomes:
-//      the delivered chunk, envelope removed, must be an EXACT PREFIX of the
-//      oracle's document, cut on a LINE boundary.
-//    COST, stated rather than hidden: a prefix is WEAKER than an equality. A
-//    content divergence located BEYOND the first chunk is INVISIBLE to this
-//    comparison. On a chunked doc we therefore prove parity on the delivered
-//    head only — never on the tail. Nothing stronger is reachable from one
-//    frame without re-implementing the split (i.e. comparing the engine to
-//    itself, which proves nothing at all).
+// 🛑 AND THE FIRST ANSWER — A PREFIX COMPARISON — WAS A SECOND WEAKENING.
+//    It held the differential to ONE frame, so chunks `2..m` were simply not
+//    there and a content divergence BEYOND the first chunk was INVISIBLE.
+//    "Declared" is not "closed": the heaviest parity net in this repo cannot
+//    be a net over the head of a document only.
+//    ✅ WHAT REPLACES IT: the caller drives the frames the action actually
+//    declares, and this module glues them back together BY THE FIELDS THE
+//    PROTOCOL ITSELF CARRIES (RFC 2046 `message/partial` + RFC 6455 — id, a
+//    number starting at 1, the total, cuts on line boundaries, never
+//    interleaved). Equality over the WHOLE document is restored.
 //
-// 🛑 ANCHORED ON THE PROTOCOL'S OWN MARKERS, NEVER A LOOSE `startsWith`.
-//    The envelope is recognized by the FULL chunk header sentence (RFC 2046
-//    `message/partial`: id, number starting at 1, total — `budget.js`) and by
-//    the FULL deferral sentence. Any other shape is returned UNCHANGED, hence
-//    stays RED. Fail-closed, on purpose: we normalize the one delivery whose
-//    relation to the oracle we can NAME, and refuse to guess about the rest.
+// 🛑 NEVER BY ARRIVAL ORDER. No harness guarantees it (official doc: hooks run
+//    in parallel, aggregation unspecified) and the caller spawns real
+//    processes. We read `FRAME k/N` and `CHUNK j/m`, we verify the count and
+//    the shared end marker, and a missing or duplicated number is a LOUD
+//    refusal — a silent hole would make the whole net hollow.
+//
+// 🛑 FAIL-CLOSED, WITHOUT A SINGLE FALLBACK. Anything this reader cannot place
+//    with certainty — an unparsable envelope, a frame from another emission, a
+//    continuation sitting mid-frame, a delivery that still DEFERS documents —
+//    returns `{ok: false, reason}`. The caller must stay RED on it. There is no
+//    "compare the head instead": the one thing worse than a weaker net is a net
+//    that looks strong and is not.
+//
+// ⚠️ THE ONE REGIME LEFT OUT, AND IT IS DECLARED: `fragment` cuts on LINE
+//    boundaries except on a line longer than a frame, which it chops mid-line.
+//    Those two cuts are indistinguishable to a receiver (one loses a `\n`, the
+//    other loses nothing), so a doc holding such a monster line reassembles
+//    one `\n` too long and stays RED. A loud, rare false red — preferred over a
+//    reader that guesses which of the two happened.
+
+// The FRAME envelope, exactly as `budget.js` composes it (`frameHeader` +
+// `footer`). The back-reference `\3` demands the SAME end marker at the head
+// and at the foot: a frame that disagrees with itself is a transport defect,
+// and swallowing it would be exactly the "green that sees nothing".
+const FRAME_SEAL = /^⚠️ SEALED INJECTION — FRAME (\d+)\/(\d+), end marked ###END:([0-9a-f]+)###\n[^\n]*\n[^\n]*\n[^\n]*\n\n([\s\S]*)\n\n###END:\3###$/;
+
+// The LONE-frame envelope (`budget.js::header` + `footer`). A single frame
+// never says "FRAME 1/1" — that would be an absurd reassembly instruction.
+const SOLO_SEAL = /^⚠️ SEALED INJECTION — this block ends with ###END:([0-9a-f]+)###\n[^\n]*\n[^\n]*\n\n([\s\S]*)\n\n###END:\1###$/;
+
+// Opening words shared by both envelopes: a frame that starts with them and
+// matches NEITHER shape is a seal we cannot read ⇒ refusal, never a body.
+const SEAL_OPEN = '⚠️ SEALED INJECTION';
 
 // The chunk header, exactly as `budget.js::chunkHeader` composes it. The
-// back-reference `\2` demands the SAME total in both places — a header that
-// disagrees with itself is a transport defect, and swallowing it would be
-// exactly the "green that sees nothing" this repo fears most.
-const CHUNK_HEADER = /^⟦ .+ — CHUNK (\d+)\/(\d+) : reassemble the \2 chunks in order before reading ⟧\n/m;
-const CHUNK_HEADER_ALL = new RegExp(CHUNK_HEADER.source, 'gm');
+// back-reference `\3` demands the SAME total in both places.
+const CHUNK_HEADER_ALL = /⟦ (.+?) — CHUNK (\d+)\/(\d+) : reassemble the \3 chunks in order before reading ⟧\n/g;
 
-// The deferral announcement, exactly as `budget.js::announcement` composes it.
-// ⚠️ It is ALWAYS present when a doc is chunked (the surplus chunks are the
-//    deferred ones), and it is ENVELOPE, not content — the oracle has no queue.
-//    Anchored on the two complete sentences + the `   - ` citation lines, and
-//    only at the very END of the block.
-const DEFERRED_TAIL = /\n\n⚠️ \d+ doc\(s\) DEFERRED — the frame is full, they follow on the next tool call\(s\)\.\n {3}Nothing is lost: they are queued, in order\. If your action touches them NOW, read them:\n(?: {3}- [^\n]*\n)* {3}- [^\n]*$/;
+// The deferral announcement, as `budget.js::announcement` opens it. Its
+// presence means the action delivered LESS than the whole corpus ⇒ there is
+// nothing complete to compare, so we refuse instead of comparing a fragment.
+const DEFERRED_TAIL = /\n\n⚠️ \d+ doc\(s\) DEFERRED — the frame is full, they follow on the next tool call\(s\)\./;
 
-/**
- * Aligns a possibly CHUNKED delivery with the frozen oracle's whole document.
- *
- * @param {*} delivered the engine's injected context (already unsealed / ordinal-stripped)
- * @param {*} oracle    the frozen oracle's context
- * @returns {{actual: *, expected: *}} the pair the caller compares with a STRICT equality
- *
- * ⚠️ TOTAL and IDENTITY BY DEFAULT: anything that is not a well-formed single
- *    `CHUNK 1/m` delivery comes back as `{actual: delivered, expected: oracle}`
- *    — byte for byte, so the nominal path stays a STRICT equality and a
- *    non-string input never throws (a differential that crashes reads like an
- *    engine outage).
- */
-function alignChunked(delivered, oracle) {
-  const unchanged = { actual: delivered, expected: oracle };
-  if (typeof delivered !== 'string' || typeof oracle !== 'string') return unchanged;
+// Segment separator, `budget.js::SEPARATOR`. Two segments of DIFFERENT
+// documents are glued with it; two chunks of the SAME document are glued with
+// the single `\n` that the cut consumed.
+const SEPARATOR = '\n\n---\n\n';
 
-  // ⚠️ EXACTLY ONE header. Zero ⇒ nothing was chunked, strict equality kept.
-  //    Several ⇒ a shape we cannot name (two chunked docs in one frame does not
-  //    happen: the doc that overflows is the LAST one in the frame). We refuse
-  //    to normalize what we cannot explain rather than invent a rule for it.
-  const headers = delivered.match(CHUNK_HEADER_ALL);
-  if (headers === null || headers.length !== 1) return unchanged;
-
-  const parts = CHUNK_HEADER.exec(delivered);
-  // 🛑 ONLY CHUNK 1 IS A PREFIX. On chunk `3/5` a prefix comparison would be
-  //    plainly FALSE — it must stay red, never be quietly accepted.
-  if (Number(parts[1]) !== 1) return unchanged;
-  if (Number(parts[2]) < 2) return unchanged;
-
-  const withoutTail = delivered.replace(DEFERRED_TAIL, '');
-  const actual = withoutTail.replace(CHUNK_HEADER, '');
-  // A chunk LONGER than the whole document is not a prefix of anything: red.
-  if (actual.length > oracle.length) return unchanged;
-  // ⚠️ CUT ON A LINE BOUNDARY (RFC 2046 § message/partial, `budget.js`). Without
-  //    this the comparison degenerates into a bare `startsWith`, which ANY
-  //    truncation regression would satisfy. Known and ACCEPTED consequence: a
-  //    doc holding a single line longer than a frame is cut mid-line by the
-  //    protocol and stays RED here — a loud, rare false red, preferred over a
-  //    filter that accepts every truncation.
-  if (actual.length < oracle.length && oracle[actual.length] !== '\n') return unchanged;
-
-  return { actual, expected: oracle.slice(0, actual.length) };
+// ⚠️ A refusal carries NO `text`, and a success carries no `reason`: a field
+//    nobody reads is a field no test can kill.
+function no(reason) {
+  return { ok: false, reason };
 }
 
-module.exports = { withoutOrdinal, alignChunked };
+// Every chunk header of a body, with WHERE it sits: the position is what tells
+// a continuation that OPENS a frame (gluable) from one sitting in the middle of
+// it (not gluable without guessing).
+// ⚠️ `matchAll`, NEVER AN `exec` LOOP AGAIN. The spec makes `matchAll` REFUSE a
+//    non-global regex (TypeError), whereas `exec` on the same regex never advances
+//    `lastIndex` and spins for ever on the first header. That difference is not
+//    style: a mutant that HANGS is a mutant nobody can kill — it comes back as a
+//    RuntimeError, which is NOT a kill, and the guard it protects stays unproven.
+// ⚠️ The regex is COPIED, never the shared literal: `lastIndex` is state, and two
+//    call sites sharing it would read from the middle of a body.
+function chunkHeaders(body) {
+  const re = new RegExp(CHUNK_HEADER_ALL.source, 'g');
+  return [...body.matchAll(re)].map(
+    (hit) => ({ at: hit.index, label: hit[1], j: Number(hit[2]), m: Number(hit[3]) }));
+}
+
+// Glues the frame BODIES back into the single document the oracle returns.
+function stitch(bodies) {
+  let text = '';
+  let open = null;
+  for (let i = 0; i < bodies.length; i++) {
+    const heads = chunkHeaders(bodies[i]);
+    let joiner = SEPARATOR;
+    let next = 0;
+    // ① A document left OPEN by the previous frame MUST be continued at the
+    //    VERY FIRST byte of this one (RFC 6455: a fragmented document is never
+    //    interleaved). That single condition is what catches a MISSING, a
+    //    DUPLICATED and an OUT-OF-ORDER chunk alike.
+    if (open !== null) {
+      const c = heads[0];
+      if (c === undefined || c.at !== 0 || c.label !== open.label || c.j !== open.j + 1) {
+        return no('frame ' + (i + 1) + ' does not open on CHUNK ' + (open.j + 1) + '/' + open.m
+          + ' of ' + open.label + ': a chunk is missing, duplicated or out of order');
+      }
+      // The cut consumed exactly one line break, so that is what puts it back.
+      joiner = '\n';
+      open = c.j === c.m ? null : { label: c.label, j: c.j, m: c.m };
+      next = 1;
+    }
+    // ② Every OTHER header of this frame must OPEN a document (`j = 1`) while
+    //    none is open. A continuation anywhere else cannot be glued: whether it
+    //    wants a line break or a document separator is a GUESS.
+    for (let h = next; h < heads.length; h++) {
+      const c = heads[h];
+      if (c.j !== 1 || open !== null) {
+        return no('CHUNK ' + c.j + '/' + c.m + ' of ' + c.label + ' sits inside frame ' + (i + 1)
+          + ': this reader will not guess how to glue it');
+      }
+      open = { label: c.label, j: 1, m: c.m };
+    }
+    const body = bodies[i].replace(CHUNK_HEADER_ALL, '');
+    text += (i === 0 ? '' : joiner) + body;
+  }
+  // ③ A delivery that stops inside a document is INCOMPLETE — never a document.
+  if (open !== null) {
+    return no('the delivery ends inside ' + open.label + ': CHUNK ' + open.j + '/' + open.m
+      + ' was the last one seen');
+  }
+  return { ok: true, text };
+}
+
+/**
+ * Reassembles the frames of ONE action into the single document the frozen
+ * oracle returns.
+ *
+ * @param {*} frames the `additionalContext` of frame 1, 2, … N, IN THAT ORDER.
+ * @returns {{ok: boolean, reason?: string, text?: string}} `ok` false ⇒ the caller
+ *          MUST stay red; `reason` names what could not be placed.
+ *
+ * ⚠️ TOTAL: a non-array, an empty array or a non-string frame is a REFUSAL, never
+ *    a throw — a differential that crashes reads like an engine outage.
+ */
+function reassemble(frames) {
+  if (!Array.isArray(frames) || frames.length === 0) return no('no frame was delivered');
+  const bodies = [];
+  // ⚠️ `null` and not `''`: an initial value nobody can OBSERVE is an eternal
+  //    mutation survivor. Here it is read by the guard below, hence killable.
+  let total = 0;
+  let marker = null;
+  for (let i = 0; i < frames.length; i++) {
+    const raw = frames[i];
+    if (typeof raw !== 'string') return no('frame ' + (i + 1) + ' is not a string');
+    // A deferral means the corpus did NOT fit in the frames this action drove:
+    // there is no whole document here, so there is nothing to compare.
+    if (DEFERRED_TAIL.test(raw)) {
+      return no('frame ' + (i + 1) + ' still DEFERS documents: this action delivered less than the corpus');
+    }
+    const fr = FRAME_SEAL.exec(raw);
+    if (fr !== null) {
+      if (Number(fr[1]) !== i + 1) {
+        return no('frame ' + (i + 1) + ' announces itself as FRAME ' + fr[1] + '/' + fr[2]);
+      }
+      if (marker === null) { total = Number(fr[2]); marker = fr[3]; }
+      if (Number(fr[2]) !== total || fr[3] !== marker) {
+        return no('frame ' + (i + 1) + ' belongs to ANOTHER emission: total or end marker differ');
+      }
+      bodies.push(fr[4]);
+      continue;
+    }
+    const solo = SOLO_SEAL.exec(raw);
+    if (solo !== null) {
+      if (frames.length !== 1) {
+        return no('a LONE-frame seal arrived inside a delivery of ' + frames.length + ' frames');
+      }
+      bodies.push(solo[2]);
+      continue;
+    }
+    if (raw.startsWith(SEAL_OPEN)) return no('frame ' + (i + 1) + ' carries a seal this reader cannot parse');
+    // Under the sealing threshold the engine emits the body BARE — the
+    // historical rendering, to the byte. Nothing to strip.
+    bodies.push(raw);
+  }
+  return stitch(bodies);
+}
+
+module.exports = { withoutOrdinal, reassemble };

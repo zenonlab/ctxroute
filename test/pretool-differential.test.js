@@ -12,7 +12,11 @@
 //    mechanisms no longer mirror each other, this test breaks (that is deliberate: the
 //    switch session must carry the .rush state over into ctxroute-config.json).
 //
-// Skipped on a fresh clone (no real fleet). Real spawns but few of them.
+// Skipped on a fresh clone (no real fleet). Real spawns, and they are COUNTED:
+// one action costs (number of NON-EMPTY frames + 1) spawns of the gate, plus one
+// of the oracle. A corpus that fits in a single frame therefore costs 2 gate
+// spawns instead of 1 — the price of comparing the WHOLE document instead of its
+// head. It grows only with what the fleet actually chunks, never with `FRAMES`.
 // ═══════════════════════════════════════════════════════════════════════
 
 import { test } from 'vitest';
@@ -20,7 +24,7 @@ import assert from 'node:assert';
 // ⚠️ SINGLE SOURCE shared with `mcp-differential` — never a copy:
 //    two normalizations diverge, and two nets that no longer filter the
 //    same thing no longer prove anything together.
-import { withoutOrdinal, alignChunked } from '../src/differential-normalize.js';
+import { withoutOrdinal, reassemble } from '../src/differential-normalize.js';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,80 +45,105 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'porte-diff-'));
 const CONFIG = path.join(TMP, 'config.json');
 if (parcPresent) fs.writeFileSync(CONFIG, JSON.stringify(RUSH ? { confirm: false } : {}));
 
-// ⚠️ UNSEALING — READ BEFORE TOUCHING (05/08/2026, false red PAID FOR).
+// ⚠️ ENVELOPES — READ BEFORE TOUCHING (05/08/2026, false red PAID FOR).
 //    This differential compares the gate to `protect-files.js`, a FROZEN oracle
-//    (its own doc forbids it from evolving). The multi-frame SEAL was born on
-//    03/08/2026, AFTER it: the oracle will NEVER know how to seal. But the gate
-//    seals as soon as the injection exceeds 50 % of the budget (4 000 chars) — so from
-//    that threshold on, the raw byte ALWAYS differs, for a reason that is not
-//    an engine divergence but a TRANSPORT layer missing on one side.
-// ⚠️ The test only survived until now by LUCK: the tested payloads
+//    (its own doc forbids it from evolving). The SEAL was born on 03/08/2026 and
+//    the CHUNKING after it: the oracle will NEVER know either. As soon as the
+//    injection exceeds 50 % of the budget the gate seals, and as soon as a doc
+//    outgrows one frame it is cut — so the raw byte differs for a reason that is
+//    not an engine divergence but a TRANSPORT layer missing on one side.
+// ⚠️ The test only survived until 21/08/2026 by LUCK: the tested payloads
 //    weighed ~3 400 chars, just under the threshold. Two lines added to fleet
 //    docs made it tip over — a gate that depends on the size of the fleet
 //    is not a gate, it is a countdown.
-// ⚠️ We therefore compare the CONTENT, envelope removed — parity stays proven
-//    TO THE BYTE on what carries the meaning. 🛑 NEVER "fix" this red by
-//    shortening a doc: that would degrade a deliverable to fit into
-//    a limit of OUR plumbing, exactly what the framework forbids
-//    ("it DELIVERS EVERYTHING"). The doc is healthy; it is the oracle that is dated.
-// ⚠️ The pattern requires the SAME marker at the top and at the foot (back-reference):
-//    a permissive unsealing would mask a real divergence, and this test
-//    would become decorative — the class of the inert gates of 03/08.
-const SCEAU_RE = /^⚠️ SEALED INJECTION — this block ends with ###END:([0-9a-f]+)###\n[^\n]*\n[^\n]*\n\n([\s\S]*)\n\n###END:\1###$/;
-function unseal(ctx) {
-  if (typeof ctx !== 'string') return ctx;
-  const m = SCEAU_RE.exec(ctx);
-  return m ? m[2] : ctx;
+// 🛑 NEVER "fix" a red here by shortening a doc: that would degrade a
+//    deliverable to fit a limit of OUR plumbing, exactly what the framework
+//    forbids ("it DELIVERS EVERYTHING"). The doc is healthy; the oracle is dated.
+// ✅ WHAT WE DO INSTEAD (21/08/2026): we DRIVE the frames the action declares
+//    and REASSEMBLE them by the protocol's own numbers (`differential-normalize`,
+//    single source + negative-check), then compare the whole document to the
+//    oracle for EQUALITY. An earlier version compared the first chunk as a
+//    PREFIX — weaker, and blind to any divergence past chunk 1. That gap is
+//    CLOSED, not declared.
+function sameContent(res, old, prefix = '') {
+  // 🛑 A refusal is a RED, never a downgrade to a weaker comparison: a delivery
+  //    we cannot place is exactly when a hollow net would be most dangerous.
+  assert.ok(res.ok, `REASSEMBLY REFUSED — ${res.reason}`);
+  assert.strictEqual(prefix + withoutOrdinal(res.text), old);
 }
 
-// ⚠️ CHUNKING — THE THIRD ENVELOPE BORN AFTER THE FROZEN ORACLE (21/08/2026).
-//    A fleet doc that grows past ONE frame (~7,661 c) is CHUNKED by the engine;
-//    the oracle returns the WHOLE document. This test went red THREE times in
-//    ONE afternoon on that, and the "fix" was each time to SHORTEN a doc.
-// 🛑 THAT FIX IS FORBIDDEN HERE ("never turn this red green by shortening a
-//    doc"): docs grow, and a gate silenced by trimming prose ends up trimming
-//    something that mattered.
-// ⚠️ WHAT THE COMPARISON BECOMES, AND WHAT IT NO LONGER PROVES: the
-//    differential drives ONE frame, so only chunk 1/m exists in that output —
-//    reassembly is impossible. The delivered chunk must therefore be an EXACT
-//    PREFIX of the oracle's document, cut on a LINE boundary. A prefix is
-//    WEAKER than an equality: on a chunked doc, a divergence located BEYOND the
-//    first chunk is INVISIBLE. Stated, not hidden. Everything else keeps its
-//    STRICT byte equality — `alignChunked` is the identity outside a
-//    well-formed `CHUNK 1/m` delivery (single source + negative-check in
-//    `differential-normalize.test.js`).
-function sameContent(fresh, old, message) {
-  const r = alignChunked(fresh, old);
-  assert.strictEqual(r.actual, r.expected, message);
-}
+// ⚠️ N FRAMES = the bandwidth of ONE action, mirroring the LIVE wiring
+//    (`frames` in ctxroute-config.json). It is a CEILING here, not a cost: we
+//    stop at the first frame with no content, so a corpus that fits in one
+//    frame still costs the historical single spawn (+1 to prove it is over).
+const FRAMES = 16;
 
-function runHook(script, payload, env) {
-  return new Promise((resolve) => {
-    const child = execFile(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, ...env } }, (_err, stdout) => {
-      resolve(stdout.trim() === '' ? null : JSON.parse(stdout));
+// ⚠️ Tear-down on EVERY path: a hook that never answers must not leave a node
+//    behind for the rest of the suite. Never `stdio: 'ignore'` — a hook that
+//    fails to emit JSON must say so LOUDLY, not silently look like a silence.
+function runHook(script, payload, env, args = [], extra = {}) {
+  let child;
+  const done = new Promise((resolve, reject) => {
+    child = execFile(process.execPath, [script, ...args], { encoding: 'utf8', env: { ...process.env, ...env } }, (_err, stdout) => {
+      const out = stdout.trim();
+      if (out === '') { resolve(null); return; }
+      try { resolve(JSON.parse(out)); }
+      catch (e) { reject(new Error(`${path.basename(script)} did not emit JSON (${e.message}):\n${out}`)); }
     });
-    child.stdin.end(JSON.stringify({ tool_name: payload.toolName, tool_input: payload.toolInput, session_id: 'porte-diff' }));
+    child.stdin.end(JSON.stringify({
+      tool_name: payload.toolName, tool_input: payload.toolInput, session_id: 'porte-diff', ...extra,
+    }));
   });
+  return done.finally(() => { child.kill(); });
+}
+
+const GATE_ENV = { CTXROUTE_CONFIG_PATH: CONFIG, CTXROUTE_STATE_DIR: path.join(TMP, 'state') };
+
+// ⚠️ ONE `tool_use_id` PER ACTION, SHARED BY ITS N FRAMES — and never between
+//    two actions. The plan is MEMOIZED per invocation (`plan-` store): the same
+//    id makes the N processes see the SAME split (without it each would consume
+//    the `once` docs and recompute its own), a different id makes two actions
+//    two independent splits.
+let actions = 0;
+
+// Drives the frames of ONE action and returns the raw frame texts, in order.
+// ⚠️ We stop at the first frame with NO content: `planFrames` fills frames in
+//    order, so the non-empty ones are contiguous. A hole after that point cannot
+//    produce a false GREEN — a missing chunk is refused by the reassembly and a
+//    missing document breaks the final equality.
+async function driveFrames(payload) {
+  const invocationId = `porte-diff-${++actions}`;
+  const texts = [];
+  let first = null;
+  for (let k = 1; k <= FRAMES; k++) {
+    const out = await runHook(PORTE, payload, GATE_ENV,
+      ['--frame', String(k), '--frames', String(FRAMES)], { tool_use_id: invocationId });
+    if (k === 1) first = out;
+    const ctx = out && out.hookSpecificOutput ? out.hookSpecificOutput.additionalContext : undefined;
+    if (typeof ctx !== 'string' || ctx === '') break;
+    texts.push(ctx);
+  }
+  return { first, texts };
 }
 
 async function both(payload) {
-  const [old, fresh] = await Promise.all([
+  const [old, driven] = await Promise.all([
     runHook(LEGACY, payload, {}),
-    runHook(PORTE, payload, { CTXROUTE_CONFIG_PATH: CONFIG, CTXROUTE_STATE_DIR: path.join(TMP, 'state') }),
+    driveFrames(payload),
   ]);
-  return { old, fresh };
+  return { old, fresh: driven.first, frames: driven.texts };
 }
 
 // REAL payloads (known rules of the fleet) — read, write, Bash, non-match.
 const HOOK_DIR = path.join(os.homedir(), '.claude', 'hooks');
 const READ_MATCH = { toolName: 'Read', toolInput: { file_path: 'C:/Users/dev/Desktop/ctxroute/lib-pure.js' } };
 
-test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + systemMessage)', async () => {
-  const { old, fresh } = await both(READ_MATCH);
+test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + systemMessage)', { timeout: 60000 }, async () => {
+  const { old, fresh, frames } = await both(READ_MATCH);
   assert.ok(old && fresh, 'both engines must inject on this known payload');
   assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
   assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-  sameContent(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+  sameContent(reassemble(frames), old.hookSpecificOutput.additionalContext);
   // ⚠️ DECLARED DIFFERENCE ON THE BADGE — THE NEW ONE NAMES MORE (07/08/2026).
   //
   // 🔴 REAL defect, measured HERE on the fleet: the old engine (and ours
@@ -145,7 +174,7 @@ test.skipIf(!parcPresent)('READ: injected content IDENTICAL to the byte (ctx + s
   }
 });
 
-test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', async () => {
+test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', { timeout: 60000 }, async () => {
   const payload = { toolName: 'Edit', toolInput: { file_path: 'C:/Users/dev/Desktop/ctxroute/lib-pure.js' } };
   // ⚠️ `enforce` GUARD OF THE FLEET (live-production.md, 15/08/2026): a user doc
   //    may REFUSE this action ONCE — a capability born AFTER the frozen oracle, which
@@ -154,15 +183,15 @@ test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', 
   //    proven on the action that PASSES (the file docs are 100 % dumb, the
   //    content of the 2nd action is identical). 🛑 NEVER "fix" this deny by
   //    removing the doc from the fleet nor by requiring `allow` on the 1st action.
-  let { old, fresh } = await both(payload);
+  let { old, fresh, frames } = await both(payload);
   if (fresh && fresh.hookSpecificOutput && fresh.hookSpecificOutput.permissionDecision === 'deny') {
-    ({ fresh } = await both(payload));
+    ({ fresh, frames } = await both(payload));
   }
   assert.ok(old && fresh, 'both engines must react on a documented write');
   if (RUSH) {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-    sameContent(RUSH_PREFIX + withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+    sameContent(reassemble(frames), old.hookSpecificOutput.additionalContext, RUSH_PREFIX);
   } else {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'ask');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'ask');
@@ -170,14 +199,14 @@ test.skipIf(!parcPresent)('WRITE: decision mirroring the real rush, same docs', 
   }
 });
 
-test.skipIf(!parcPresent)('BASH: cd && reconstruction — same docs injected', async () => {
-  const { old, fresh } = await both({ toolName: 'Bash', toolInput: { command: 'cd C:/Users/dev/Desktop/ctxroute && node doctor.js' } });
+test.skipIf(!parcPresent)('BASH: cd && reconstruction — same docs injected', { timeout: 60000 }, async () => {
+  const { old, fresh, frames } = await both({ toolName: 'Bash', toolInput: { command: 'cd C:/Users/dev/Desktop/ctxroute && node doctor.js' } });
   // Both silent OR identical injection — never one without the other.
   assert.strictEqual(fresh === null, old === null, 'one engine speaks, the other keeps silent');
-  if (old) sameContent(withoutOrdinal(unseal(fresh.hookSpecificOutput.additionalContext)), old.hookSpecificOutput.additionalContext);
+  if (old) sameContent(reassemble(frames), old.hookSpecificOutput.additionalContext);
 });
 
-test.skipIf(!parcPresent)('GIT + NON-MATCH: silence on both sides', async () => {
+test.skipIf(!parcPresent)('GIT + NON-MATCH: silence on both sides', { timeout: 60000 }, async () => {
   const git = await both({ toolName: 'Bash', toolInput: { command: 'git commit -m "fix lib-pure.js"' } });
   assert.strictEqual(git.old, null);
   assert.strictEqual(git.fresh, null);
@@ -190,25 +219,10 @@ test.skipIf(!parcPresent)('HOOK_DIR sanity: the real fleet does exist where we t
   assert.ok(fs.existsSync(HOOK_DIR));
 });
 
-// ⚠️ NEGATIVE-CHECK of the unsealing (05/08/2026) — WITHOUT it, `unseal()` is
-//    a disguised `return ctx` that would make the 3 comparisons above
-//    decorative. A relaxation introduced to make a red pass MUST
-//    prove that it only relaxes what it claims to.
-test('unseal() removes the envelope AND NOTHING ELSE', () => {
-  const body = 'doc A\n\n---\n\ndoc B';
-  const sealed = '⚠️ SEALED INJECTION — this block ends with ###END:abcd1234###\n'
-    + '   line 2\n   line 3\n\n' + body + '\n\n###END:abcd1234###';
-  assert.strictEqual(unseal(sealed), body, 'a well-formed sealed block must return its EXACT body');
-
-  // Not sealed → returned INTACT: the nominal path stays a strict comparison.
-  assert.strictEqual(unseal(body), body);
-
-  // ⚠️ THE CASE THAT MATTERS: DIFFERENT markers = inconsistent seal. We do NOT
-  //    unseal — otherwise we would swallow a real transport defect.
-  const bancal = sealed.replace('###END:abcd1234###\n', '###END:00000000###\n');
-  assert.strictEqual(unseal(bancal), bancal);
-
-  // ⚠️ A divergence INSIDE the body stays visible after unsealing.
-  const other = sealed.replace('doc B', 'doc C');
-  assert.notStrictEqual(unseal(other), body);
-});
+// ⚠️ THE NEGATIVE-CHECK OF THE ENVELOPE HANDLING LIVES WITH THE CODE, in
+//    `differential-normalize.test.js` — it moved there on 21/08/2026 with the
+//    unsealing itself. The local `unseal()` was a SECOND reader of the same
+//    envelope; two readers of one format diverge, and this one could not learn
+//    the FRAME envelope without becoming a copy of the module. 🛑 Never bring an
+//    envelope reader back into a suite: the module is the single source, and it
+//    is the module that must prove it only relaxes what it claims to.

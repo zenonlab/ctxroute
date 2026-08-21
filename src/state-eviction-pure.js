@@ -105,6 +105,12 @@ function classify(name) {
   // ⚠️ Anything that is not a `.json` state file is not ours to delete: the
   //    canary verdict, the daemon snapshot, a `.lock-*` directory, a file a
   //    human dropped there. Fail-closed.
+  // 🛑 IT DECIDES SOMETHING ONLY WHEN THE NAME ALSO CARRIES A DECLARED PREFIX —
+  //    `plan-a.txt`, `doc-seen-s.log` — and that shape is reachable BY
+  //    CONSTRUCTION: the argument is a real directory listing, whose content
+  //    nobody owns. Remove this line and those names get DELETED. Its cell uses
+  //    exactly that shape; asserted on a `.txt` alone, the fall-through returns
+  //    `null` too and the mutant is indistinguishable.
   if (!name.endsWith('.json')) return null;
   if (name.startsWith(EPHEMERAL_PREFIX)) return 'ephemeral';
   for (const prefix of DURABLE_PREFIXES) {
@@ -119,6 +125,19 @@ function classify(name) {
  *    millisecond must not make the verdict depend on the order the OS happened
  *    to walk the directory. A cleaner whose output changes between two runs on
  *    the same disk is a cleaner nobody can assert on.
+ * 🛑 EXPORTED ON PURPOSE, AND IT IS NOT A CONVENIENCE — do not un-export it.
+ *    Observed through `planEviction` ALONE, this comparator is UNKILLABLE: the
+ *    verdict is `.sort()`ed before it is returned, so any tie order produces the
+ *    same list, and the `-1`/`1` clauses cover each other under a STABLE sort
+ *    (ECMAScript guarantees stability, so dropping one clause degrades the
+ *    comparator to an inconsistent one whose result V8 happens to keep correct).
+ *    Measured: 8 mutants surviving on lines below with a green suite. The SIGN
+ *    is the contract — a comparator is judged on what it RETURNS, and only a
+ *    direct call can see that. Its wiring into the eviction is proven
+ *    separately, by a cell where a tie evicts exactly one of the two files.
+ * @param {{name: string, mtimeMs: number}} a
+ * @param {{name: string, mtimeMs: number}} b
+ * @returns {number}
  */
 function byAgeThenName(a, b) {
   if (a.mtimeMs !== b.mtimeMs) return a.mtimeMs - b.mtimeMs;
@@ -223,6 +242,7 @@ module.exports = {
   planEviction,
   classify,
   ageBound,
+  byAgeThenName,
   EPHEMERAL_PREFIX,
   DURABLE_PREFIXES,
   DEADLINE_MULTIPLE,

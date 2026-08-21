@@ -39,7 +39,10 @@
 
 'use strict';
 
-const fs = require('fs');
+// ⚠️ NO `fs` HERE, AND IT MUST STAY THAT WAY. This file used to require it for the
+//    ONE skill-body read; that read now goes through `corpus.readDoc`, the shared
+//    I/O module. Re-adding `fs` would be the first step back to a private read that
+//    no kernel event can invalidate.
 const path = require('path');
 const lib = require('./lib-pure');
 const gate = require('./gate');
@@ -49,7 +52,12 @@ const gate = require('./gate');
 //    of chunk format.
 const budget = require('./budget');
 const { parse, validate } = require('./frontmatter');
-const { readCorpus } = require('./corpus');
+// ⚠️ `readDoc` = the SAME I/O module as `readCorpus`, and that is deliberate: the
+//    skill body is the only thing this file reads outside a corpus root, and it
+//    must obey the same residency rules (kernel invalidation, ceiling, off by
+//    default). A bare `fs.readFileSync` here is what left the 90–120 KB skill
+//    bodies re-read on every daemon request until 2026-08-21.
+const { readCorpus, readDoc } = require('./corpus');
 const { rulesFromCorpus } = require('./loader');
 const fileSource = require('./sources/file');
 const toolSource = require('./sources/tool');
@@ -209,7 +217,11 @@ const skillAdapter = {
         try {
           // parse().body = the skill WITHOUT its frontmatter (harness metadata:
           // description/allowed-tools — noise in the context, not knowledge).
-          body = parse(fs.readFileSync(path.join(paths.skillsDir(), name + '.md'), 'utf8')).body;
+          // 🛑 `readDoc`, NEVER `fs.readFileSync`: the skills folder is a HARNESS
+          //    folder the operator edits by hand, so the read must be the one the
+          //    kernel can invalidate. Going back to a direct read would silently
+          //    un-cache the biggest bodies the framework injects.
+          body = parse(readDoc(path.join(paths.skillsDir(), name + '.md'))).body;
         } catch { /* unreadable file → pointer fallback below */ }
         acc.bodies[m.doc] = body && body.trim() !== '' ? body : skillSource.pointerBody(name);
         // ⚠️ We SUPPLY the registry entry, we resolve NOTHING: the complete cascade
