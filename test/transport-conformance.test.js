@@ -282,3 +282,110 @@ test('SPEC (2bis): the lock-less path NEVER refuses — a refusal it cannot reco
     + 'from the same state and refused again — the infinite block the alternation forbids.');
   assert.notEqual(d2, 'deny', 'and the second one proves the repetition, not a one-off');
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑥ THE WITHHOLDING IS SAID OUT LOUD (2026-08-21)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 WHAT WAS SILENT UNTIL TODAY, AND IT WAS SILENT IN PRODUCTION. Cell ②
+//    proves the lock-less path delivers `injectLockless` — everything EXCEPT
+//    `once` — and that is correct: delivering without recording duplicates.
+//    But the agent was told NOTHING, so it acted once without knowledge it was
+//    supposed to have, and no error, no red, no badge existed anywhere. The
+//    doctrine of this repository is not "zero bugs", it is **zero SILENT bugs**.
+// 🛑 THE NOTICE ANNOUNCES A COUNT, NEVER A CAUSE. "N documents withheld" is
+//    what this layer OBSERVES; "the lock was busy" or "the daemon is down" are
+//    guesses about WHY. That is also what makes it universal — same true
+//    sentence on every harness, on the spawn lane and the daemon lane alike,
+//    with no probe of any kind.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** One action, returning what the shell was really handed. */
+function emission(run, session) {
+  let vu = null;
+  run(
+    { tool_name: 'Read', tool_input: { file_path: 'C:/p/server.js' }, session_id: session },
+    (d, f, m) => { vu = { decision: d, doc: f, message: m }; },
+    {}
+  );
+  return vu;
+}
+
+function configBavarde() {
+  fs.writeFileSync(CONFIG, JSON.stringify({ enabled: true, showNotification: true }));
+}
+
+test('CONTROL: nothing is withheld when the lock is available — and nothing is announced', () => {
+  configBavarde();
+  const { run } = moteur();
+  doc('un', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
+  const vu = emission(run, 'quiet-' + sid);
+
+  assert.ok(vu, 'control: the document must be delivered');
+  assert.ok(vu.doc.includes('ONCE BODY'), 'control: it is the `once` document that goes out');
+  assert.ok(!/WITHHELD/.test(vu.message || ''),
+    'a notice fired while NOTHING was withheld: an alarm that cries on a healthy system is an '
+    + 'alarm people stop reading, and this one would fire on every single action');
+});
+
+test('a withheld `once` is ANNOUNCED, with an exact count, alongside what did go out', () => {
+  configBavarde();
+  const { run, lib } = moteur();
+  doc('retenu', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
+  doc('livre', '---\nmatch: server.js\nmode: dumb\n---\nDUMB BODY\n');
+  const s = 'avis-' + sid;
+
+  const relacher = tenirLeVerrou(lib, s);
+  const vu = emission(run, s);
+  relacher();
+
+  assert.ok(vu, 'the action must still deliver what stays correct without a record');
+  assert.ok(vu.doc.includes('DUMB BODY'), 'the `dumb` document goes out — the notice never replaces delivery');
+  assert.ok(!vu.doc.includes('ONCE BODY'), 'control: the `once` is indeed the one withheld (cell ② property)');
+  assert.match(vu.message || '', /1 doc\(s\) WITHHELD/,
+    'the framework delivered less than it decided and said nothing: that is the silent degradation, '
+    + 'and it is exactly what happened on every lock contention in production');
+});
+
+test('EVERYTHING withheld ⇒ the frame speaks WITHOUT deciding, instead of staying mute', () => {
+  configBavarde();
+  const { run, lib } = moteur();
+  doc('seul', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
+  const s = 'muet-' + sid;
+
+  const relacher = tenirLeVerrou(lib, s);
+  const vu = emission(run, s);
+  relacher();
+
+  // 🔴 THIS IS THE CASE THAT WAS TOTALLY SILENT: nothing left to deliver, so the
+  //    old code returned before reaching any message at all — precisely when the
+  //    most had been withheld.
+  assert.ok(vu, 'the action emitted NOTHING while withholding everything it had decided');
+  assert.equal(vu.doc, '', 'there is no context to deliver — the notice must never fabricate one');
+  assert.match(vu.message || '', /1 doc\(s\) WITHHELD/, 'and the human is told');
+
+  // 🛑 THE WIRE FORM MATTERS AS MUCH AS THE MESSAGE. Official doc (2026-08-21):
+  //    `permissionDecision` is optional and its ABSENCE leaves the normal
+  //    permission flow alone. Emitting the usual envelope would carry
+  //    `permissionDecision: "allow"` — a warning that AUTHORISES a tool call as
+  //    a side effect. A notice must never change a decision.
+  const { output } = require('../src/hooks/doc-inject.js');
+  const json = output(vu.decision, vu.doc, vu.message);
+  assert.deepEqual(Object.keys(json), ['systemMessage'],
+    'the notice must travel ALONE: any other key here means the framework is deciding '
+    + 'something it was never asked to decide');
+});
+
+test('`showNotification: false` stays a TOTAL silence, notice included', () => {
+  const { run, lib } = moteur();   // beforeEach already writes showNotification:false
+  doc('seul', '---\nmatch: server.js\nmode: once\n---\nONCE BODY\n');
+  const s = 'silence-' + sid;
+
+  const relacher = tenirLeVerrou(lib, s);
+  const vu = emission(run, s);
+  relacher();
+
+  assert.equal(vu, null,
+    'that setting is a TOTAL silence by the maintainer decision, never a partial one — '
+    + 'a notice leaking through it would be the same defect as an orphan chunk suffix');
+});

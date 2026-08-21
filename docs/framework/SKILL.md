@@ -87,6 +87,30 @@
    🛑 **NOTHING IS WIRED**: production still runs the spawn lane and its files. Switching over is
    the maintainer's decision, at a moment when no agent is running. Detail: `kernel-state.md`.
 
+0sexies-ter. 🔑 **THE FRAMEWORK NOW SAYS WHEN IT DELIVERS LESS THAN IT DECIDED (21/08/2026) — and
+   this is the rule that made "no daemon = total silence" stop being a daemon question.** Whenever no
+   authority can RECORD a delivery, `once` documents are withheld (delivering without recording
+   duplicates them — TLC-proven). That was correct AND MUTE: the agent acted once without knowledge
+   it was owed, no error, no red, no badge, **on every lock contention in production**. `pretool-core`
+   now counts `inject − injectLockless` and announces `N doc(s) WITHHELD`, once per action.
+   🛑 **IT ANNOUNCES A COUNT, NEVER A CAUSE** — "the lock was busy", "the daemon is down" are guesses
+   about WHY from a layer that only observes WHAT. The count is what makes it UNIVERSAL: the same
+   true sentence on every harness, on the spawn lane and the daemon lane, **with no liveness probe**.
+   ⚠️ **A SHELL THAT DOES NOT IMPLEMENT `noticeOutput` IS A SHELL THAT GOES MUTE AGAIN** — that is why
+   this lives in the skill and not only in a doc: it is a contract on every FUTURE port. When
+   everything is withheld there is no context to carry the message, so the frame speaks WITHOUT
+   deciding: `{systemMessage}` ALONE (`permissionDecision` is OPTIONAL on PreToolUse — official doc
+   read 21/08/2026 — and its absence leaves the normal permission flow untouched). Emitting the usual
+   envelope would carry `permissionDecision: "allow"` with an EMPTY `additionalContext`: **a notice
+   that AUTHORISES a tool call as a side effect. A notice must never change a decision.**
+   ⚠️ NOT a fourth decision (`none`/`allow`/`deny` stay three) · follows `showNotification` like every
+   badge · shared by both shells like `denyOutput`, because two copies of one dialect diverge.
+   🔬 **AND THE DESIGN LESSON WORTH MORE THAN THE FEATURE**: the first version keyed this on
+   `PostToolUse`/`SessionEnd`/`SubagentStop`, three Claude Code events — a MECHANISM built on one
+   harness's dialect, i.e. a silent hole on every harness that lacks them. Extension contract §7,
+   violated by the agent that had just read it. **What is universal is what we OBSERVE ourselves
+   (a count), never what a harness happens to tell us.**
+
 0sexies. ⚖️ **WHY THE RIGOUR IS NOT ZEAL — the stake, in money.** A **SILENT** defect costs a human
    DAY to find; that day is precisely what the system promises never to cost again, so a silent
    defect does not degrade the product — **it destroys its premise**. And a **SCALE** defect does

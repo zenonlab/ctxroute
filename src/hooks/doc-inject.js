@@ -41,7 +41,7 @@
 // ⚠️ Common body EXTRACTED into pretool-core.js (19/07/2026, Codex port):
 //    this shell only keeps the Claude Code dialect — stdin + emit.
 //    Any orchestration change is made IN pretool-core.js, never here.
-const { run, denyOutput } = require('../pretool-core');
+const { run, denyOutput, noticeOutput } = require('../pretool-core');
 const { parseFrameArgs } = require('../lib-pure');
 const { readStdinJson } = require('../stdin-json');
 
@@ -70,6 +70,12 @@ function output(decision, fullDoc, systemMessage) {
     //    the porting contract forbids it. The DECISION, itself, comes from gate.js.
     return denyOutput(fullDoc);
   }
+  // ⚠️ NOTHING FOR THE AGENT, SOMETHING FOR THE HUMAN — the withholding notice
+  //    (2026-08-21). Emitting the usual envelope here would carry
+  //    `permissionDecision: "allow"` and an EMPTY `additionalContext`: a warning
+  //    that AUTHORISES the tool call as a side effect. Official doc: the field
+  //    is optional and its absence leaves the normal permission flow alone.
+  if (!fullDoc) return noticeOutput(systemMessage);
   // ⚠️ The `ask` branch was REMOVED on 05/08/2026 (with the `confirm` key).
   //    NEVER reintroduce it: `ask` asked a HUMAN for authorization,
   //    the opposite of 0-human, and did not exist on the Codex side. The only

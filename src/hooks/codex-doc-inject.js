@@ -30,7 +30,7 @@
 //    same class of risk on Codex: stdin never closed = eternal process).
 require('../deadline').arm();
 
-const { run, denyOutput } = require('../pretool-core');
+const { run, denyOutput, noticeOutput } = require('../pretool-core');
 const { readStdinJson } = require('../stdin-json');
 const lib = require('../lib-pure');
 
@@ -53,6 +53,16 @@ function emit(decision, fullDoc, systemMessage) {
     //    of `ask` (05/08/2026), it is the ONLY possible behavioural difference —
     //    all the rest is a bare injection, identical on both sides.
     console.log(JSON.stringify(denyOutput(fullDoc)));
+    process.exit(0);
+  }
+  // ⚠️ NOTHING FOR THE AGENT, SOMETHING FOR THE HUMAN — the withholding notice
+  //    (2026-08-21), SHARED with Claude Code (`pretool-core.noticeOutput`) for
+  //    the same reason as `denyOutput`: the JSON is identical, and two copies of
+  //    one dialect diverge. Emitting the usual envelope here would carry an
+  //    EMPTY `additionalContext` — an announcement that injects nothing while
+  //    claiming to inject.
+  if (!fullDoc) {
+    console.log(JSON.stringify(noticeOutput(systemMessage)));
     process.exit(0);
   }
   const out = {

@@ -331,20 +331,66 @@ function run(data, emit, options) {
       // 🛑 The subset and its decision are RESOLVED BY THE GATE. Never re-derive them here —
       //    a cadence rule read in two places diverges (paid twice: ㊱, ㊳).
       const segments = segmentsPour(r.injectLockless);
-      res = { segments, decision: r.decisionLockless, frames: split(segments), filteredOut: r.filteredOut };
+      // 🔴 WHAT WE JUST WITHHELD, COUNTED — AND UNTIL 2026-08-21 NOBODY WAS TOLD.
+      //    `injectLockless` is a strict subset of `inject`: the difference is the
+      //    `once` documents this path may deliver but not RECORD, so it delivers
+      //    neither. Nothing is lost — the next action delivers them under the
+      //    lock — but the agent ACTS ONCE WITHOUT THEM, and that is exactly the
+      //    "acts on partial knowledge" the capacity alarm already shouts about.
+      //    It happened in PRODUCTION at every lock contention, in total silence.
+      // 🛑 IT IS COUNTED HERE, NEVER RE-DERIVED LATER: the subset is resolved by
+      //    the gate and by it alone (a cadence rule read twice diverges — paid
+      //    twice, ㊱ and ㊳). Downstream only formats a number.
+      res = {
+        segments,
+        decision: r.decisionLockless,
+        frames: split(segments),
+        filteredOut: r.filteredOut,
+        withheld: r.inject.length - r.injectLockless.length,
+      };
     }
+
+    // ⚠️ WITHHOLDING NOTICE — the framework says when it delivers LESS than it
+    //    decided, and this is the ONLY place that can know it.
+    //
+    // 🔴 THE SILENT DEGRADATION IT CLOSES (2026-08-21). When no authority can
+    //    RECORD a delivery (lock held by a sibling today, no state daemon
+    //    tomorrow), the `once` documents are withheld — correctly, since
+    //    delivering without recording duplicates them. But nobody was told, so
+    //    the agent acted once without knowledge it was supposed to have, and
+    //    NOTHING anywhere said so: no error, no red, no badge. The doctrine of
+    //    this repository is not "zero bugs", it is **zero SILENT bugs** — a loud
+    //    degradation is acceptable, a healthy-looking one is not.
+    // 🛑 THE CONDITION IS A COUNT, NOT A CAUSE. We announce "N documents were
+    //    withheld", never "the daemon is down" or "the lock was busy": those are
+    //    guesses about WHY from a place that only observes WHAT. It also makes
+    //    the notice universal — it says the same true thing on every harness and
+    //    on both lanes, with no probe of any kind.
+    // ⚠️ ONCE PER ACTION (`indice === 1`), same lesson as the capacity alarm:
+    //    sixteen identical shouts are an alarm nobody reads.
+    // ⚠️ IT FOLLOWS `showNotification`, like every other badge: that setting is
+    //    a TOTAL silence by the maintainer's decision, never a partial one.
+    const retenus = Number.isInteger(res.withheld) ? res.withheld : 0;
+    const avis = retenus > 0 && indice === 1 && lib.shouldShowNotification(config)
+      ? `⚠️ ctxroute: ${retenus} doc(s) WITHHELD this action — no writable state, `
+        + 'so session-scoped documents would have been delivered without being recorded. '
+        + 'They arrive at the next action.'
+      : '';
 
     // ⚠️ `segments`, NOT `r.inject`: the queue may carry content while
     //    gate.decide has decided nothing new (everything is already `seen`).
     //    Testing the old field would exit silently with a full queue — the doc
     //    would then NEVER arrive. That is the exact trap of this work item.
-    if (res.segments.length === 0) return;
+    // 🛑 AND THE NOTICE SURVIVES THIS EXIT, WHICH IS THE WHOLE POINT: the case
+    //    where EVERYTHING matched was `once` is exactly the case where the most
+    //    was withheld and where the old code returned in total silence.
+    if (res.segments.length === 0) { if (avis) emit('none', '', avis); return; }
 
     // ⚠️ An EMPTY frame goes out SILENTLY (exit 0): it has neither content nor
     //    announcement. In single-frame mode this case is impossible as soon as
     //    `inject` is non-empty — parity is therefore intact.
     const plan = res.frames[indice - 1];
-    if (!plan || plan.text === '') return;
+    if (!plan || plan.text === '') { if (avis) emit('none', '', avis); return; }
 
     const fullDoc = plan.text;
 
@@ -436,7 +482,11 @@ function run(data, emit, options) {
     const filtre = filteredOut.length > 0 && indice === 1
       ? ` · 🚫 ${filteredOut.length} doc(s) excluded by filterMode/filterList`
       : '';
-    emit(res.decision, fullDoc, badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarme + filtre);
+    // ⚠️ The withholding notice rides the SAME channel as the other badges and
+    //    is appended LAST — it is the only one that speaks about what is NOT
+    //    there, so it must not be read as a comment on what is.
+    const suffixe = badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarme + filtre;
+    emit(res.decision, fullDoc, suffixe === '' ? avis : suffixe + (avis ? ' · ' + avis : ''));
   } catch {
     // fail-open: we ANSWER "nothing to inject", we do not kill the process.
   }
@@ -468,4 +518,27 @@ function denyOutput(fullDoc) {
   };
 }
 
-module.exports = { run, denyOutput };
+/**
+ * SPEAK WITHOUT DECIDING — the output of a frame that has a message for the
+ * HUMAN and no context for the agent.
+ *
+ * 🔑 OFFICIAL DOC, READ 2026-08-21 (`code.claude.com/docs/en/hooks`):
+ *    `permissionDecision` is OPTIONAL on `PreToolUse`, and a hook returning only
+ *    `systemMessage` shows the message while *"normal permission flow applies"*.
+ *    That is the whole reason the withholding notice can exist at all: without
+ *    it we would have had to emit an `allow` to be heard, i.e. to AUTHORISE a
+ *    tool call as a side effect of a warning. **A notice must never change a
+ *    decision.**
+ * ⚠️ SHARED BY BOTH HARNESSES, like `denyOutput` and for the same reason: the
+ *    JSON is identical, and two copies of one dialect diverge. Codex sets
+ *    `systemMessage` the same way.
+ * ⚠️ IT IS NOT A FOURTH DECISION. The three stay `none`/`allow`/`deny`; this is
+ *    the WIRE FORM of `none` when there is something to say — the gate decided
+ *    nothing, and the JSON says exactly that by carrying no decision at all.
+ * @param {string} systemMessage
+ */
+function noticeOutput(systemMessage) {
+  return { systemMessage };
+}
+
+module.exports = { run, denyOutput, noticeOutput };
