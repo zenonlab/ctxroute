@@ -98,6 +98,17 @@
          machine has NOT been measured here. Verify it with `wevtutil qe` against
          a real 201 event BEFORE relying on it, and fix this one line if the
          data names differ.
+      🔴 MEASURED 2026-08-21 ON THIS MACHINE, AND IT IS A BLOCKER:
+         `wevtutil gl Microsoft-Windows-TaskScheduler/Operational` reports
+         **enabled: false** (maxSize 10485760). The channel is OFF, so no 201
+         event is ever written, so this trigger would be INERT — SILENTLY. A
+         daemon exiting 90 on a code change would simply stay dead, and the only
+         symptom would be agents quietly losing their injection.
+         ⇒ Enabling it is a PREREQUISITE of installing this task, never an
+         option, and it is the same gesture that declares the log CEILING:
+         `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true /rt:false /ms:10485760`
+         ⚠️ The XPath itself STAYS unverified until the channel is on and a real
+         201 has been produced: an empty log cannot confirm a field name.
     -->
     <EventTrigger>
       <Enabled>true</Enabled>
