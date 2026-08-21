@@ -28,7 +28,7 @@ import { createRequire } from 'node:module';
 //    here. Reaching the pure module directly is what makes the score real.
 import {
   key, evict, touch, adopt, purge, isEphemeral,
-  createState, set as poser, keys as clefs, size as taille, MAX_SCOPES,
+  createState, set as poser, keys as clefs, size as taille, MAX_SCOPES, MAX_EPHEMERAL,
 } from '../src/memory-store-pure.js';
 
 // ⚠️ A HELPER, NOT A TWIN: the pure state is TWO maps (one LRU per lifetime)
@@ -363,6 +363,20 @@ test('EVICT with no ephemeral ceiling given falls back to the DECLARED default',
     + 'hardcoded `false` in that ternary would silently apply the DURABLE ceiling to the plans');
   assert.equal(clefs(e).length, 3, 'and nothing may be dropped');
   assert.equal(evict(e, 0, 1), 2, 'given explicitly, the ceiling is the one passed');
+
+  // 🔴 AND THE DEFAULT MUST REALLY BITE — the cell above did NOT prove it, and
+  //    CI said so: the mutant turning that ternary into `false` survived. With
+  //    it, the ceiling becomes `undefined`, every `size > undefined` is false,
+  //    and the ephemeral class STOPS BEING BOUNDED AT ALL — the exact unbounded
+  //    growth this module exists to forbid, reachable by any caller that omits
+  //    one argument. Proving "nothing is dropped below the default" is not
+  //    proving the default exists; only crossing it is.
+  const plein = createState();
+  for (let i = 0; i < MAX_EPHEMERAL + 1; i += 1) poser(plein, `plan-y--inv-${i}`, {});
+  assert.equal(evict(plein, 0), 1,
+    'one over the DECLARED default must be dropped: without a real fallback the ephemeral class '
+    + 'grows for ever, silently, on a daemon that runs for weeks');
+  assert.equal(clefs(plein).length, MAX_EPHEMERAL, 'and it lands exactly on the ceiling');
 });
 
 test('EVICT returns what it removed across BOTH classes, added', () => {
