@@ -630,11 +630,35 @@ if (require.main === module) {
   //    every client knocking on an address nobody owns.
   // 🛑 THE SHELL DECIDES TO DIE, not the builder: an address already taken means
   //    a second instance, and the kernel is the authority that refuses it.
+  // ⚠️ THE DIRECTORY MUST EXIST BEFORE THE BIND, and the error that proves it
+  //    is NOT the same on every kernel: macOS answers `EACCES` where Linux
+  //    answers `ENOENT` for a socket whose parent directory is missing.
+  //    MEASURED in CI on 2026-08-21, on a fresh clone where `state/` did not
+  //    exist yet — and the misleading `EACCES` sent the first reading towards a
+  //    permissions problem that did not exist.
+  try { require('fs').mkdirSync(paths.stateDir(), { recursive: true }); } catch { /* the bind below will say it */ }
+
   bind(
     createServer({ store: etat, onAddressInUse: (err) => { throw err; } }),
     endpoint(),
     () => {},
-    (err) => { throw err; },
+    (err) => {
+      // 🛑 ONLY A DUPLICATE JUSTIFIES DYING, AND THIS COST A CI ROUND TRIP.
+      //    The first version rethrew EVERY error, so a rendezvous that could not
+      //    be taken KILLED THE WHOLE DAEMON — including the PORT lane, which was
+      //    listening and perfectly healthy. Claude Code's `http` handler would
+      //    have lost its service because the CLIENT lane's address was
+      //    unavailable: two transports, one shared fate, for no reason.
+      // ✅ `EADDRINUSE` means the kernel refused a SECOND instance: that one is a
+      //    real reason to die, and the kernel is the authority on it.
+      //    Anything else degrades ONE lane: we say it LOUDLY on stderr (the
+      //    supervisor captures it) and keep serving the other. A degradation
+      //    that is announced is acceptable; a silent one is what this whole
+      //    project exists to remove.
+      if (err && err.code === 'EADDRINUSE') throw err;
+      process.stderr.write(`ctxroute: the client lane is UNAVAILABLE (${err && err.code}: ${err && err.message}). `
+        + 'The port lane keeps serving; a spawned hook asking on the rendezvous will decide locally and record nothing.\n');
+    },
   );
   // ⚠️ Armed AFTER `listen`, so the watched set covers everything the server
   //    itself pulled in. Watching before would miss the modules loaded lazily
