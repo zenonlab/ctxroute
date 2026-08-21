@@ -76,7 +76,12 @@
    (`state-write-under-lock-gate` matches the SHAPE of the call site; renaming it blinded the gate
    the same day) · ⑤ **a builder never decides whether its caller lives** — `createServer` used to
    `throw` on `EADDRINUSE` and killed the process before `kernel-bind` could inspect a DEAD socket
-   file; a core returns a verdict, the SHELL decides to die.
+   file; a core returns a verdict, the SHELL decides to die · ⑥ **ONE AUTHORITY, OR NONE**
+   (`client-core.js`, 21/08/2026): with no daemon a frame decides LOCALLY and **writes NOTHING** —
+   a fallback that wrote would make TWO memories, and a `once` delivered by one would be
+   re-delivered by the other for ever, in silence. ⚠️ Its empty state is a FACT (no file, no
+   daemon), the EXACT OPPOSITE of the spawn lane where reading the file is mandatory — the two look
+   alike and the rules are inverted, so never copy one onto the other.
    ⚠️ **THE THREE-OS MATRIX EARNED ITS COST IN ONE HOUR** — three real defects, none visible
    locally: a Linux abstract address starts with a NUL byte an `argv` cannot carry · macOS keeps the
    socket FILE after a killed daemon (cleared only after ASKING the kernel who answers, never on

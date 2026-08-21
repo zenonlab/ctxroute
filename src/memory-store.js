@@ -50,6 +50,7 @@ const pur = require('./memory-store-pure');
 
 // The ceiling and every eviction rule live in `memory-store-pure.js`.
 const MAX_SCOPES = pur.MAX_SCOPES;
+const MAX_EPHEMERAL = pur.MAX_EPHEMERAL;
 
 /**
  * @param {{ snapshotPath?: string|null }} [options]
@@ -58,11 +59,15 @@ const MAX_SCOPES = pur.MAX_SCOPES;
  */
 function createMemoryStore(options) {
   const snapshotPath = (options && options.snapshotPath) || null;
-  // ⚠️ A `Map` and not a plain object, DELIBERATELY: insertion order is part of
+  // ⚠️ `Map`s and not plain objects, DELIBERATELY: insertion order is part of
   //    the contract (it is what makes LRU eviction possible without a second
   //    structure), and a session id is arbitrary text that must never be able
   //    to collide with `__proto__` or a prototype method.
-  const etat = new Map();
+  // ⚠️ TWO of them since 21/08/2026, one per LIFETIME (`createState`): a `plan-`
+  //    is born at every tool call and dies with its action, a scope key lives as
+  //    long as its agent. Under one shared ceiling the ephemeral flood evicted
+  //    the durable — one busy agent erasing the whole fleet's memory, silently.
+  const etat = pur.createState();
 
   const cle = pur.key;
 
@@ -72,14 +77,12 @@ function createMemoryStore(options) {
   }
 
   function saveState(prefix, sessionId, state) {
-    const k = cle(prefix, sessionId);
-    etat.delete(k);
-    etat.set(k, state);
+    pur.set(etat, cle(prefix, sessionId), state);
     // ⚠️ EVICT IN THE SAME GESTURE AS THE WRITE. Doing it "later", on a timer or
     //    at shutdown, is the same as not doing it: the timer is one more
     //    temporal call to justify, and a shutdown that never happens evicts
     //    nothing.
-    pur.evict(etat, MAX_SCOPES);
+    pur.evict(etat, MAX_SCOPES, MAX_EPHEMERAL);
     ecrireSnapshot();
   }
 
@@ -105,7 +108,7 @@ function createMemoryStore(options) {
     const tmp = `${snapshotPath}.${process.pid}.tmp`;
     try {
       fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify([...etat]));
+      fs.writeFileSync(tmp, JSON.stringify(pur.entries(etat)));
       fs.renameSync(tmp, snapshotPath);
     } catch {
       // fail-open: a save that cannot be written must never break an injection.
@@ -125,7 +128,7 @@ function createMemoryStore(options) {
   function restore() {
     if (!snapshotPath) return 0;
     try {
-      return pur.adopt(JSON.parse(fs.readFileSync(snapshotPath, 'utf8')), etat, MAX_SCOPES);
+      return pur.adopt(JSON.parse(fs.readFileSync(snapshotPath, 'utf8')), etat, MAX_SCOPES, MAX_EPHEMERAL);
     } catch {
       return 0;
     }
@@ -136,9 +139,9 @@ function createMemoryStore(options) {
     saveState,
     purge,
     restore,
-    size: () => etat.size,
-    scopes: () => [...etat.keys()],
+    size: () => pur.size(etat),
+    scopes: () => pur.keys(etat),
   };
 }
 
-module.exports = { createMemoryStore, MAX_SCOPES };
+module.exports = { createMemoryStore, MAX_SCOPES, MAX_EPHEMERAL };

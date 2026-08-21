@@ -26,7 +26,21 @@ import { createRequire } from 'node:module';
 //    45 survivors out of 45** — the decisions were covered THROUGH the I/O shell,
 //    so Stryker saw no test at all. The rule was already written; it was broken
 //    here. Reaching the pure module directly is what makes the score real.
-import { key, evict, touch, adopt, purge, MAX_SCOPES } from '../src/memory-store-pure.js';
+import {
+  key, evict, touch, adopt, purge, isEphemeral,
+  createState, set as poser, keys as clefs, MAX_SCOPES,
+} from '../src/memory-store-pure.js';
+
+// ⚠️ A HELPER, NOT A TWIN: the pure state is TWO maps (one LRU per lifetime)
+//    since 2026-08-21, so a cell can no longer hand it a bare `Map`. Building it
+//    through `createState`/`set` means the cells exercise the REAL routing —
+//    a literal `{durable, ephemere}` here would let a key land in the wrong
+//    class without anything noticing.
+const etatDe = (paires) => {
+  const e = createState();
+  for (const [k, v] of paires) poser(e, k, v);
+  return e;
+};
 
 const require = createRequire(import.meta.url);
 // ⚠️ The I/O shell is loaded dynamically (it reads env-driven paths at require
@@ -79,7 +93,14 @@ test('A HOSTILE KEY IS DATA, never a prototype', () => {
 // ⚠️ The bound is a COUNT, never a deduction about death: we keep the N most
 //    recently used and drop the coldest. No clock, no liveness probe.
 test('CEILING: the memory is bounded, and it is the COLDEST scope that goes', () => {
-  const s = neuf('plafond');
+  // 🛑 NO SNAPSHOT HERE, AND IT IS A MEASUREMENT, NOT A CONVENIENCE. The store
+  //    rewrites its WHOLE snapshot on every state write, so filling it to the
+  //    ceiling costs O(entries) of disk per write — quadratic, and at 4096 it
+  //    times the cell out. The CEILING is a property of the MEMORY; the snapshot
+  //    has its own cells right below. ⚠️ That cost is REAL and is written down as
+  //    an open point (`kernel-state.md`): it was invisible at the old ceiling and
+  //    must be decided before the switch-over, never discovered in production.
+  const s = createMemoryStore({ snapshotPath: null });
   for (let i = 0; i < MAX_SCOPES + 50; i += 1) s.saveState('doc-seen-', 'sess-' + i, { i });
 
   assert.equal(s.size(), MAX_SCOPES,
@@ -90,7 +111,10 @@ test('CEILING: the memory is bounded, and it is the COLDEST scope that goes', ()
 });
 
 test('LRU: READING a scope protects it from the next eviction', () => {
-  const s = neuf('lru');
+  // 🛑 NO SNAPSHOT, same reason as the ceiling cell above: filling to the ceiling
+  //    with a snapshot per write is O(entries) of disk per write. What is under
+  //    test here is the LRU, which lives entirely in memory.
+  const s = createMemoryStore({ snapshotPath: null });
   for (let i = 0; i < MAX_SCOPES; i += 1) s.saveState('doc-seen-', 'sess-' + i, { i });
   // `sess-0` is the coldest… until it is read.
   assert.deepEqual(s.loadState('doc-seen-', 'sess-0'), { i: 0 });
@@ -195,28 +219,28 @@ test('KEY: the prefix is part of the identity, never a suffix nobody reads', () 
 });
 
 test('EVICT: drops the OLDEST first, and only above the ceiling', () => {
-  const m = new Map([['a', 1], ['b', 2], ['c', 3]]);
+  const m = etatDe([['a', 1], ['b', 2], ['c', 3]]);
   assert.equal(evict(m, 3), 0, 'at the ceiling nothing is dropped');
   assert.equal(evict(m, 2), 1, 'one over the ceiling drops exactly one');
-  assert.deepEqual([...m.keys()], ['b', 'c'], 'the COLDEST goes — insertion order is the LRU');
+  assert.deepEqual(clefs(m), ['b', 'c'], 'the COLDEST goes — insertion order is the LRU');
   assert.equal(evict(m, 0), 2, 'a ceiling of zero empties it');
 });
 
 test('TOUCH: reading is a USE, and an absent key stays absent', () => {
-  const m = new Map([['a', { v: 1 }], ['b', { v: 2 }]]);
+  const m = etatDe([['a', { v: 1 }], ['b', { v: 2 }]]);
   assert.deepEqual(touch(m, 'a'), { v: 1 });
-  assert.deepEqual([...m.keys()], ['b', 'a'], 'the read entry moves to the young end');
+  assert.deepEqual(clefs(m), ['b', 'a'], 'the read entry moves to the young end');
   assert.equal(touch(m, 'absent'), undefined, 'an absent key must not be created by reading it');
-  assert.equal(m.has('absent'), false);
+  assert.equal(clefs(m).includes('absent'), false);
 });
 
 test('ADOPT: only well-formed pairs enter, and the ceiling applies', () => {
-  const m = new Map();
+  const m = createState();
   assert.equal(adopt('pas un tableau', m, 10), 0);
   assert.equal(adopt({ x: 1 }, m, 10), 0, 'valid JSON of the wrong SHAPE is refused — parsing is not the guardrail');
   assert.equal(adopt([['a', { v: 1 }], ['seule'], [42, {}], ['nul', null], ['tab', []]], m, 10), 1,
     'a malformed pair, a non-string key, a null and an ARRAY value are all dropped');
-  assert.deepEqual([...m.keys()], ['a']);
+  assert.deepEqual(clefs(m), ['a']);
 
   // 🔴 THE TWO CASES THE SHAPE GUARD REALLY EXISTS FOR — and without them FOUR
   //    mutants survived on that single line (measured in CI: `if (false)`,
@@ -235,29 +259,84 @@ test('ADOPT: only well-formed pairs enter, and the ceiling applies', () => {
   //    le premier `Object.keys()` dessus rendrait ses INDICES de caractères — un
   //    état fantôme, silencieux. Ce garde n'est donc PAS redondant, et c'est le
   //    test qui ne le distinguait pas.
-  const primitives = new Map();
+  const primitives = createState();
   assert.equal(adopt([['chaine', 'seen'], ['nombre', 42], ['bool', true], ['ok', { v: 1 }]], primitives, 10), 1,
     'a non-null PRIMITIVE is not a state: it must be dropped, never stored');
-  assert.deepEqual([...primitives.keys()], ['ok']);
+  assert.deepEqual(clefs(primitives), ['ok']);
 
-  const hostile = new Map();
+  const hostile = createState();
   assert.equal(adopt([42, 'texte', null, ['a', { v: 1 }, 'surplus'], ['bon', { v: 2 }]], hostile, 10), 1,
     'a non-array entry must be DROPPED, never destructured (it would throw), and a 3-item entry is not a pair');
-  assert.deepEqual([...hostile.keys()], ['bon']);
+  assert.deepEqual(clefs(hostile), ['bon']);
 
-  const grand = new Map();
+  const grand = createState();
   assert.equal(adopt([['a', {}], ['b', {}], ['c', {}]], grand, 2), 2, 'the ceiling applies to a restore too');
-  assert.deepEqual([...grand.keys()], ['b', 'c']);
+  assert.deepEqual(clefs(grand), ['b', 'c']);
 });
 
 test('PURGE: by PREFIX, and it counts what it really removed', () => {
-  const m = new Map([['doc-seen-a', {}], ['doc-seen-ab', {}], ['plan-a', {}], ['doc-seen-b', {}]]);
+  const m = etatDe([['doc-seen-a', {}], ['doc-seen-ab', {}], ['plan-a', {}], ['doc-seen-b', {}]]);
   assert.equal(purge(m, 'doc-seen-a'), 2, 'the prefix matches `a` and `ab` — and says so');
-  assert.deepEqual([...m.keys()], ['plan-a', 'doc-seen-b']);
+  assert.deepEqual(clefs(m), ['doc-seen-b', 'plan-a'],
+    'a purge sweeps BOTH classes, and the durable map is listed first — forgetting one map is the '
+    + 'silent half of a purge');
   assert.equal(purge(m, 'rien-de-tel'), 0, 'a prefix matching nothing removes nothing and reports zero');
 });
 
 test('THE CEILING IS A REAL NUMBER, not an idea', () => {
   assert.equal(typeof MAX_SCOPES, 'number');
   assert.ok(MAX_SCOPES > 0, 'a ceiling of zero would evict everything on every write');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑦ TWO CLASSES OF KEY, TWO BUDGETS (2026-08-21)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE DEFECT THESE CELLS FORBID IS A SCALING ONE, AND IT IS SILENT. A `plan-`
+//    key is born at EVERY tool call and dies with its action; a `doc-seen-` key
+//    lives as long as its agent. Under ONE shared ceiling the ephemeral flood
+//    evicts the durable — a single busy agent erases every other agent's memory
+//    in a few hundred calls, and each eviction re-delivers a `once`. Nothing
+//    errors, and it gets WORSE with the number of agents, i.e. exactly where the
+//    product is aimed.
+// ⚠️ The ceilings are passed as ARGUMENTS here: the cells must exercise the RULE,
+//    never the production figures. Asserting on 4096 would make the test a copy
+//    of the constant and turn any resizing into a false red.
+
+test('a flood of EPHEMERAL keys can never evict a DURABLE one', () => {
+  const etat = createState();
+  poser(etat, 'doc-seen-agent-A', { seen: ['doc'] });
+  for (let i = 0; i < 50; i += 1) poser(etat, `plan-agent-B--inv-${i}`, { segments: [] });
+
+  evict(etat, 4, 3);
+
+  assert.ok(clefs(etat).includes('doc-seen-agent-A'),
+    "an agent's memory was evicted by ANOTHER agent's plans: one busy agent would erase the "
+    + 'whole fleet, one re-delivered `once` at a time, in silence');
+  assert.equal(clefs(etat).filter((k) => k.startsWith('plan-')).length, 3,
+    'the ephemeral budget must be enforced too — otherwise the ceiling is decorative');
+});
+
+test('each class evicts its OWN coldest, and the order is the LRU order', () => {
+  const etat = createState();
+  for (const n of ['A', 'B', 'C']) poser(etat, `doc-seen-${n}`, { seen: [] });
+  for (const n of [1, 2, 3]) poser(etat, `plan-x--inv-${n}`, { segments: [] });
+
+  // A is the coldest durable, 1 the coldest plan — until A is READ.
+  touch(etat, 'doc-seen-A');
+  evict(etat, 2, 2);
+
+  assert.ok(clefs(etat).includes('doc-seen-A'), 'reading is a USE: the entry just read must not be the one dropped');
+  assert.ok(!clefs(etat).includes('doc-seen-B'), 'the coldest DURABLE goes, and it is B once A has been touched');
+  assert.ok(!clefs(etat).includes('plan-x--inv-1'), 'the coldest PLAN goes, independently of the durable class');
+  assert.ok(clefs(etat).includes('plan-x--inv-3'), 'and the youngest plan stays');
+});
+
+test('the classes are told apart by the store PREFIX, never by guessing', () => {
+  assert.equal(isEphemeral('plan-abc--inv-1'), true);
+  assert.equal(isEphemeral('doc-seen-abc'), false);
+  assert.equal(isEphemeral('remainder-abc'), false);
+  assert.equal(isEphemeral('turn-count-abc'), false,
+    'a key wrongly classed as ephemeral would be evicted on the wrong budget — and a turn counter '
+    + 'lost silently re-arms every `smart` document');
 });
