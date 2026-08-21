@@ -130,17 +130,13 @@
       "why": "Removes a DEAD socket entry before rebinding. Windows removes its named pipe when the owner exits and a Linux abstract socket disappears with its last reference, so only macOS leaves a real file — cleared after ASKING the kernel who answers (`connect` succeeds = alive, ECONNREFUSED = dead), never on the guess that a file lying around means a dead owner."
     },
     "src/vendor-deadline.js": {
-      "path": "os.homedir() + /.claude/hooks",
+      "path": "paths.fleetHooksDir()",
       "class": "vendor",
       "budget": {
         "maxFiles": 1
       },
       "policy": "bounded-count",
-      "why": "Operator-invoked and DRY-RUN by default (`--write` to apply). It copies exactly one new file (`deadline.js`) into the operator's hook folder and patches existing hooks IN PLACE, idempotently — replaying converges and never doubles a banner, so the file count does not grow with the number of runs.",
-      "pathSourceGap": {
-        "reason": "The target is built from `os.homedir()` because `src/paths.js` exposes no accessor for the fleet HOOKS root — only `fileDocsDir()`, which sits BENEATH it, and `skillsDir()`, which is a sibling. Closing this properly means adding one accessor to the single source of paths and consuming it here, which is a runtime change and therefore the maintainer's call, not a gate's.",
-        "workItem": "WI-VENDOR-PATH"
-      }
+      "why": "Operator-invoked and DRY-RUN by default (`--write` to apply). It copies exactly one new file (`deadline.js`) into the operator's hook folder and patches existing hooks IN PLACE, idempotently — replaying converges and never doubles a banner, so the file count does not grow with the number of runs. WI-VENDOR-PATH CLOSED 2026-08-21: the target used to be rebuilt here from `os.homedir()` under a local env var, a SECOND definition of a directory `paths.js` already owned — and on the one script that WRITES into it, where a divergence would arm the wrong fleet in silence."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else, and it has TWO halves. ① Every `pattern:` atom of `rules/fs-call.yml` (the RECEIVER-anchored family) MUST be paired below with a line of code whose detection is REQUIRED. An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. ② The METHOD-anchored family carries NO table here on purpose: its witnesses are FABRICATED from each write primitive itself, in both forms (`M(dest, payload)` for the destructured import and `aliased.M(dest, payload)` for any receiver), so a method classified `write` tomorrow is proven the same second and no list can fall out of step. Both halves write to the OS tmpdir and never to `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",

@@ -1,0 +1,63 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a PATH CONSTRUCTION. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🛑 STRICT SEPARATION, DO NOT BLUR IT: this file DETECTS every assembled
+#    path; WHICH assembly is forbidden, and WHO is allowed to make it, lives
+#    in `test/fleet-hooks-path.test.js`. Adding an `ignores:`/`files:` here
+#    would hide a call site from the gate — an exemption nobody would ever
+#    read again, in the one place where nobody is looking.
+#
+# ⚠️ AST, NEVER REGEX, and it is load-bearing HERE more than anywhere. The
+#    files this rule scans DOCUMENT the forbidden form on purpose:
+#    `src/paths.js` carries "NEVER rebuild it with
+#    `path.join(os.homedir(), '.claude', 'hooks')`" in a comment, and
+#    `src/vendor-deadline.js` and `tools/lint-corpus.js` each explain the
+#    defect they were cured of. A regex would accuse the very documentation
+#    that protects the invariant, and a gate that accuses its own docs gets
+#    disarmed the same day.
+#
+# ⚠️ KEYED ON THE METHOD, NEVER ON THE RECEIVER — the lesson already paid in
+#    `rules/fs-call.yml` on 2026-08-21: `require('path').join(...)` and a
+#    local alias both went GREEN against a receiver-anchored atom, i.e. the
+#    detector went SILENT, i.e. fail-OPEN. `join`/`resolve` are matched bare
+#    AND behind any receiver, so no import shape can hide a construction.
+#
+# ⚠️ THIS RULE MATCHES EVERY PATH JOIN, INCLUDING INNOCENT ONES, AND THAT IS
+#    THE DESIGN. It does not decide anything; the gate keeps only the matches
+#    whose text carries EVERY SEGMENT OF THE FLEET ROOT, and those segments
+#    are DERIVED from `paths.fleetHooksDir()` itself — never typed here. Move
+#    the accessor's segments tomorrow and the detector follows on its own; a
+#    segment written into this file would be a second copy of the one truth
+#    the whole work item exists to remove.
+#
+# ⚠️ EVERY `pattern:` BELOW IS AN ATOM and the gate DERIVES its witness table
+#    from this list: an atom added tomorrow stays RED until a real line of
+#    code proves it detects something. Never add an atom without its witness.
+#
+# ⚠️ DECLARED BLIND CELLS, WITH THEIR TRUE FAILURE DIRECTION — SILENCE, i.e.
+#    fail-OPEN, never a red. A root assembled inside a TEMPLATE LITERAL
+#    (`${home}/.claude/hooks`), through a third-party path helper, or from
+#    segments held in variables named nowhere near the literal, carries no
+#    atom here and the gate says NOTHING. Stated rather than papered over: a
+#    blind cell written as if it failed closed tells the next reader the case
+#    is handled, which is worse than saying nothing.
+id: fleet-root-build
+language: JavaScript
+severity: error
+message: >-
+  PATH CONSTRUCTION — if it re-assembles the root of the harness hook fleet,
+  it is a SECOND definition of a root `src/paths.js` already owns. A component
+  is never designated by a GUESSED address: two copies of one path diverge in
+  silence. This root is both WRITTEN into (`vendor-deadline.js`) and PUBLISHED
+  to readers (the `[source: …]` tag), so it has TWO legitimate projections and
+  neither of them is a literal — `paths.fleetHooksDir()` to REACH the disk
+  (absolute, overridable), `paths.fleetHooksLabel()` to SHOW an address
+  (relative, home-free, because this repository is public).
+rule:
+  any:
+    - pattern: join($$$)
+    - pattern: $X.join($$$)
+    - pattern: resolve($$$)
+    - pattern: $X.resolve($$$)
+    - pattern: $A + $B

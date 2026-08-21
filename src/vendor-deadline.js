@@ -94,8 +94,18 @@ function pointInsertion(lines) {
 
 function main() {
   const PARC = paths.fleetHooksDir();
+  // ⚠️ NAMED REFUSAL, NEVER A FALLBACK TO A PLAUSIBLE PATH. An unreachable
+  //    target is exactly where a vendoring script is tempted to "try the other
+  //    likely place" — and writing `deadline.js` into the wrong root arms a
+  //    fleet nobody runs while REPORTING SUCCESS. A judge that cannot find its
+  //    target and lets things through is worse than no judge at all.
+  // ⚠️ The message names the ADDRESS *and* WHERE IT CAME FROM: a stale test
+  //    override and a home directory that moved are two different bugs, and an
+  //    error that does not say which one costs a round trip to find out.
   if (!fs.existsSync(PARC)) {
-    console.error(`target not found: ${PARC}`);
+    const origine = process.env.CTXROUTE_FLEET_HOOKS_DIR
+      ? 'CTXROUTE_FLEET_HOOKS_DIR' : 'paths.fleetHooksDir()';
+    console.error(`REFUSED — fleet root not found: ${PARC} (address from ${origine}). Nothing written.`);
     process.exit(1);
   }
 

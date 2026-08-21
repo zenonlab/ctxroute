@@ -87,7 +87,17 @@ const fileAdapter = {
     for (const m of fileSource.matchingDocs(rules, payload)) {
       if ((acc.bodies[m.doc] || '').trim() === '') continue;
       acc.matched.push(m.doc);
-      acc.labels[m.doc] = '.claude/hooks/' + m.doc;
+      // ⚠️ THE PUBLISHED PROJECTION OF THE FLEET ROOT, NEVER A LITERAL. The
+      //    `[source: …]` tag is a CONTRACT: an agent reads that exact path to go
+      //    UPDATE the doc when it finds it wrong. Hardcoded here, it was a
+      //    SECOND definition of a root `paths.js` owns — move the fleet and the
+      //    tag would send every reader to a directory that no longer holds the
+      //    file, with nothing going red.
+      // 🛑 `fleetHooksLabel()`, NEVER `fleetHooksDir()`: the accessor is
+      //    ABSOLUTE and would emit the maintainer's home into every injected
+      //    document. This repository is public and treats itself as already
+      //    public. Sealed by `fleet-hooks-path.test.js`.
+      acc.labels[m.doc] = paths.fleetHooksLabel() + '/' + m.doc;
       acc.owner[m.doc] = this.id;
     }
   },
@@ -267,7 +277,11 @@ const toolAdapter = {
       }
       for (const m of toolSource.matchingDocs(docs, payload)) {
         if (acc.matched.includes(m.doc)) continue;
-        acc.labels[m.doc] = '.claude/hooks/' + m.doc;
+        // ⚠️ Same published projection as the FILE adapter, and it must stay
+        //    byte-identical to it: the two sources feed ONE tag vocabulary
+        //    (`pretool-core.js` reads `acc.labels` blind). Never a literal —
+        //    see the fileAdapter above for the full reason.
+        acc.labels[m.doc] = paths.fleetHooksLabel() + '/' + m.doc;
         acc.owner[m.doc] = this.id;
         acc.matched.push(m.doc);
       }

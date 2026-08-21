@@ -343,6 +343,146 @@ test.skipIf(!planPresent)('④ every numbered OPEN piece of work appears in the 
     + 'An agent reading the header will NEVER see these (it happened, 11-12/08):\n  ');
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// PART ⑤ (21/08/2026) — A ROW OF THE TABLE MAY NOT BE STALE EITHER
+// ─────────────────────────────────────────────────────────────────────────
+// 🔴 THE SYMMETRIC BLIND SPOT OF PART ④, AND IT HAS THE SAME COST. ④ requires
+//    every OPEN piece of work to be IN the table; it NEVER requires everything
+//    in the table to be OPEN. Measured 14/08/2026: **25 rows of which 14
+//    CLOSED** — a table saying the opposite of its title for more than half of
+//    it. Measured AGAIN 21/08/2026 on the rebuilt table: **10 rows, 5 closed
+//    the same day** (the corpus cache, the snapshot count, `state/` eviction,
+//    the shadow relic, the frame-boundary differential) and 2 delivered by
+//    HALF. An agent resuming reads the head and misses the real work — by
+//    DROWNING instead of by absence, at the price already paid with ㊴/㊵.
+//
+// 🛑 WHY THERE WAS NO GATE UNTIL TODAY, AND WHY THAT VERDICT IS REVERSED.
+//    `steering.md` wrote that deciding mechanically that a row is closed
+//    "is readable today from the emoji of the last cell but fragile; to be
+//    measured before writing a gate". **Measured before writing anything**:
+//    the active table carries a STATUS COLUMN — the last cell — filled by the
+//    author, and its vocabulary is closed (9 `OUVERT…` cells and 1 `FERME`
+//    cell at the time of measurement). That is not a guessed emoji, it is a
+//    column that already exists. ⇒ DECIDABLE, hence a gate.
+//
+// ⚠️ SCOPE = THE FIRST `CE QUI RESTE OUVERT` TABLE, i.e. the ACTIVE one. The
+//    file carries HISTORICAL tables further down (a former head of 12/08 among
+//    them) that legitimately hold closed rows: scanning them would make the
+//    gate accuse the archive, and a noisy gate ends up unplugged. Same anchor
+//    as part ④, deliberately — two anchors for one table would diverge.
+//
+// 🛑 IT DOES NOT PROVE that a piece of work still lives in the CODE — that is
+//    undecidable here, same honesty as parts ①-④ and as `doc-drift-gate`. It
+//    proves that **the table does not contradict its own title**.
+//
+// ⚠️ ANTI-VACUITY, AND IT IS LOAD-BEARING: a MIS-PARSED table looks EXACTLY
+//    like a perfectly coherent one — zero rows, zero findings, green. Three
+//    floors, all far below the measurement (5 rows on 21/08): the table must
+//    be reachable, the separator row must be found, and at least
+//    `PLANCHER_LIGNES` rows must be parsed.
+// ⚠️ AND AN UNCLASSIFIABLE STATUS IS RED, never ignored: renaming the states
+//    would otherwise silence the gate in silence, the one failure this repo
+//    refuses outright. An AMBIGUOUS cell (both vocabularies at once) is RED for
+//    the same reason — a reader must never have to guess.
+const PLANCHER_LIGNES = 3;
+// A markdown separator row: pipes, dashes, colons and spaces, nothing else.
+const SEPARATEUR = /^\|[\s:|-]+\|\s*$/;
+
+/** The cells of one markdown row, outer pipes stripped. */
+function cellules(ligne) {
+  return ligne.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+}
+
+/**
+ * `null` when the ACTIVE table is coherent, otherwise the message naming what
+ * is wrong. ⚠️ Never `null` for "I could not read it" — that direction is
+ * exactly the silent green this part exists to forbid.
+ */
+function tableIncoherente(texte) {
+  const l = texte.split('\n');
+  const debut = l.findIndex((x) => x.includes('CE QUI RESTE OUVERT'));
+  if (debut === -1) {
+    return 'the "CE QUI RESTE OUVERT" table is UNREACHABLE: the backlog no longer '
+      + 'declares what is open, and part ④ has nothing to check against either.';
+  }
+  let fin = debut + 1;
+  while (fin < l.length && !l[fin].startsWith('## ')) fin++;
+  const brutes = l.slice(debut, fin).filter((x) => x.trim().startsWith('|'));
+  const sep = brutes.findIndex((x) => SEPARATEUR.test(x));
+  if (sep === -1) return 'the table has no separator row: it was not parsed, and a table nobody parsed looks EXACTLY like a coherent one.';
+  const lignes = brutes.slice(sep + 1);
+  if (lignes.length < PLANCHER_LIGNES) {
+    return `only ${lignes.length} row(s) parsed (floor ${PLANCHER_LIGNES}): the scan measured almost nothing, which is indistinguishable from a healthy table.`;
+  }
+  /** @type {string[]} */
+  const fautives = [];
+  for (const ligne of lignes) {
+    const cs = cellules(ligne).filter((c) => c !== '');
+    const statut = cs.length > 0 ? cs[cs.length - 1] : '';
+    const ouvert = OUVERT.test(statut);
+    const ferme = FERME.test(statut);
+    if (ouvert && !ferme) continue;
+    const quoi = ferme && !ouvert ? 'CLOSED — it belongs in REFACTOR-ARCHIVE.md' : 'status UNDECIDABLE';
+    fautives.push(`${cs.length > 0 ? cs[0] : '?'} → "${statut.slice(0, 60)}" (${quoi})`);
+  }
+  if (fautives.length > 0) {
+    return 'ROW(S) THAT CONTRADICT THE TITLE of a table declaring itself COMPLETE:\n  '
+      + fautives.join('\n  ')
+      + '\n  🛑 A closed row MOVES to REFACTOR-ARCHIVE.md WITH its date and its proof — it is never deleted.';
+  }
+  return null;
+}
+
+test.skipIf(!planPresent)('⑤ every row of the "CE QUI RESTE OUVERT" table is really OPEN', () => {
+  const texte = fs.readFileSync(PLAN, 'utf8');
+  assert.strictEqual(tableIncoherente(texte), null, String(tableIncoherente(texte)));
+});
+
+test('⑤ NEGATIVE — part ⑤ bites (IN-MEMORY sabotage, never the real file)', () => {
+  // ⚠️ IN MEMORY: a sabotage on a real file had brought down 38 tests of other
+  //    suites reading in parallel (31/07/2026).
+  // ⚠️ The fixtures stay FRENCH: the status cells are matched by the
+  //    OUVERT/FERME regexes, which are data of the French backlog.
+  const entete = [
+    '## CE QUI RESTE OUVERT (liste COMPLETE)',
+    '',
+    '| # | Sujet | Etat |',
+    '|---|---|---|',
+  ].join('\n');
+  const sain = [entete,
+    '| A | cablage | OUVERT, decision operateur |',
+    '| D | http en dernier | OUVERT, apres A |',
+    '| E | alarme capacite | OUVERT |',
+    '',
+    '## Autre section',
+  ].join('\n');
+  assert.strictEqual(tableIncoherente(sain), null, 'false positive: a table of genuinely open rows is reported');
+
+  // ① THE REAL CASE OF 21/08/2026: a row closed the same day, left in the table.
+  const perimee = sain.replace('| E | alarme capacite | OUVERT |', '| F | WI-STATE-EVICTION | FERME |');
+  assert.ok(tableIncoherente(perimee) !== null, 'the gate does not see a CLOSED row in the table: it is INERT');
+
+  // ②bis The same closed row living in the ARCHIVE stays out of scope: the part
+  //      reads the backlog's ACTIVE table, never a historical one further down.
+  const archive = [sain, '', '## Archive', '| F | WI-STATE-EVICTION | FERME |'].join('\n');
+  assert.strictEqual(tableIncoherente(archive), null, 'the part accuses a table outside its scope: it will be worked around');
+
+  // ② A RENAMED STATUS MUST NOT SILENCE IT — the silent failure this forbids.
+  const inclassable = sain.replace('| E | alarme capacite | OUVERT |', '| E | alarme capacite | en cours |');
+  assert.ok(tableIncoherente(inclassable) !== null, 'an unclassifiable status goes through: renaming the states would silence the gate');
+
+  // ③ AMBIGUOUS (both vocabularies at once) ⇒ RED, never a guess.
+  const ambigu = sain.replace('| E | alarme capacite | OUVERT |', '| E | alarme capacite | OUVERT mais LIVRÉ |');
+  assert.ok(tableIncoherente(ambigu) !== null, 'an ambiguous status is read as open: the reader is left guessing');
+
+  // ④ ANTI-VACUITY — a mis-parsed table looks exactly like a coherent one.
+  assert.ok(tableIncoherente(entete) !== null, 'an EMPTY table passes: the gate measures nothing and says nothing');
+  assert.ok(tableIncoherente('## CE QUI RESTE OUVERT\n| A | x | OUVERT |\n') !== null,
+    'a table with no separator row passes: it was never parsed');
+  assert.ok(tableIncoherente('## Rien du tout') !== null,
+    'the table having VANISHED passes: the backlog would stop declaring what is open, silently');
+});
+
 test('④ NEGATIVE — part ④ bites (IN-MEMORY sabotage, never the real file)', () => {
   // ⚠️ The fixtures stay FRENCH: the section titles are matched against the
   //    literal markers of the French backlog ("OUVERT", "CE QUI RESTE OUVERT").

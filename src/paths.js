@@ -41,6 +41,31 @@ function stateDir() {
   return process.env.CTXROUTE_STATE_DIR || path.join(ROOT, 'state');
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE FLEET ROOT — ONE definition, TWO projections. NEVER collapse them.
+// ═══════════════════════════════════════════════════════════════════════
+// The root of the harness hook fleet is THIS LIST OF SEGMENTS and nothing else.
+// It is consumed in two different ways, and the difference is not cosmetic:
+//   · `fleetHooksDir()`   — ANCHORED at the home, ABSOLUTE, overridable. The
+//     address a PROCESS uses to REACH the filesystem.
+//   · `fleetHooksLabel()` — RELATIVE, never anchored, never overridable. The
+//     address PUBLISHED TO A READER in the `[source: …]` tag of every injected
+//     document. That tag is a CONTRACT: an agent reads the exact path there to
+//     go and UPDATE the doc when it finds it wrong — the loop that makes the
+//     corpus self-repairing. A tag pointing at a directory that no longer holds
+//     the file breaks that loop, and nothing would go red.
+// 🛑 NEVER MAKE THE LABEL CALL THE ACCESSOR "to have a single function". This
+//    repository is PUBLIC and treats itself as already public: the accessor
+//    returns the maintainer's REAL HOME — or, under the test override, a
+//    tmpdir. Emitting either into every injected document would leak a real
+//    user path into the context of every agent, and would let a test override
+//    rewrite a published contract. TWO PROJECTIONS OF ONE TRUTH is the fix;
+//    ONE FUNCTION is a leak. Sealed both ways by `fleet-hooks-path.test.js`.
+// ⚠️ The label joins with '/' and NEVER `path.join`: it is a POSIX-shaped
+//    published address, not a filesystem path, and it must read identically on
+//    Windows and on Linux (`pretool-differential` compares it byte for byte).
+const FLEET_SEGMENTS = Object.freeze(['.claude', 'hooks']);
+
 // ROOT of the harness HOOK FLEET (Claude Code: ~/.claude/hooks/). Everything the
 // framework vendors into the fleet, and everything it reads back from it, hangs
 // HERE — `fileDocsDir()` is BENEATH it, `skillsDir()` is BESIDE it.
@@ -49,9 +74,32 @@ function stateDir() {
 //    scope-reach.js under THREE different env-var names (`VENDOR_TARGET_DIR`,
 //    `CTXROUTE_HOOKS_DIR`, none at all) — three copies of ONE truth, i.e. exactly
 //    the `stateDir` defect this file was born to kill, one level up.
+// 🛑 THE CLASS IS SEALED, NOT THE CASE: `fleet-hooks-path.test.js` scans `src/`
+//    and `tools/` (perimeter from `git ls-files`, AST via `rules/fleet-root.yml`)
+//    and turns RED on ANY file but this one re-assembling the root — the
+//    SEGMENTS it looks for are derived from what this function RETURNS, so
+//    changing them here moves the detector with it, and no copy of them exists
+//    anywhere else. Naming the three known offenders would only know the past.
+// ⚠️ `os.homedir()` is the OS ANSWERING, not a guess — that is why it is the
+//    admissible authority HERE and a defect everywhere else.
 // Env var RESERVED for tests and for doctor.js.
 function fleetHooksDir() {
-  return process.env.CTXROUTE_FLEET_HOOKS_DIR || path.join(os.homedir(), '.claude', 'hooks');
+  return process.env.CTXROUTE_FLEET_HOOKS_DIR || path.join(os.homedir(), ...FLEET_SEGMENTS);
+}
+
+// The fleet root as it is PUBLISHED, never as it is reached: relative, POSIX,
+// home-free. ⚠️ NO env override HERE and its absence is DELIBERATE — a test
+// pointing the engine at a tmpdir must not rewrite the `[source: …]` contract
+// read by an agent on a normal machine.
+function fleetHooksLabel() {
+  return FLEET_SEGMENTS.join('/');
+}
+
+// The canonical segments themselves, for the GATE that has to look for them in
+// other files. Frozen: a consumer that could mutate this array would move the
+// root for everyone, from anywhere, at runtime.
+function fleetHooksSegments() {
+  return FLEET_SEGMENTS;
 }
 
 // Corpus of the FILE docs (frontmatters migrated on 16/07/2026) — consumed by the
@@ -75,4 +123,4 @@ function skillsDir() {
   return process.env.CTXROUTE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'commands');
 }
 
-module.exports = { configPath, docsDir, stateDir, fleetHooksDir, fileDocsDir, sessionDocsDir, skillsDir, ROOT };
+module.exports = { configPath, docsDir, stateDir, fleetHooksDir, fleetHooksLabel, fleetHooksSegments, fileDocsDir, sessionDocsDir, skillsDir, ROOT };

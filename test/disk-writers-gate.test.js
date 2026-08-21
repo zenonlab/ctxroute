@@ -405,8 +405,23 @@ test('GATE: every declared GAP is reachable from the injectable doc', () => {
     if (d.workItem) items.add(d.workItem);
     if (d.pathSourceGap && d.pathSourceGap.workItem) items.add(d.pathSourceGap.workItem);
   }
-  assert.ok(items.size > 0,
-    'no gap declared at all — either the repository is perfect, or this check is measuring nothing');
+  // 🛑 ANTI-VACUITY WITHOUT DEMANDING A DEFECT. This floor used to require at
+  //    least one declared gap, so it turned RED the day the LAST gap was closed
+  //    (WI-VENDOR-PATH, 2026-08-21) — a judge that punishes the good behaviour
+  //    gets disarmed, and the repository would have been pushed to keep a
+  //    permit alive to keep a test green. What must be non-empty is what this
+  //    check READS: an empty writer table, or an unreadable doc, is the real
+  //    way for it to measure nothing.
+  // 🛑 DO NOT RESTORE `items.size > 0`. It looks like a stronger floor and it is
+  //    not one: it can only be satisfied by the repository still having a defect,
+  //    so the day someone closes the last gap this cell demands they re-open one.
+  //    A floor must be able to hold on a clean repository, or it is a ratchet
+  //    pointing the wrong way. The reachability assertion below is untouched and
+  //    still fails on a gap that is declared but written down nowhere.
+  assert.ok(Object.keys(manifest.writers || {}).length > 0,
+    'the manifest declares no writer at all — this check is reading an empty table');
+  assert.ok(doc.length > 0,
+    'docs/framework/disk-writers.md is empty — nothing could be reachable from it');
   const absent = [...items].filter((w) => !doc.includes(w)).sort();
   assert.deepStrictEqual(absent, [],
     'GAP(S) DECLARED IN THE MANIFEST BUT ABSENT FROM `docs/framework/disk-writers.md`: '
