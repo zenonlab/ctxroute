@@ -100,6 +100,28 @@ jobs:
       - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
         shell: bash
 
+      # 🔴 DIAGNOSTIC, PAS UNE PREUVE — ajoute le 21/08/2026 apres un premier run
+      #    ou launchd rapportait `state = running`, `pid = 6105`, `never exited`
+      #    ET rien n'ecoutait sur le port. Le process VIT et n'ECOUTE PAS, et la
+      #    plist ne capture pas `stderr` (choix delibere : un fichier de log de
+      #    plist n'est jamais tourne). On etait donc AVEUGLES.
+      # ⚠️ Un echec inobservable coute un aller-retour de CI PAR HYPOTHESE — la
+      #    lecon est deja gravee dans ce depot, elle se paie ici une fois de plus.
+      - name: diagnose — why did it not answer
+        if: failure()
+        run: |
+          echo "--- launchd view of the agent ---"
+          launchctl print "gui/$(id -u)/com.ctxroute.http" 2>&1 | head -40 || true
+          echo "--- the daemon, in the foreground, stderr captured ---"
+          node src/hooks/http-server.js > fg.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 20); do
+            curl -s -o /dev/null "http://127.0.0.1:${CTXROUTE_PORT:-8787}/" && break
+            kill -0 "$pid" 2>/dev/null || break
+          done
+          kill "$pid" 2>/dev/null || true
+          echo "--- its output ---"; cat fg.log || true
+
       # ⚠️ Always, even on failure: a runner is thrown away, but an installer
       #    that cannot undo itself is an installer nobody dares run twice.
       - if: always()

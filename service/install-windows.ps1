@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════════
 # INSTALL / UNINSTALL the Windows scheduled task of the ctxroute HTTP lane.
 # Usage: powershell -ExecutionPolicy Bypass -File service/install-windows.ps1 [-Action install|uninstall]
 # ═══════════════════════════════════════════════════════════════════════
