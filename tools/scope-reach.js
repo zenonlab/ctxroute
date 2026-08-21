@@ -31,7 +31,6 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { readCorpus } = require('../src/corpus');
 const { rulesFromCorpus } = require('../src/loader');
@@ -39,6 +38,10 @@ const { rulesFromCorpus } = require('../src/loader');
 //    SHELL: it walks the disk and prints. Bringing the logic back here would take it
 //    out of mutation — the violation `/stack-audit` caught on 2026-08-20.
 const pur = require('../src/scope-reach-pure');
+// ⚠️ SINGLE SOURCE OF EVERY ROOT THIS TOOL WALKS — the doc corpus AND the
+//    transcript corpus. Required ONCE: two inline requires of one module is how
+//    a second resolution eventually grows beside the first.
+const paths = require('../src/paths');
 
 
 /**
@@ -74,7 +77,7 @@ function main() {
   //    A second definition of the same directory diverges in silence — and this
   //    tool's whole value is that its measurement can be REPLAYED: replayed
   //    against another folder than the engine reads, it answers about nothing.
-  const docsDir = require('../src/paths').fileDocsDir();
+  const docsDir = paths.fileDocsDir();
   if (!fs.existsSync(docsDir)) {
     console.log('NOT MEASURED — no fleet corpus at ' + docsDir);
     process.exit(2);
@@ -85,10 +88,38 @@ function main() {
   const cfgPath = process.env.CTXROUTE_CONFIG_PATH || path.join(__dirname, '..', 'ctxroute-config.json');
   try { config = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch { /* absent = no skills */ }
 
-  const mesure = observedToolNames(path.join(os.homedir(), '.claude', 'projects'));
+  // ⚠️ THE TRANSCRIPT ROOT IS ADDRESSED BY `paths.js`, NEVER REBUILT HERE.
+  //    Until 21/08/2026 this line assembled `~/.claude/projects` from
+  //    `os.homedir()` with no env var at all — the SAME defect as the three
+  //    hooks-root copies WI-VENDOR-PATH removed, on a different second segment.
+  //    A component is never designated by a GUESSED address: two copies of one
+  //    root diverge in silence, and a measurement replayed against a folder the
+  //    harness does not write answers about nothing.
+  const transcripts = paths.transcriptsDir();
+  // 🛑 NAMED REFUSAL, never a silent fallback to a plausible directory: an
+  //    unreachable corpus must say WHICH address was resolved and FROM WHERE, so
+  //    the reader can tell "the harness stores transcripts elsewhere" from "this
+  //    machine has none". Serving the wrong root is the failure this closes, and
+  //    a wrong root here answers `0 collisions` — the false good news the
+  //    tri-state exists to forbid.
+  // ⚠️ Printing the ABSOLUTE path is DELIBERATE and is NOT the leak the fleet
+  //    root has: this is an operator's own terminal, not a tracked file, not a
+  //    published document and not an injected context. Never write it into one.
+  if (!fs.existsSync(transcripts)) {
+    console.log('NOT MEASURED — no transcript corpus at ' + transcripts);
+    console.log('  (resolved by paths.transcriptsDir(); override CTXROUTE_TRANSCRIPTS_DIR)');
+    console.log('The tool names cannot be derived, and this tool NEVER falls back to a');
+    console.log('hand-written list (that is defect 48).');
+    process.exit(2);
+  }
+  const mesure = observedToolNames(transcripts);
   if (!mesure) {
-    console.log('NOT MEASURED — no transcript corpus. The tool names cannot be derived,');
-    console.log('and this tool NEVER falls back to a hand-written list (that is defect 48).');
+    // ⚠️ DISTINCT REASON, deliberately not merged with the one above: the folder
+    //    EXISTS and yielded no tool call ⇒ the transcript SHAPE changed. Reading
+    //    "no corpus" there would send the reader hunting for a missing directory.
+    console.log('NOT MEASURED — transcript corpus at ' + transcripts + ' yielded no tool call.');
+    console.log('The `"type":"tool_use"` anchor no longer matches: the shape changed, the');
+    console.log('harness did not stop calling tools. NEVER report 0 here.');
     process.exit(2);
   }
   const outils = [...mesure.noms];

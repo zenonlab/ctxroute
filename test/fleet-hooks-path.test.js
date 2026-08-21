@@ -9,16 +9,30 @@
 //    `stateDir` defect verbatim — two copies of one truth — one level up, and
 //    on the ONE script that WRITES into that directory.
 //
+// 🔑 AND THE CLASS WAS WIDENED ON 21/08/2026, because naming ONE directory left
+//    its siblings open to the identical defect. `tools/scope-reach.js` still
+//    assembled the TRANSCRIPT corpus `~/.claude/projects` from `os.homedir()`,
+//    with no env var at all — same shape, same silence, different second
+//    segment. The judged set is now `paths.harnessRoots()`: the hook fleet, the
+//    transcript corpus and the skill store. A root declared tomorrow is policed
+//    the day it is declared, and one DELETED from the registry reddens instead
+//    of quietly un-policing a directory.
+//
 // ⚠️ TWO ASSERTIONS, AND NEITHER IS ENOUGH ALONE:
-//    ① EQUALITY — the accessor still resolves where the hardcoded form did.
-//       Without it, a "clean" refactor could silently move the target and
-//       vendor `deadline.js` into a folder no harness reads.
+//    ① EQUALITY — the accessors still resolve where the hardcoded forms did.
+//       Without it, a "clean" refactor could silently move a target and vendor
+//       `deadline.js` into a folder no harness reads, or measure transcripts in
+//       a folder the harness never writes.
 //    ② CONSUMPTION, PROVEN BY BEHAVIOUR — we set the override and the SPAWNED
 //       script must report THAT directory. A source grep would be satisfied by
 //       a comment; a process cannot fake where it looked.
-//    Sabotage that must turn it RED: put `path.join(os.homedir(),'.claude',
-//    'hooks')` back into `vendor-deadline.js` ⇒ ② fails (it reports the real
-//    fleet, not the tmpdir). Change the accessor's segments ⇒ ① fails.
+//    Sabotage that must turn each cell RED: put `path.join(os.homedir(),
+//    '.claude','hooks')` back into `vendor-deadline.js` ⇒ ② fails (it reports
+//    the real fleet, not the tmpdir) · put `path.join(os.homedir(),'.claude',
+//    'projects')` back into `scope-reach.js` ⇒ ⑪ fails the same way, and ③
+//    reddens on it as a second definition · change any accessor's segments ⇒ ①
+//    and ⑧ fail · delete a root from `harnessRoots()` ⇒ ③ loses that root's
+//    control offender and ⑧ fails.
 //
 // ⚠️ DRY-RUN ONLY (never `--write`): the real fleet is in production for other
 //    agents. The tmpdir is empty, so the script has nothing to arm anyway.
@@ -31,11 +45,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { fleetHooksDir, fleetHooksLabel, fleetHooksSegments, fileDocsDir, skillsDir } from '../src/paths.js';
+import {
+  fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
+  transcriptsDir, harnessRoots,
+  fileDocsDir, skillsDir,
+} from '../src/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(__dirname, '..');
 const VENDOR = path.join(__dirname, '..', 'src', 'vendor-deadline.js');
+const REACH = path.join(__dirname, '..', 'tools', 'scope-reach.js');
 const RULE = path.join(repo, 'rules', 'fleet-root.yml');
 
 // ⚠️ THE MODULE THAT OWNS THE DEFINITION — an identity, not a list, and taken
@@ -57,25 +76,26 @@ const ENV_WITHOUT_GIT = (() => {
 })();
 
 /**
- * THE SEGMENTS OF THE FLEET ROOT, **TAKEN FROM THE SINGLE SOURCE ITSELF**.
+ * THE HARNESS ROOTS, **TAKEN FROM THE SINGLE SOURCE ITSELF**.
  * 🛑 NEVER written down here. Writing `.claude` and `hooks` into this gate
  *    would create the very thing the work item removes: a second copy of one
- *    truth, this time inside its own judge. Move `FLEET_SEGMENTS` tomorrow and
- *    the detector follows without a line changed — while cell ⑧ holds the
- *    CONTRACT literally, so the move cannot happen unnoticed either.
- * ⚠️ Read from the SEGMENTS, never re-derived from `fleetHooksDir()` relative
- *    to the home: under the test override that accessor points at a tmpdir, and
- *    the relative form would collapse to `..` fragments that appear in half the
+ *    truth, this time inside its own judge. Move a root's segments tomorrow, or
+ *    declare a new one, and the detector follows without a line changed — while
+ *    cell ⑧ holds the CONTRACT literally, so the move cannot happen unnoticed.
+ * ⚠️ Read from the SEGMENTS, never re-derived from an accessor relative to the
+ *    home: under a test override those accessors point at a tmpdir, and the
+ *    relative form would collapse to `..` fragments that appear in half the
  *    requires of this repository — the filter would go from discriminating to
  *    universal, in silence.
- * @returns {string[]}
+ * @returns {{name: string, segments: string[]}[]}
  */
-function fleetSegments() {
-  return fleetHooksSegments().slice();
+function roots() {
+  return harnessRoots().map((r) => ({ name: r.name, segments: r.segments.slice() }));
 }
 
 /**
- * A FABRICATED OFFENDER, smuggled into the REAL scan that judges the repository.
+ * ONE FABRICATED OFFENDER PER DECLARED ROOT, smuggled into the REAL scan that
+ * judges the repository.
  * 🛑 THE PROOF OF LIFE MUST TRAVEL WITH THE VERDICT, not next to it. The first
  *    version of this gate leaned on `src/paths.js` still containing a literal
  *    construction as its known positive — and the correct fix (segments in a
@@ -83,15 +103,26 @@ function fleetSegments() {
  *    the good behaviour destroys is not a floor. `ast-grep` also answers `[]`
  *    with exit 0 on a path it cannot resolve, so an empty result is exactly
  *    what a broken scan and a clean repository BOTH look like.
+ * 🛑 ONE PER ROOT, AND THAT IS WHAT MAKES THE REGISTRY ANTI-VACUOUS BY
+ *    BEHAVIOUR: deleting a root from `paths.harnessRoots()` un-polices a whole
+ *    directory, and a COUNT would not notice. Its control offender stops being
+ *    reported, and cell ③ goes RED — the removal cannot be silent.
  * @param {string} dir
- * @returns {string} the control file's absolute path
+ * @returns {{name: string, file: string, base: string}[]}
  */
-function control(dir) {
-  const file = path.join(dir, 'control-offender.js');
-  fs.writeFileSync(file, "const root = require('path').join(home(), '.claude', 'hooks');\n"
-    + 'module.exports = { root };\n');
-  return file;
+function controls(dir) {
+  return roots().map((r, i) => {
+    const base = 'control-offender-' + i + '.js';
+    const file = path.join(dir, base);
+    const args = r.segments.map((s) => JSON.stringify(s)).join(', ');
+    fs.writeFileSync(file, "const root = require('path').join(home(), " + args + ');\n'
+      + 'module.exports = { root };\n');
+    return { name: r.name, file, base };
+  });
 }
+
+/** ⚠️ Name-prefixed, never an exact list: `controls()` grows with the registry. */
+const isControl = (f) => path.basename(f).startsWith('control-offender-');
 
 // ⚠️ LOUD FAILURE, never an empty scan: a gate blind because its TOOL is missing
 //    would go green while seeing nothing — the worst of both worlds.
@@ -157,16 +188,19 @@ function scan(files, cwd) {
 }
 
 /**
- * The matches that REBUILD the fleet root: every derived segment present in one
- * and the same path construction.
- * ⚠️ `every`, not `some`: `skillsDir()` and `leak-list.js` legitimately assemble
- *    `.claude/…` for OTHER directories, and a gate red on the truth gets
- *    disarmed within the day.
+ * The matches that REBUILD one of the harness roots: every derived segment of
+ * SOME declared root present in one and the same path construction.
+ * ⚠️ `every` INSIDE a root, `some` ACROSS roots — and the asymmetry is the whole
+ *    judgement. `every` because `src/leak-list.js` legitimately assembles
+ *    `.claude/secrets/…`, a directory this module does not own: accusing it
+ *    would make the gate red on the truth, and a gate red on the truth gets
+ *    disarmed within the day. `some` because there is more than one harness
+ *    root and rebuilding ANY of them by hand is the same defect.
  * @param {{file: string, line: number, text: string}[]} matches
- * @param {string[]} segments
+ * @param {{name: string, segments: string[]}[]} rs
  */
-function rebuilds(matches, segments) {
-  return matches.filter((m) => segments.every((s) => m.text.includes(s)));
+function rebuilds(matches, rs) {
+  return matches.filter((m) => rs.some((r) => r.segments.every((s) => m.text.includes(s))));
 }
 
 // ⚠️ ONE WITNESS PER ATOM OF THE RULE, and the table is CONFRONTED with the
@@ -182,9 +216,14 @@ const WITNESSES = {
   '$A + $B': "const e = home() + '/.claude' + '/hooks';",
 };
 
-test('① THE TARGET HAS NOT MOVED — fleetHooksDir() = the historical hardcoded form', () => {
-  const sauve = process.env.CTXROUTE_FLEET_HOOKS_DIR;
+test('① THE TARGETS HAVE NOT MOVED — every accessor = the historical hardcoded form', () => {
+  // ⚠️ EXPECTATIONS WRITTEN OUT LITERALLY, COPIED FROM THE SOURCE — never
+  //    `toBe(MODULE.CONSTANT)`, which would mutate WITH the code and prove
+  //    `x === x`. This cell is the contract; everything else in the suite derives.
+  const sauve = { ...process.env };
   delete process.env.CTXROUTE_FLEET_HOOKS_DIR;
+  delete process.env.CTXROUTE_TRANSCRIPTS_DIR;
+  delete process.env.CTXROUTE_SKILLS_DIR;
   try {
     assert.strictEqual(
       fleetHooksDir(),
@@ -195,9 +234,20 @@ test('① THE TARGET HAS NOT MOVED — fleetHooksDir() = the historical hardcode
     // the right root and not an arbitrary one.
     assert.strictEqual(fileDocsDir(), path.join(fleetHooksDir(), 'docs'), 'fileDocsDir must hang BENEATH the fleet root');
     assert.strictEqual(skillsDir(), path.join(os.homedir(), '.claude', 'commands'), 'skillsDir must stay BESIDE it');
+    // 🛑 THE TRANSCRIPT CORPUS — the root `tools/scope-reach.js` rebuilt by hand
+    //    until 21/08/2026. Moving it silently would make that tool measure a
+    //    folder the harness never writes and answer `0 collisions`, which reads
+    //    as "the widening is free": the exact false good news it exists to forbid.
+    assert.strictEqual(
+      transcriptsDir(),
+      path.join(os.homedir(), '.claude', 'projects'),
+      'the transcript corpus no longer resolves where the harness writes it'
+    );
   } finally {
-    if (sauve === undefined) delete process.env.CTXROUTE_FLEET_HOOKS_DIR;
-    else process.env.CTXROUTE_FLEET_HOOKS_DIR = sauve;
+    for (const k of ['CTXROUTE_FLEET_HOOKS_DIR', 'CTXROUTE_TRANSCRIPTS_DIR', 'CTXROUTE_SKILLS_DIR']) {
+      if (sauve[k] === undefined) delete process.env[k];
+      else process.env[k] = sauve[k];
+    }
   }
 });
 
@@ -226,8 +276,9 @@ test('② THE ACCESSOR IS REALLY CONSUMED — vendor-deadline.js targets what pa
 //    names, and nobody noticed because each one, alone, looked reasonable.
 //    A gate that names its defendants only knows the past.
 // ⇒ The perimeter below is DERIVED (`git ls-files`), the forbidden SEGMENTS are
-//    DERIVED (from the accessor's own return value) and the single allowed file
-//    is an IDENTITY (the module that exports the accessor), never a list.
+//    DERIVED (from `paths.harnessRoots()`, i.e. the accessors' own truth) and
+//    the single allowed file is an IDENTITY (the module that exports them),
+//    never a list.
 //
 // 🛑 NO PURE MODULE FOR THIS ONE, AND THE REASON IS WRITTEN RATHER THAN LEFT TO
 //    LOOK LIKE AN OVERSIGHT. The house rule is that a VERDICT lives in a pure,
@@ -240,33 +291,41 @@ test('② THE ACCESSOR IS REALLY CONSUMED — vendor-deadline.js targets what pa
 //    proven by ⑤ and ⑥, not by mutation. Do not extract a module to satisfy the
 //    letter of a rule whose reason does not apply.
 
-test('③ NO SECOND DEFINITION — nobody but the single source carries the fleet root', () => {
-  // ⚠️ THE CONTROL IS SCANNED IN THE SAME INVOCATION AS THE VERDICT. Judging the
-  //    repository and proving the detector alive in two separate runs would let
-  //    a blind run certify a clean repository — the one failure mode this whole
-  //    gate exists to make impossible.
-  const segments = fleetSegments();
+test('③ NO SECOND DEFINITION — nobody but the single source carries a harness root', () => {
+  // ⚠️ THE CONTROLS ARE SCANNED IN THE SAME INVOCATION AS THE VERDICT. Judging
+  //    the repository and proving the detector alive in two separate runs would
+  //    let a blind run certify a clean repository — the one failure mode this
+  //    whole gate exists to make impossible.
+  const rs = roots();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fleetroot-c-'));
   try {
-    const ctrl = control(dir);
-    const found = rebuilds(scan(perimeter().concat([ctrl]), repo), segments);
+    const ctrls = controls(dir);
+    const found = rebuilds(scan(perimeter().concat(ctrls.map((c) => c.file)), repo), rs);
 
-    assert.ok(found.some((m) => m.file.endsWith('control-offender.js')),
-      'THE DETECTOR WAS BLIND ON THIS VERY SCAN: the fabricated offender was not'
-      + ' reported, so the empty verdict below proves NOTHING. `ast-grep` answers'
-      + ' [] with exit 0 on a path it cannot resolve — a broken scan and a clean'
-      + ' repository look identical. Fix the rule or the invocation, never the floor.');
+    // 🛑 ONE PROOF OF LIFE PER ROOT, never one for the whole scan: a single
+    //    control would go on passing while a root removed from the registry
+    //    stopped being policed — the verdict would stay green having judged less.
+    for (const c of ctrls) {
+      assert.ok(found.some((m) => path.basename(m.file) === c.base),
+        `THE DETECTOR WAS BLIND ON THIS VERY SCAN for root \`${c.name}\`: its`
+        + ' fabricated offender was not reported, so the empty verdict below proves'
+        + ' NOTHING for that root. `ast-grep` answers [] with exit 0 on a path it'
+        + ' cannot resolve — a broken scan and a clean repository look identical.'
+        + ' Fix the rule, the registry or the invocation, never the floor.');
+    }
 
-    const offenders = found.filter((m) => !m.file.endsWith('control-offender.js'));
+    const offenders = found.filter((m) => !isControl(m.file));
     assert.deepStrictEqual(offenders, [],
-      'A SECOND DEFINITION OF THE FLEET ROOT:\n  '
+      'A SECOND DEFINITION OF A HARNESS ROOT:\n  '
       + offenders.map((m) => m.file + ':' + m.line + '  ' + m.text).join('\n  ')
-      + '\n\n🛑 A component is NEVER designated by a guessed address, and this one is'
-      + '\n   published AND written into. Two copies of it diverge in silence.'
-      + '\n   To REACH the disk: `paths.fleetHooksDir()` (absolute, overridable).'
-      + '\n   To SHOW an address to a reader: `paths.fleetHooksLabel()` (relative,'
-      + '\n   home-free — the accessor there would leak a real user path into every'
-      + '\n   injected document, and this repository is public).');
+      + '\n\n🛑 A component is NEVER designated by a guessed address. Two copies of'
+      + '\n   one root diverge in silence, and the copy that rots is never the one'
+      + '\n   you are looking at.'
+      + '\n   To REACH the disk: `paths.fleetHooksDir()` / `paths.transcriptsDir()`'
+      + '\n   / `paths.skillsDir()` (absolute, overridable).'
+      + '\n   To SHOW the FLEET root to a reader: `paths.fleetHooksLabel()`'
+      + '\n   (relative, home-free — the accessor there would leak a real user path'
+      + '\n   into every injected document, and this repository is public).');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -278,16 +337,22 @@ test('④ ANTI-VACUITY — the scan really looks at the runtime, and at the RIGH
   //    layers-gate). Three independent floors, plus an IDENTITY check — a floor
   //    measures a QUANTITY, and a scan aimed at the wrong corpus satisfies every
   //    quantity it passes.
-  const segments = fleetSegments();
-  assert.ok(segments.length >= 2,
-    'the fleet root resolves to fewer than two segments below the home directory —'
-    + ' the "every segment present" test would then accuse almost any path join');
-  // ⚠️ EVERY segment must be non-empty, or `String.includes('')` is true for any
-  //    text on earth and the filter accuses the whole repository at once — or,
-  //    depending on which side you read it from, nothing at all.
-  assert.deepStrictEqual(segments.filter((s) => !s || !s.trim()), [],
-    `the fleet root carries an empty segment (${JSON.stringify(segments)}) —`
-    + ' the filter would stop discriminating anything');
+  const rs = roots();
+  assert.ok(rs.length >= 1, 'the harness-root registry is EMPTY — the filter judges nothing at all');
+  for (const r of rs) {
+    assert.ok(r.segments.length >= 2,
+      `root \`${r.name}\` resolves to fewer than two segments below the home directory —`
+      + ' the "every segment present" test would then accuse almost any path join');
+    // ⚠️ EVERY segment must be non-empty, or `String.includes('')` is true for any
+    //    text on earth and the filter accuses the whole repository at once — or,
+    //    depending on which side you read it from, nothing at all.
+    assert.deepStrictEqual(r.segments.filter((s) => !s || !s.trim()), [],
+      `root \`${r.name}\` carries an empty segment (${JSON.stringify(r.segments)}) —`
+      + ' the filter would stop discriminating anything');
+  }
+  // 🛑 The registry's CONTENT is asserted literally in cell ⑧, and its LIVENESS
+  //    by one control offender per root in cell ③. A count here would be
+  //    satisfied by a registry that names the wrong directories.
 
   // 🛑 A FLOOR MEASURES A QUANTITY, NEVER AN IDENTITY (paid on `coverage-gate`,
   //    whose floor was satisfied by the WRONG corpus). Hence the identity check
@@ -320,13 +385,13 @@ test('⑤ ANTI-INERT — every atom of the rule is proven by a witness it must a
     'ATOM(S) WITHOUT A WITNESS: ' + missing.join(' | ')
     + ' — an atom nobody proved is an atom that may match nothing, i.e. a SILENT hole.');
 
-  const segments = fleetSegments();
+  const rs = roots();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fleetroot-w-'));
   try {
     for (const atom of atoms) {
       const file = path.join(dir, 'w.js');
       fs.writeFileSync(file, WITNESSES[atom] + '\nmodule.exports = {};\n');
-      assert.ok(rebuilds(scan([file], dir), segments).length >= 1,
+      assert.ok(rebuilds(scan([file], dir), rs).length >= 1,
         `ATOM \`${atom}\` DETECTED NOTHING on its own witness — it is decorative.`);
     }
   } finally {
@@ -341,7 +406,7 @@ test('⑥ MENTION vs CODE — a comment or a string that names the forbidden for
   //    files explain the defect they were cured of. A regex would accuse the
   //    documentation that protects the invariant — and a gate that accuses its
   //    own docs is disarmed the same day.
-  const segments = fleetSegments();
+  const rs = roots();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fleetroot-m-'));
   try {
     const file = path.join(dir, 'mention.js');
@@ -349,7 +414,7 @@ test('⑥ MENTION vs CODE — a comment or a string that names the forbidden for
       "// NEVER rebuild it with path.join(os.homedir(), '.claude', 'hooks') in a script\n"
       + "const s = \"path.join(home, '.claude', 'hooks')\";\n"
       + 'module.exports = { s };\n');
-    assert.deepStrictEqual(rebuilds(scan([file], dir), segments), [],
+    assert.deepStrictEqual(rebuilds(scan([file], dir), rs), [],
       'a MENTION was counted as a construction — the gate now accuses the very'
       + ' comments that carry the invariant, and a noisy gate ends up unplugged.');
   } finally {
@@ -398,6 +463,29 @@ test('⑧ THE PUBLISHED CONTRACT — the tag prefix is exactly what agents are t
     + ' hold it. Changing this is changing a contract, not a constant.');
   assert.deepStrictEqual(fleetHooksSegments().slice(), ['.claude', 'hooks'],
     'the canonical segments of the fleet root changed');
+  // 🛑 THE REGISTRY ITSELF, WRITTEN OUT — this is what stops a root being
+  //    QUIETLY DROPPED. Every other cell derives from `harnessRoots()`, so a
+  //    deleted entry would simply narrow the judgement and everything would stay
+  //    green while a whole directory stopped being policed. Adding a root here is
+  //    a deliberate line; losing one is now impossible.
+  assert.deepStrictEqual(
+    harnessRoots().map((r) => [r.name, r.segments.slice()]),
+    [
+      ['fleetHooksDir', ['.claude', 'hooks']],
+      ['transcriptsDir', ['.claude', 'projects']],
+      ['skillsDir', ['.claude', 'commands']],
+    ],
+    'the harness-root registry changed — a root was added, removed or moved.'
+    + ' Removing one silently un-polices a directory; check this is intended.'
+  );
+  // ⚠️ FROZEN AT EVERY LEVEL: a consumer able to push or splice here would move a
+  //    root for everyone, from anywhere, at runtime — including for the gate that
+  //    is supposed to judge it.
+  assert.ok(Object.isFrozen(harnessRoots()), 'the harness-root registry is mutable');
+  for (const r of harnessRoots()) {
+    assert.ok(Object.isFrozen(r) && Object.isFrozen(r.segments),
+      `root \`${r.name}\` is mutable — its segments can be moved at runtime`);
+  }
   // ⚠️ POSIX separator ALWAYS, including on Windows: the tag is a published
   //    address, not a filesystem path, and `pretool-differential` compares it
   //    byte for byte against the legacy hook's output.
@@ -432,6 +520,41 @@ test('⑨ NO LEAK — the published label is home-free, relative, and override-p
     if (saved === undefined) delete process.env.CTXROUTE_FLEET_HOOKS_DIR;
     else process.env.CTXROUTE_FLEET_HOOKS_DIR = saved;
     fs.rmSync(faux, { recursive: true, force: true });
+  }
+});
+
+test('⑪ THE TRANSCRIPT ROOT IS REALLY CONSUMED — scope-reach.js targets what paths.js says', () => {
+  // 🛑 SAME REASONING AS CELL ②, ON THE ROOT THAT WAS STILL OPEN. A source grep
+  //    would be satisfied by the comment that says "never rebuild it here"; a
+  //    process cannot fake where it looked. If this script went back to its own
+  //    `os.homedir()`, it would name the REAL corpus and this cell would redden.
+  const faux = fs.mkdtempSync(path.join(os.tmpdir(), 'reach-transcripts-'));
+  const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'reach-docs-'));
+  const absent = path.join(faux, 'nowhere');
+  try {
+    const r = spawnSync(process.execPath, [REACH], {
+      // ⚠️ The doc corpus is pointed at an EMPTY tmpdir so the tool gets PAST its
+      //    first refusal and reaches the transcript one. Never at the real fleet:
+      //    it is in production for other agents.
+      env: { ...process.env, CTXROUTE_FILEDOCS_DIR: docs, CTXROUTE_TRANSCRIPTS_DIR: absent },
+      encoding: 'utf8',
+    });
+    // ⚠️ TRI-STATE PRESERVED: an unreachable corpus is exit 2 — NOT MEASURED —
+    //    never a success reporting 0 collisions.
+    assert.strictEqual(r.status, 2,
+      `an unreachable transcript corpus must be NOT MEASURED (exit 2), never a`
+      + ` measurement — status ${r.status}, stdout: ${r.stdout}`);
+    // 🛑 THE REFUSAL IS NAMED: it says WHICH address was resolved…
+    assert.ok(r.stdout.includes(absent),
+      'scope-reach.js ignored the paths.js override (still rebuilding the transcript'
+      + ` root itself?) — stdout: ${r.stdout}`);
+    // …AND FROM WHERE, so the reader can tell "wrong root" from "no transcripts".
+    assert.ok(r.stdout.includes('paths.transcriptsDir()'),
+      'the refusal does not say where the address came from — an unnamed refusal'
+      + ` sends the reader guessing, which is how a wrong root survives: ${r.stdout}`);
+  } finally {
+    fs.rmSync(faux, { recursive: true, force: true });
+    fs.rmSync(docs, { recursive: true, force: true });
   }
 });
 

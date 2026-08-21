@@ -385,9 +385,9 @@
       "why": "The outer walk is over the FRAMES of ONE action and the inner one over the chunk headers of ONE frame body. Both are bounded by the wiring: an action declares 16 frames, and a frame carries at most a handful of chunk boundaries because its own capacity is ~7,661 characters. Neither side grows with client volume — a site adds pages, it never adds a frame to a tool call."
     },
     "test/fleet-hooks-path.test.js": {
-      "max": 8,
+      "max": 12,
       "class": "O(N)",
-      "why": "Every nesting crosses two collections this REPOSITORY sizes, never a client: the tracked runtime sources returned by git ls-files (src/ + tools/, 57 today) on the outside, and on the inside either the atoms of rules/fleet-root.yml (a handful) or the fleet-root segments, which number TWO. A client site adds pages and a fleet adds sites; neither adds a source file here, so the product cannot grow with anything the product is sold to."
+      "why": "Every nesting crosses two collections this REPOSITORY sizes, never a client: the tracked runtime sources returned by git ls-files (src/ + tools/, 57 today) on the outside, and on the inside either the atoms of rules/fleet-root.yml (a handful) or the segments of ONE harness root, which number TWO. The four added on 2026-08-21 come from harnessRoots() being a REGISTRY: the cells now loop over the declared roots (three) instead of naming one, which is what stops a deleted root from silently ceasing to be policed. A client site adds pages and a fleet adds sites; neither adds a source file or a harness root here."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

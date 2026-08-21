@@ -66,6 +66,44 @@ function stateDir() {
 //    Windows and on Linux (`pretool-differential` compares it byte for byte).
 const FLEET_SEGMENTS = Object.freeze(['.claude', 'hooks']);
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE OTHER TWO HARNESS ROOTS — same class, same owner, ONE definition each.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 THE CLASS IS "A HARNESS ROOT REBUILT BY HAND", NEVER "the hooks root".
+//    WI-VENDOR-PATH closed five copies of ONE of them and left the others
+//    reachable by a `path.join(os.homedir(), …)` written anywhere — which is
+//    the same defect with a different second segment. `tools/scope-reach.js`
+//    was still doing exactly that for the TRANSCRIPT corpus, declared out of
+//    scope on 21/08/2026 and closed here the same day.
+// ⚠️ Root of the harness TRANSCRIPT corpus (Claude Code: ~/.claude/projects/),
+//    one folder per project, `*.jsonl` inside. READ ONLY, and READ IN BULK
+//    (hundreds of MB): never on the hot path.
+const TRANSCRIPT_SEGMENTS = Object.freeze(['.claude', 'projects']);
+// ⚠️ Root of the harness SKILL store (Claude Code: ~/.claude/commands/). It was
+//    already assembled here and nowhere else; declaring it makes that a
+//    JUDGED fact instead of a lucky one.
+const SKILL_SEGMENTS = Object.freeze(['.claude', 'commands']);
+
+// The home-anchored harness roots this module OWNS, as DATA.
+// 🛑 THIS REGISTRY IS WHAT THE GATE JUDGES (`fleet-hooks-path.test.js`): it
+//    derives the forbidden segment sets from HERE, and it fabricates one
+//    offender PER ENTRY inside the judging scan. So a root added tomorrow is
+//    policed the moment it is declared, and a root DELETED from this list
+//    turns the gate RED instead of silently un-policing a directory.
+// ⚠️ DECLARE A ROOT HERE ONLY IF THIS MODULE OWNS ITS ACCESSOR. Declaring one
+//    that some other file legitimately assembles would redden the truth, and a
+//    gate red on the truth gets disarmed the same day.
+// ⚠️ KNOWN AND DELIBERATE OMISSION: `~/.claude/secrets/` is rebuilt by
+//    `src/leak-list.js`, which owns that path for its own private list. It is
+//    the same SHAPE and it is NOT declared here, because declaring it would
+//    accuse a file this module does not own an accessor for. Moving it here is
+//    a separate work item, not an oversight.
+const HARNESS_ROOTS = Object.freeze([
+  Object.freeze({ name: 'fleetHooksDir', segments: FLEET_SEGMENTS }),
+  Object.freeze({ name: 'transcriptsDir', segments: TRANSCRIPT_SEGMENTS }),
+  Object.freeze({ name: 'skillsDir', segments: SKILL_SEGMENTS }),
+]);
+
 // ROOT of the harness HOOK FLEET (Claude Code: ~/.claude/hooks/). Everything the
 // framework vendors into the fleet, and everything it reads back from it, hangs
 // HERE — `fileDocsDir()` is BENEATH it, `skillsDir()` is BESIDE it.
@@ -76,10 +114,12 @@ const FLEET_SEGMENTS = Object.freeze(['.claude', 'hooks']);
 //    the `stateDir` defect this file was born to kill, one level up.
 // 🛑 THE CLASS IS SEALED, NOT THE CASE: `fleet-hooks-path.test.js` scans `src/`
 //    and `tools/` (perimeter from `git ls-files`, AST via `rules/fleet-root.yml`)
-//    and turns RED on ANY file but this one re-assembling the root — the
-//    SEGMENTS it looks for are derived from what this function RETURNS, so
-//    changing them here moves the detector with it, and no copy of them exists
-//    anywhere else. Naming the three known offenders would only know the past.
+//    and turns RED on ANY file but this one re-assembling ANY declared root —
+//    the SEGMENTS it looks for are derived from `HARNESS_ROOTS` above, so moving
+//    a root here moves the detector with it, and no copy of them exists anywhere
+//    else. Naming the known offenders would only know the past — which is
+//    exactly what happened: sealing the HOOKS root by name left the TRANSCRIPT
+//    root open for a day.
 // ⚠️ `os.homedir()` is the OS ANSWERING, not a guess — that is why it is the
 //    admissible authority HERE and a defect everywhere else.
 // Env var RESERVED for tests and for doctor.js.
@@ -102,6 +142,34 @@ function fleetHooksSegments() {
   return FLEET_SEGMENTS;
 }
 
+// Corpus of the harness TRANSCRIPTS (Claude Code: ~/.claude/projects/) — the
+// record of what the harness REALLY called, one folder per project.
+// ⚠️ ONE PROJECTION AND ONE ONLY, and the reason is written here rather than
+//    left to look like an omission. `fleetHooksDir()` needed a second, PUBLISHED
+//    projection because its address travels INTO documents (the `[source: …]`
+//    tag). This one never does: it is walked by `tools/scope-reach.js` to read
+//    `*.jsonl` off the disk, and the only place it ever surfaces is a NAMED
+//    REFUSAL on an operator's own terminal — which is not a tracked file, not a
+//    published document and not an injected context, so it carries no home into
+//    anything that survives the command. Precedent in this repo: the canary
+//    already logs the absolute transcript path, and it lives under `state/`
+//    BECAUSE that is gitignored.
+// 🛑 THE DAY THIS PATH IS EMITTED INTO A DOC, A TAG OR A COMMITTED FILE, it
+//    needs the two-projection treatment like the fleet root — it is an ABSOLUTE
+//    path anchored at a real home, and this repository is PUBLIC.
+// ⚠️ `os.homedir()` is the OS ANSWERING, not a guess — admissible HERE, a defect
+//    everywhere else. Env var RESERVED for tests and for doctor.js.
+function transcriptsDir() {
+  return process.env.CTXROUTE_TRANSCRIPTS_DIR || path.join(os.homedir(), ...TRANSCRIPT_SEGMENTS);
+}
+
+// The home-anchored harness roots, for the GATE that must look for them in the
+// other files. Frozen at every level: a consumer able to mutate this would move
+// a root for everyone, from anywhere, at runtime.
+function harnessRoots() {
+  return HARNESS_ROOTS;
+}
+
 // Corpus of the FILE docs (frontmatters migrated on 16/07/2026) — consumed by the
 // unified engine. DERIVED from fleetHooksDir() so the root has ONE definition.
 // Env var RESERVED for tests.
@@ -120,7 +188,12 @@ function sessionDocsDir() {
 // READ ONLY (the skill's body is injected as is) — we NEVER write
 // into a harness file. Env var RESERVED for tests and for doctor.js.
 function skillsDir() {
-  return process.env.CTXROUTE_SKILLS_DIR || path.join(os.homedir(), '.claude', 'commands');
+  return process.env.CTXROUTE_SKILLS_DIR || path.join(os.homedir(), ...SKILL_SEGMENTS);
 }
 
-module.exports = { configPath, docsDir, stateDir, fleetHooksDir, fleetHooksLabel, fleetHooksSegments, fileDocsDir, sessionDocsDir, skillsDir, ROOT };
+module.exports = {
+  configPath, docsDir, stateDir,
+  fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
+  transcriptsDir, harnessRoots,
+  fileDocsDir, sessionDocsDir, skillsDir, ROOT,
+};
