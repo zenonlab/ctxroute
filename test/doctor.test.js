@@ -576,3 +576,47 @@ process.stdin.on('end', () => {
   const after = fs.readFileSync(cfg, 'utf8');
   ok('the probe does NOT modify the shipped config (total tmpdir isolation)', before === after);
 }
+
+// ── Case 7 — THE WIRING CHECK MUST READ BOTH TRANSPORTS (2026-08-21) ──
+// 🔴 BORN OF A MEASURED BLINDNESS. The frame coordinates used to be read ONLY
+//    from `"command"` (`--frame k --frames N`). The day the http lane was
+//    wired, every declaration became a `"url"` carrying `?frame=k&frames=N`,
+//    and the doctor counted ZERO frames: it accused `ctxroute-config.json` of
+//    a divergence that did not exist, while the wiring was perfect. It failed
+//    LOUDLY, which is the acceptable direction — but it judged NOTHING, and a
+//    judge that only knows one transport stops judging the day the other is
+//    used. ⚠️ Anchored on the coordinates, never on a host or a port: those
+//    belong to the operator.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-wiring-http-'));
+  try {
+    const settings = path.join(tmp, 'settings.json');
+    const url = (k) => `http://127.0.0.1:8787/?frame=${k}&frames=3`;
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [
+      { type: 'http', url: url(1) }, { type: 'http', url: url(2) }, { type: 'http', url: url(3) },
+    ] }] } }));
+    const r = runDoctor(DOCTOR, ['--settings', settings]);
+    ok('http lane: the frame TOTAL is read from the URL (no divergence invented)',
+      !r.stderr.includes('Divergent'));
+    ok('http lane: the frame INDICES are read from the URL (1..N recognised)',
+      !r.stderr.includes('Declared --frame indices'));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+// ── Case 7b — NEGATIVE: a HOLE in the http indices must still scream ──
+// Reading the new transport is worth nothing if it stops DISCRIMINATING: a
+// missing index = a frame never emitted, and it is SILENT everywhere else.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-wiring-http2-'));
+  try {
+    const settings = path.join(tmp, 'settings.json');
+    const url = (k) => `http://127.0.0.1:8787/?frame=${k}&frames=3`;
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [
+      { type: 'http', url: url(1) }, { type: 'http', url: url(2) }, { type: 'http', url: url(2) },
+    ] }] } }));
+    const r = runDoctor(DOCTOR, ['--settings', settings]);
+    ok('http lane: a duplicated index → doctor exit ≠ 0', r.status !== 0);
+    ok('http lane: a duplicated index → the doctor names the indices',
+      r.stderr.includes('Declared --frame indices'));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}

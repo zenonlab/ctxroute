@@ -407,7 +407,16 @@ function checkWiring(settingsPath) {
   // true before the 17/07 merge, there are SIX.
   // We do NOT presume the exact structure of settings.json (it evolves with
   // Claude Code; rigid parsing would be a false negative).
-  const commands = JSON.stringify(settings).match(/"command"\s*:\s*"([^"]+)"/g) || [];
+  // 🛑 BOTH TRANSPORTS, AND THIS IS THE ONLY COVERAGE OF THE WIRING (2026-08-21).
+  //    A declaration is `type:"command"` (a spawned process, coordinates in
+  //    `--frame k --frames N`) OR `type:"http"` (a POST to the daemon,
+  //    coordinates in the URL's query string). Reading only `"command"` was
+  //    CORRECT until the http lane was wired and became a BLINDNESS the moment
+  //    it was: the doctor counted ZERO frames and accused the config of a
+  //    divergence that did not exist. **A judge that only knows one transport
+  //    stops judging the day the other is used** — and here it screamed, which
+  //    is the acceptable failure direction, but it judged nothing.
+  const commands = JSON.stringify(settings).match(/"(?:command|url)"\s*:\s*"([^"]+)"/g) || [];
 
   // ── RESET (ctxroute-reset.js, PreCompact): without it, docs are never
   //    re-injected after compaction, in silence.
@@ -436,7 +445,13 @@ function checkWiring(settingsPath) {
   // ⚠️ `doc-inject.js` ≠ `legacy-mcp-inject.js` (legacy removed). A gate not
   //    wired, or pointing at a dead file, = NO doc injected at all, IN
   //    SILENCE — exactly the failure mode this dead-man switch exists to catch.
-  const porte = commands.filter((c) => /doc-inject\.js/.test(c) && !c.includes('legacy-mcp-inject'));
+  // ⚠️ A GATE DECLARATION IS RECOGNISED BY WHAT IT CARRIES, NEVER BY ITS FILE
+  //    NAME ALONE: on the http lane there is no file name at all, only a URL
+  //    carrying the frame coordinates. Anchored on `frames=` and not on the
+  //    host or the port, which are the operator's to choose.
+  const porte = commands.filter(
+    (c) => (/doc-inject\.js/.test(c) || /[?&]frames=\d+/.test(c)) && !c.includes('legacy-mcp-inject'),
+  );
   check('the GATE (doc-inject.js) is wired — otherwise NO doc is injected at all', porte.length >= 1,
     'doc-inject.js missing from settings.json: since the merge, IT is what injects ALL docs. Silent death.');
 
@@ -474,9 +489,19 @@ function checkWiring(settingsPath) {
   //    its size: a missing or duplicated index makes an entire frame vanish
   //    IN SILENCE, and nothing else can see it (the wiring lives OUTSIDE the
   //    repo).
-  const declares = porte
-    .map((c) => /--frames\s+(\d+)/.exec(c))
-    .map((m) => (m ? Number(m[1]) : 1));
+  // ⚠️ ONE READER FOR THE TWO DIALECTS, never two copies: the total and the
+  //    index must be read by the SAME code, or a transport gains an index
+  //    check and loses the total one, silently.
+  const coord = (c, word) => {
+    const spawn = new RegExp(`--${word}\\s+(\\d+)`).exec(c);
+    if (spawn) return Number(spawn[1]);
+    const http = new RegExp(`[?&]${word}=(\\d+)`).exec(c);
+    return http ? Number(http[1]) : null;
+  };
+  const declares = porte.map((c) => {
+    const n = coord(c, 'frames');
+    return n === null ? 1 : n;
+  });
   const uniqueN = [...new Set(declares)];
   check('every gate declaration announces the SAME number of frames',
     uniqueN.length === 1,
@@ -515,8 +540,10 @@ function checkWiring(settingsPath) {
   }
 
   const indices = porte
-    .map((c) => /--frame\s+(\d+)/.exec(c))
-    .map((m) => (m ? Number(m[1]) : 0))
+    .map((c) => {
+      const i = coord(c, 'frame');
+      return i === null ? 0 : i;
+    })
     .sort((a, b) => a - b);
   const expectedOnes = Array.from({ length: nAttendu }, (_, i) => i + 1);
   check('the frame indices cover 1..N, with no gap and no duplicate',
