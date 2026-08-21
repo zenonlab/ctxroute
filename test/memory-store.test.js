@@ -28,7 +28,7 @@ import { createRequire } from 'node:module';
 //    here. Reaching the pure module directly is what makes the score real.
 import {
   key, evict, touch, adopt, purge, isEphemeral,
-  createState, set as poser, keys as clefs, MAX_SCOPES,
+  createState, set as poser, keys as clefs, size as taille, MAX_SCOPES,
 } from '../src/memory-store-pure.js';
 
 // ⚠️ A HELPER, NOT A TWIN: the pure state is TWO maps (one LRU per lifetime)
@@ -339,4 +339,39 @@ test('the classes are told apart by the store PREFIX, never by guessing', () => 
   assert.equal(isEphemeral('turn-count-abc'), false,
     'a key wrongly classed as ephemeral would be evicted on the wrong budget — and a turn counter '
     + 'lost silently re-arms every `smart` document');
+});
+
+// ⚠️ THE THREE CELLS BELOW EXIST BECAUSE OF MUTATION, NOT BECAUSE OF A BUG.
+//    Each kills a mutant the suite TRAVERSED without DISTINGUISHING — the only
+//    judge that asks "does this test tell anything apart?".
+
+test('SIZE adds the two classes — a subtraction would report a plausible number', () => {
+  const e = createState();
+  poser(e, 'doc-seen-a', {});
+  poser(e, 'doc-seen-b', {});
+  poser(e, 'plan-x--inv-1', {});
+  assert.equal(taille(e), 3,
+    'size must SUM the two maps: `durable - ephemere` yields 1 here, a number that looks like a '
+    + 'state count and is not one');
+});
+
+test('EVICT with no ephemeral ceiling given falls back to the DECLARED default', () => {
+  const e = createState();
+  for (let i = 0; i < 3; i += 1) poser(e, `plan-x--inv-${i}`, {});
+  assert.equal(evict(e, 0), 0,
+    'called with two arguments the ephemeral budget must be the module default (far above 3): a '
+    + 'hardcoded `false` in that ternary would silently apply the DURABLE ceiling to the plans');
+  assert.equal(clefs(e).length, 3, 'and nothing may be dropped');
+  assert.equal(evict(e, 0, 1), 2, 'given explicitly, the ceiling is the one passed');
+});
+
+test('EVICT returns what it removed across BOTH classes, added', () => {
+  const e = createState();
+  poser(e, 'doc-seen-a', {});
+  poser(e, 'doc-seen-b', {});
+  poser(e, 'plan-x--inv-1', {});
+  poser(e, 'plan-x--inv-2', {});
+  assert.equal(evict(e, 1, 1), 2,
+    'one durable and one ephemeral were dropped: a SUBTRACTION would report 0, i.e. "nothing was '
+    + 'evicted" while the memory just shrank');
 });

@@ -87,11 +87,6 @@ function mapFor(etat, k) {
 }
 
 /** @param {{durable: Map, ephemere: Map}} etat */
-function get(etat, k) {
-  return mapFor(etat, k).get(k);
-}
-
-/** @param {{durable: Map, ephemere: Map}} etat */
 function set(etat, k, v) {
   const m = mapFor(etat, k);
   // ⚠️ DELETE THEN SET — insertion order IS the LRU, so re-writing an existing
@@ -198,7 +193,7 @@ function purge(etat, prefixeCle) {
 }
 
 module.exports = {
-  key, createState, mapFor, get, set, size, keys, entries,
+  key, createState, mapFor, set, size, keys, entries,
   evict, touch, adopt, purge, isEphemeral,
   MAX_SCOPES, MAX_EPHEMERAL, PREFIXE_EPHEMERE,
 };
