@@ -92,6 +92,37 @@
    🛑 **NOTHING IS WIRED**: production still runs the spawn lane and its files. Switching over is
    the maintainer's decision, at a moment when no agent is running. Detail: `kernel-state.md`.
 
+0sexies-quater. 🔑 **THE DAEMON LISTENS ON BOTH TRANSPORTS, AND BEFORE 21/08/2026 THE KERNEL LANE
+   HAD NO OTHER END.** `http-server.js` bound ONLY the TCP port while `state-client.js` connects on
+   `kernel-endpoint.endpoint()` — **nobody was listening where the client knocks**, so switching the
+   shells over would have sent every frame to `ENOENT`, hence to the local state-less path, hence
+   `once` WITHHELD ON EVERY ACTION for every agent.
+   🛑 **AND THE THREE-OS PROOF COULD NOT SEE IT** — `state-daemon.test.js` forks its OWN test daemon
+   (address in `argv[2]`), never the production shell. It proves the MECHANISM. **A green on a twin
+   is not a green on the thing**, and that is the lesson to carry, not the fix.
+   ⚠️ **BOTH ADDRESSES ARE LEGITIMATE**: the PORT serves Claude Code's native `type:"http"` handler
+   (it takes a URL, and a pipe is not a URL) · the RENDEZVOUS serves the client lane — spawned
+   hooks, and Codex which has no `http` handler at all. **One handler, two transports, ONE `store`**
+   (two stores would be the "two memories" defect, reintroduced from inside the daemon).
+   🛑 **A LANE THAT CANNOT TAKE ITS ADDRESS MUST NOT KILL THE OTHER** — the first version rethrew
+   every error and the whole daemon died while the port was listening and healthy. Only
+   `EADDRINUSE` justifies dying (the kernel refused a SECOND instance, it is the authority); any
+   other error degrades ONE lane and says so LOUDLY on stderr. ⚠️ And `state/` must exist before the
+   bind: macOS answers `EACCES` where Linux answers `ENOENT`, a misleading error that sends the
+   reader towards a permissions problem that does not exist.
+   ✅ **THE THREE OS UNITS ARE NOW PROVEN, NOT ASSUMED** — `.github/workflows/service-units.yml`
+   loads them with the REAL supervisor (we own no Mac; GitHub rents one by the minute) and requires
+   the daemon to ANSWER. 🛑 The install procedure is **A SCRIPT PER OS** under `service/`, called by
+   the README AND by the CI: never re-write a `systemctl`/`launchctl`/`Register-ScheduledTask` line
+   anywhere else — the copy is always the one that rots. ⚠️ A green there means **ACCEPTED AND
+   ANSWERING**, never PROVEN: no runner can exercise the logon trigger, a reboot, a wake from sleep,
+   nor the exit-code restart end to end.
+   📐 **AND IT EARNED ITS COST IN FOUR RUNS, finding what nothing else could**: PowerShell 5.1 reads
+   a `.ps1` in ANSI **without a UTF-8 BOM** (parser error, same class as the XML prolog
+   `Register-ScheduledTask` refuses) · the `EACCES`/`ENOENT` asymmetry above · the killing `throw` ·
+   and two wiring mistakes of mine, including an `if: failure()` step placed in the job that PASSES
+   — **indistinguishable from an absent step**.
+
 0sexies-ter. 🔑 **THE FRAMEWORK NOW SAYS WHEN IT DELIVERS LESS THAN IT DECIDED (21/08/2026) — and
    this is the rule that made "no daemon = total silence" stop being a daemon question.** Whenever no
    authority can RECORD a delivery, `once` documents are withheld (delivering without recording
