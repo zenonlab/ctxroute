@@ -155,6 +155,60 @@
    SILENT bugs**: a loud failure (named refusal, fail-closed, red gate) is perfectly acceptable —
    a system that keeps LOOKING healthy while being wrong is not.
 
+0sexies-quinquies. 🔑 **ONE STATE, ONE OWNER, EVERYONE ELSE A CLIENT — AND THE PARTIAL
+   MIGRATION THAT PROVED IT, MEASURED IN PRODUCTION ON 21/08/2026.** The injection state has
+   **FOUR** consumers, not one: `doc-inject` (the gate) · `session-inject` (it SHARES the
+   `remainder-` queue with the gate) · `turn-count` · `ctxroute-reset` (PreCompact). The 16 frame
+   declarations were wired to the daemon's `type:"http"` lane; delivery was perfect and the doctor
+   was green. But the daemon owns its state **in RAM** while the three others kept the **disk**:
+   inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered
+   **2 BYTES**. After a compaction, skills and `once` documents never came back — no error, no
+   badge, no red gate. Rolled back the same hour.
+   🔑 **THE ROOT CAUSE WAS NEVER "WE FORGOT THE RESET"**: any shell could open a store ITSELF, so a
+   change made **OUTSIDE the repository** — the harness wiring — silently split the ownership of one
+   state. §0quater already said *"the backend is an ARGUMENT, never an ambient setting"* and it
+   stopped nobody, because it was aimed at env vars and the same class walked in through the
+   WIRING. **A rule only prose guards is not a rule** ⇒ the capability is REMOVED, not discouraged.
+   🛑 **A SHARED STATE IS MIGRATED FOR ALL ITS CONSUMERS OR FOR NONE** (expand/contract). A partial
+   migration is a split brain, and here a split brain is SILENT — the only failure this project
+   refuses outright.
+   ✅ **WHAT MAKES IT UNBUILDABLE NOW, and it is three mechanisms, not one instruction**:
+   ① `src/store-resolve.js` is the SINGLE resolution point and hands out **`{ store, withLock }`
+   TOGETHER** — memory + a file lock protects nothing, disk + an empty lock IS the production bug of
+   07/08; whoever may pick one half can build the incoherent pair, so nobody may. An unknown backend
+   is a **NAMED REFUSAL**, never a quiet fallback to the disk (a silent fallback hands a SECOND
+   memory to a caller that asked for another one). ② `only-store-resolve-opens-a-store`
+   (dependency-cruiser — **imports are ITS job, never `layers.json`'s**: two tools for one invariant
+   diverge) forbids importing a store anywhere else; the 5 current importers are INHERITED DEBT
+   **measured, with an exit condition, not a permission**, and a sixth is RED the second it is
+   written — seen red. ③ `daemon-purge.test.js` replays the measurement above with the **REAL**
+   reset shell against a live daemon: deliver → silent → PreCompact → it MUST come back. Seen RED by
+   removing the `/purge` call.
+   🛑 **THE LANE IS AN ARGUMENT** (`--client [address]`, `LANE_FLAG` declared ONCE so four shells
+   cannot drift): absent ⇒ today's behaviour **byte for byte**, differentials green untouched,
+   rollback = deleting the word. **NEVER an environment variable** — inherited, and one leak makes a
+   spawned hook read an EMPTY memory. The daemon serves `/pretool` · `/purge` · `/turn` · `/emit`
+   on **ONE handler and ONE store**, every route SYNCHRONOUS (a read-modify-write split into two
+   requests is a file made to carry a conversation between peers, rebuilt over a socket).
+   ⚠️ **AND THE DAEMON WRITES WITH NO LOCK, which is a THIRD kind of exemption the lock gate did not
+   know** — not "the caller holds it" but *there is nothing to serialise against*: one process, one
+   loop, one connection at a time. Written as such in `state-write-under-lock-gate`, with its
+   condition of validity, rather than dressed up as the familiar reason. **TRUE ONLY while the
+   daemon owns its state alone and every route stays synchronous.**
+   📐 **ORDER OF THE REMAINING WORK, and it is not negotiable — the transport is the LAST step**:
+   ① ownership closed ✅ ② the four consumers on one authority ✅ (code; **nothing is wired**)
+   ③ **corpus in memory** — measured 41.49 ms per request of which **0.17 ms is transport**: the
+   41 ms are the corpus re-read, so that is where the win is, never in the pipe ④ the SNAPSHOT
+   decision (rewritten in FULL on every state write = O(total state) per tool call — a COUNT or the
+   daemon's clean exit; it changes the proven "the state survives a restart" property, hence the
+   maintainer's call) ⑤ **HTTP last, and only with an answer to "daemon dead" other than silence**:
+   a declaration is `command` OR `http`, never both, so that lane has **NO fallback** — the client
+   lane keeps one and announces what it withheld.
+   🛑 **A BENCH AT THE REAL SIZING DOES NOT EXIST**: nobody has ever exercised this with hundreds of
+   parallel agents. Until that measurement exists — the SLOPE, never an absolute time — every
+   sizing claim here is a reasoning, not a proof. Do not write otherwise.
+
+
 0septies. 🛑 **WHEN IS A CLASS OF DEFECT ACTUALLY CLOSED? FOUR CONDITIONS, ALL NECESSARY.**
    This is the criterion the whole project reduces to — apply it to every guardrail you write, and
    demand it of every one you inherit. A guardrail missing ONE of the four is a NOTE, not a gate.

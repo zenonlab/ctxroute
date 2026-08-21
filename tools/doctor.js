@@ -610,6 +610,97 @@ function checkWiring(settingsPath) {
       path.resolve(file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', 'canary-check.js')),
       `settings.json points at ANOTHER copy of the framework: ${file} (this repo: ${__dirname}).`);
   }
+
+  // ── LANE COHERENCE — ALL THE CONSUMERS, OR NONE (2026-08-21) ────────
+  //
+  // 🔴 MEASURED IN PRODUCTION, THEN ROLLED BACK, THE SAME DAY. The injection
+  //    state has FOUR consumers: the gate (`doc-inject`), the session gate
+  //    (which SHARES the `remainder-` queue with it), the turn counter and the
+  //    PreCompact reset. Only the gate was moved onto the daemon's `type:"http"`
+  //    lane; the daemon then owned its state IN RAM while the three others kept
+  //    reading and erasing FILES. Sequence measured: inject → the `once` is
+  //    consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered
+  //    **2 bytes**. After a compaction, skills and `once` documents never came
+  //    back — no error, no badge, no red gate anywhere. That is TWO MEMORIES,
+  //    the exact defect `client-core.js` exists to forbid ("one authority, or
+  //    none"), reintroduced from OUTSIDE the repo, where nothing here could see
+  //    it. The wiring is this defect's ONLY possible witness.
+  //
+  // ⚠️ THE PEER LIST IS DERIVED, NEVER WRITTEN. A hand-written list only knows
+  //    the consumers that existed the day it was typed; the fifth one would join
+  //    the split in silence. The authority is the CODE: a shell is a consumer of
+  //    the shared state exactly when it asks `client.clientLane()` which lane it
+  //    is on. Same reasoning for the flag itself — `LANE_FLAG` is read from
+  //    `client-core.js`, never re-spelled here (four shells and one judge must
+  //    not be able to drift).
+  //
+  // ⚠️ A PEER WITH NO DECLARATION AT ALL IS NOT JUDGED HERE: "not wired" is the
+  //    business of the checks above, and accusing it twice would turn one fault
+  //    into two reds. We judge only what IS declared.
+  //
+  // 🛑 ANTI-VACUITY: this check must be IMPOSSIBLE to pass while examining
+  //    nothing. No gate declaration, no derived consumer, or an unreadable
+  //    `LANE_FLAG` ⇒ RED — "we could not measure" is never "it is coherent".
+  // ⚠️ EVERY TEST BELOW IS A REGEX, NEVER `.includes()`, AND THAT IS NOT A
+  //    STYLE CHOICE: `rules/no-undeclared-quadratic.yml` counts `.includes()`
+  //    among its traversal atoms, so one of them inside a loop would spend a
+  //    line of this file's complexity budget on a plain substring test.
+  let LANE_FLAG = null;
+  try { ({ LANE_FLAG } = require('../src/client-core')); } catch { /* stays null */ }
+  const flagLisible = typeof LANE_FLAG === 'string' && LANE_FLAG.length > 0;
+  const laneRe = flagLisible
+    ? new RegExp(LANE_FLAG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    : null;
+
+  const GATE_FILE = 'doc-inject.js';
+  const hooksDir = path.join(__dirname, '..', 'src', 'hooks');
+  let fichiers = [];
+  try { fichiers = fs.readdirSync(hooksDir); } catch { /* stays empty — anti-vacuity turns red */ }
+  const consommateurs = [];
+  for (const f of fichiers) {
+    if (!/\.js$/.test(f)) continue;
+    let source = '';
+    try { source = fs.readFileSync(path.join(hooksDir, f), 'utf8'); } catch { continue; }
+    if (/clientLane\s*\(/.test(source)) consommateurs.push(f);
+  }
+  const pairs = new Set(consommateurs.filter((f) => f !== GATE_FILE));
+
+  // ONE PASS over the declarations: a file name identifies the consumer (a
+  // `command` always carries one), and `--client` says which lane it reaches.
+  // A consumer declared SEVERAL times reaches the daemon only if EVERY one of
+  // its declarations does — one disk-bound process is enough to make a second
+  // memory.
+  const voies = new Map();
+  for (const c of commands) {
+    const m = /([A-Za-z0-9_.-]+\.js)/.exec(c);
+    if (!m || !pairs.has(m[1])) continue;
+    const atteint = laneRe !== null && laneRe.test(c);
+    voies.set(m[1], voies.has(m[1]) ? voies.get(m[1]) && atteint : atteint);
+  }
+  const cotedisque = [...voies.keys()].filter((n) => !voies.get(n));
+  const cotedaemon = [...voies.keys()].filter((n) => voies.get(n));
+
+  check('the lane-coherence check has something to judge (flag read, consumers derived, gate declared)',
+    flagLisible && consommateurs.includes(GATE_FILE) && pairs.size >= 1 && porte.length >= 1,
+    `Lane coherence UNMEASURABLE: LANE_FLAG ${flagLisible ? `= ${LANE_FLAG}` : 'unreadable from src/client-core.js'}, `
+    + `${consommateurs.length} consumer(s) derived from src/hooks/ (gate ${consommateurs.includes(GATE_FILE) ? 'found' : 'MISSING'}), `
+    + `${porte.length} gate declaration(s) in settings.json. A check that examines nothing is not a check that passes.`);
+
+  // The GATE reaches the daemon when ANY of its declarations does: `type:"http"`
+  // (recognised by the `"url"` key — the http lane has no file name at all) or a
+  // `--client` argument on the spawn lane. One frame on the daemon is enough:
+  // that frame's deliveries are recorded in a memory the disk-bound peers will
+  // never read, and never erase.
+  const porteSurDaemon = porte.some((c) => /^\s*"url"/.test(c) || (laneRe !== null && laneRe.test(c)));
+  check('every consumer of the injection state reaches the SAME authority (no split brain)',
+    !porteSurDaemon || cotedisque.length === 0,
+    `SPLIT BRAIN in settings.json. On the DAEMON: ${[GATE_FILE, ...cotedaemon].join(', ')}. `
+    + `On the DISK (no ${LANE_FLAG || '--client'}): ${cotedisque.join(', ')}. `
+    + 'The gate records its deliveries in the daemon\'s RAM while those peers read and erase the state FILES: TWO MEMORIES. '
+    + 'MEASURED COST: after a compaction the reset wipes a disk the daemon never reads, so skills and `once` documents NEVER '
+    + 'come back — no error, no badge, no red anywhere. '
+    + `FIX: add \`${LANE_FLAG || '--client'}\` to the declaration of each consumer listed on the disk side, or take the gate `
+    + 'back off the daemon lane. All the consumers, or none — a shared state migrates for ALL of them or for NONE.');
 }
 
 // ── 2bis. CODEX WIRING (~/.codex/hooks.json or config.toml) ──────────

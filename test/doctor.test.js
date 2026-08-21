@@ -620,3 +620,69 @@ process.stdin.on('end', () => {
       r.stderr.includes('Declared --frame indices'));
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
+
+// ── Case 7c — NEGATIVE: the SPLIT BRAIN that actually shipped (2026-08-21) ──
+// 🔴 MEASURED IN PRODUCTION THEN ROLLED BACK. The gate was moved onto the
+//    daemon's `type:"http"` lane while the reset, the turn counter and the
+//    session gate kept reading and erasing the state FILES. Result: inject →
+//    the `once` is consumed → the REAL PreCompact hook runs → the daemon
+//    answers 2 bytes. After a compaction, skills and `once` documents never
+//    come back, with no error, no badge and no red gate. NOTHING inside this
+//    repository could see it: the wiring lives outside, so `--settings` is its
+//    only coverage. Never delete this cell.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-lane-split-'));
+  try {
+    const settings = path.join(tmp, 'settings.json');
+    const repo = path.join(import.meta.dirname, '..', 'src', 'hooks');
+    // The gate on the daemon (http), its three peers on plain `command`: no
+    // `--client` anywhere ⇒ they can only touch the disk.
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [
+      { type: 'http', url: 'http://127.0.0.1:8787/?frame=1&frames=1' },
+      { command: `node ${path.join(repo, 'ctxroute-reset.js')}` },
+      { command: `node ${path.join(repo, 'turn-count.js')}` },
+      { command: `node ${path.join(repo, 'session-inject.js')}` },
+      { command: `node ${path.join(repo, 'doc-write-guard.js')}` },
+      { command: `node ${path.join(repo, 'canary-check.js')}` },
+    ] }] } }));
+    const r = runDoctor(DOCTOR, ['--settings', settings]);
+    ok('split brain: gate on the daemon, peers on the disk → doctor exit ≠ 0', r.status !== 0);
+    ok('split brain: the doctor NAMES the defect', r.stderr.includes('SPLIT BRAIN'));
+    // A diagnostic that does not say WHO is on WHICH side gets ignored, then
+    // bypassed: both sides must be named, not just the count.
+    ok('split brain: the doctor names the consumer on the daemon side',
+      r.stderr.includes('On the DAEMON: doc-inject.js'));
+    ok('split brain: the doctor names the reset on the disk side',
+      /On the DISK[^\n]*ctxroute-reset\.js/.test(r.stderr));
+    ok('split brain: the doctor names the turn counter on the disk side',
+      /On the DISK[^\n]*turn-count\.js/.test(r.stderr));
+    ok('split brain: the doctor names the session gate on the disk side',
+      /On the DISK[^\n]*session-inject\.js/.test(r.stderr));
+    ok('split brain: the doctor says what it COSTS (the `once` never comes back)',
+      r.stderr.includes('after a compaction') && r.stderr.includes('NEVER'));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+// ── Case 7d — POSITIVE CONTROL: the SAME wiring, peers on the daemon too ──
+// Without this control, case 7c would also pass on a check that screams at
+// every wiring it is shown. ⚠️ We assert the ABSENCE of THIS complaint, never
+// exit 0: this fixture legitimately fails other checks (bandwidth, canary…).
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-lane-whole-'));
+  try {
+    const settings = path.join(tmp, 'settings.json');
+    const repo = path.join(import.meta.dirname, '..', 'src', 'hooks');
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ hooks: [
+      { type: 'http', url: 'http://127.0.0.1:8787/?frame=1&frames=1' },
+      { command: `node ${path.join(repo, 'ctxroute-reset.js')} --client` },
+      { command: `node ${path.join(repo, 'turn-count.js')} --client` },
+      { command: `node ${path.join(repo, 'session-inject.js')} --client` },
+      { command: `node ${path.join(repo, 'doc-write-guard.js')}` },
+      { command: `node ${path.join(repo, 'canary-check.js')}` },
+    ] }] } }));
+    const r = runDoctor(DOCTOR, ['--settings', settings]);
+    ok('coherent daemon wiring → NO split-brain complaint', !r.stderr.includes('SPLIT BRAIN'));
+    ok('coherent daemon wiring → the coherence check still had something to judge',
+      !r.stderr.includes('UNMEASURABLE'));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
