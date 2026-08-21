@@ -99,6 +99,14 @@
 
 const http = require('http');
 const { run } = require('../pretool-core');
+// ⚠️ THE OTHER THREE CONSUMERS OF THE ONE STATE (2026-08-21). The gate was wired
+//    to the daemon and the three others were left on the disk — MEASURED: after a
+//    real PreCompact the daemon still held its memory, so skills and `once`
+//    documents never came back, with no error, no badge, no red. **A shared state
+//    is migrated for ALL its consumers or for none.** These two modules are what
+//    lets the SAME handler and the SAME store answer them.
+const emission = require('../emission-core');
+const turnCore = require('../turn-core');
 const { output } = require('./doc-inject');
 const path = require('path');
 const paths = require('../paths');
@@ -271,6 +279,115 @@ function frameFromUrl(url, parse) {
   return parse(argv);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE FOUR CONSUMERS OF ONE STATE — four routes, ONE handler, ONE store.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 THE DEFECT THESE CLOSE, MEASURED IN PRODUCTION 2026-08-21. The PreToolUse
+//    gate was wired to the daemon and the three other consumers were left on the
+//    disk. Sequence measured: inject → `once` consumed → run the REAL PreCompact
+//    hook → ask again ⇒ the daemon answers **2 bytes**. After a compaction,
+//    skills and `once` documents never come back — no error, no badge, no red.
+// 🛑 THE LESSON, AND IT IS THE DOCTRINE OF THIS HOUSE: **a shared state is
+//    migrated for ALL its consumers or for none** (expand/contract). A partial
+//    migration is a SPLIT BRAIN, and it is silent.
+// 🛑 ONE `store` FOR ALL FOUR, DELIBERATELY. Two stores would be the "two
+//    memories" defect `client-core.js` exists to forbid, reintroduced from
+//    inside the daemon itself. Same reason the two TRANSPORTS share one handler.
+// ⚠️ EVERY ROUTE IS SYNCHRONOUS, like the gate's, and that is what makes each of
+//    them ATOMIC: the kernel delivers one connection at a time onto a
+//    single-threaded loop, so a read-modify-write inside ONE request cannot be
+//    crossed. 🔴 NEVER split one into a `load` request and a `save` request:
+//    that would be a file made to carry a conversation between peers, rebuilt
+//    over a socket.
+// ⚠️ AN UNSERVABLE ROUTE ANSWERS `NO_OUTPUT`, and the client then does exactly
+//    what it does with no daemon at all — there is no third state to invent.
+// ═══════════════════════════════════════════════════════════════════════
+
+const ROUTE_PURGE = '/purge';
+const ROUTE_TURN = '/turn';
+const ROUTE_EMIT = '/emit';
+
+/** The path, without the query string. Anything unknown is the GATE's route,
+ *  which keeps every existing client byte-identical. */
+function routeOf(url) {
+  return String(url || '').split('?')[0];
+}
+
+/**
+ * PURGE — what PreCompact MEANS: the real context was emptied, so the memory of
+ * what was injected before it no longer describes anything.
+ *
+ * 🛑 IT IS AN ORDER RECEIVED, NEVER A DEDUCTION. Nothing here decides that a
+ *    session is over — that is undecidable from inside, and guessing it is the
+ *    inference this whole lane removes. The harness fired the event; the shell
+ *    names the keys; we execute.
+ * 🛑 THE KEYS COME FROM THE SHELL BECAUSE THE LIST HAS ONE OWNER. The five
+ *    prefixes live in `ctxroute-reset.js`'s purge loop, and `store-purge-gate`
+ *    reads THAT loop to prove no store escapes a compaction. A second list here
+ *    would be a second truth, invisible to that gate — exactly how a store ends
+ *    up surviving a compaction with nothing to say so.
+ * 🔴 AN EMPTY KEY IS REFUSED, AND IT IS NOT A FORMALITY: every key starts with
+ *    the empty string, so one malformed payload would erase the WHOLE fleet's
+ *    memory in one call — every `once` of every agent re-delivered, silently.
+ * ⚠️ `memory-store-pure.purge()` already clears BOTH key classes (durable and
+ *    ephemeral). It is REUSED, never rewritten: forgetting one map is the silent
+ *    half of a purge.
+ */
+function purgeRoute(data, store) {
+  if (!store || typeof store.purge !== 'function') return NO_OUTPUT;
+  const keys = Array.isArray(data.keys) ? data.keys : [];
+  let purged = 0;
+  for (const k of keys) if (typeof k === 'string' && k !== '') purged += store.purge(k);
+  return { purged };
+}
+
+/**
+ * TURN — the counter `driftUnit: "turn"` measures its elapsing with.
+ * ⚠️ The increment rule lives in `turn-core.js`, shared with the spawned shell:
+ *    a shape rule read in two places diverges (paid twice, ㊱ and ㊳).
+ * ⚠️ The PREFIX travels in the payload — its owner is the shell that declares
+ *    it, and `store-purge-gate` derives the purge list from those declarations.
+ */
+function turnRoute(data, store) {
+  if (!store) return NO_OUTPUT;
+  const prefix = typeof data.prefix === 'string' ? data.prefix : '';
+  const scope = typeof data.scope === 'string' ? data.scope : '';
+  if (prefix === '' || scope === '') return NO_OUTPUT;
+  return { turns: turnCore.bump(store, prefix, scope) };
+}
+
+/**
+ * EMIT — the SESSION gate's half of the shared `remainder-` queue.
+ *
+ * 🛑 WHY THE SESSION GATE MUST BE HERE TOO. Its queue is not its own: what it
+ *    cannot deliver at SessionStart is picked up by the PreToolUse gate at the
+ *    very first tool call. If the gate's queue lived in the daemon's memory and
+ *    the session gate's on the disk, the session remainder would NEVER be
+ *    drained — a document delivered halfway and no error anywhere.
+ * ⚠️ THE SHELL STILL READS ITS OWN CORPUS and composes its own segments: only
+ *    the QUEUE needs the authority. What crosses the socket is therefore the
+ *    emission request, not the corpus.
+ * 🛑 `Infinity` CANNOT TRAVEL IN JSON — `JSON.stringify(Infinity)` is `null`. So
+ *    the contract is explicit: a positive finite number is the budget, `null`
+ *    (or anything else) MEANS `Infinity`, i.e. "this harness bounds nothing".
+ *    The shell always sends one of the two, so nothing is ever guessed here.
+ */
+function emitRoute(data, store) {
+  if (!store) return NO_OUTPUT;
+  const frais = Array.isArray(data.frais) ? data.frais : [];
+  const budgetMax = Number.isFinite(data.budgetMax) && data.budgetMax > 0 ? data.budgetMax : Infinity;
+  const nbFrames = Number.isInteger(data.nbFrames) && data.nbFrames >= 1 ? data.nbFrames : 1;
+  const indice = Number.isInteger(data.indice) && data.indice >= 1 ? data.indice : 1;
+  const scopeId = typeof data.scopeId === 'string' ? data.scopeId : '';
+  if (scopeId === '') return NO_OUTPUT;
+  // ⚠️ NO `withLock` HERE, AND ITS ABSENCE IS THE POINT: `emission.emit` reads
+  //    then rewrites the queue, and the mutual exclusion that requires already
+  //    exists ABOVE us — one connection at a time, one thread. Adding the
+  //    cross-process lock would take a lock protecting nothing.
+  const r = emission.emit({ frais, budgetMax, nbFrames, indice, scopeId, store });
+  return { plan: r.plan || null };
+}
+
 /**
  * ⚠️ The injected collaborators, TYPED — not a loose bag. `tsc` refuses property
  *    access on a bare `object`, and it is right to: in this repo a JSDoc block is
@@ -327,6 +444,23 @@ function handle(body, url, deps) {
     return NO_OUTPUT;
   }
   if (!data || typeof data !== 'object') return NO_OUTPUT;
+
+  // ⚠️ ROUTED, AND THE DEFAULT IS THE GATE. Any path that is not one of the
+  //    three below runs the PreToolUse gate exactly as before — `/pretool`, and
+  //    anything an older client might send. That is what keeps `http-lane-
+  //    differential` and every existing cell green with no edit.
+  // ⚠️ FAIL-OPEN LIKE EVERYTHING ELSE: a route that throws answers "nothing",
+  //    never an error that would take the service down for every agent at once.
+  const route = routeOf(url);
+  if (route === ROUTE_PURGE || route === ROUTE_TURN || route === ROUTE_EMIT) {
+    try {
+      if (route === ROUTE_PURGE) return purgeRoute(data, store);
+      if (route === ROUTE_TURN) return turnRoute(data, store);
+      return emitRoute(data, store);
+    } catch {
+      return NO_OUTPUT;
+    }
+  }
 
   let answer = NO_OUTPUT;
   // ⚠️ `run` EMITS through a callback and RETURNS when it has nothing to say —
@@ -565,7 +699,9 @@ function listenOn(server, env, pid, port) {
 
 module.exports = {
   createServer, handle, frameFromUrl, watchOwnCode, inheritedFd, listenOn,
+  routeOf, purgeRoute, turnRoute, emitRoute,
   HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE, SD_LISTEN_FDS_START,
+  ROUTE_PURGE, ROUTE_TURN, ROUTE_EMIT,
 };
 
 // ⚠️ The service's LIFECYCLE belongs to the OS — a systemd user unit, a Windows

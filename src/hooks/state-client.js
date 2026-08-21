@@ -28,6 +28,18 @@
 //    "solved" with a health probe.
 // ⚠️ NO TIMER HERE. A local socket either connects or fails at once; adding a
 //    delay would put back an inference where the kernel gives a verdict.
+//
+// 🔑 FOUR CONSUMERS, ONE TRANSPORT (2026-08-21). The PreToolUse gate is not the
+//    only shell that touches the injection state: the SESSION gate shares the
+//    `remainder-` queue with it, `turn-count` writes the turn counter that
+//    `driftUnit: "turn"` reads, and `ctxroute-reset` erases everything on a
+//    compaction. **A shared state is migrated for ALL its consumers or for
+//    none.** So the request shape is generic (`request`) and `ask` is simply the
+//    gate's route — a second client module would be a second dialect, and two
+//    dialects of one protocol drift.
+// 🛑 THE ROUTE IS THE ONLY THING THAT VARIES. Same method, same headers, same
+//    single settlement, same fail-open. Whoever adds a route adds a STRING here
+//    and a branch in the daemon's ONE handler — never another client.
 // ═══════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -36,11 +48,15 @@ const http = require('http');
 const { endpoint, kernelAddress } = require('../kernel-endpoint');
 
 /**
- * @param {object} payload  the harness payload, verbatim
- * @param {{frame?: number, frames?: number, socketPath?: string}|null} options
- * @param {(answer: object|null) => void} done
+ * ONE request to the authority, whatever the route.
+ *
+ * @param {string} route  path + query string, e.g. `/purge`
+ * @param {object} payload  the body, serialised as JSON
+ * @param {{socketPath?: string}|null} options
+ * @param {(answer: object|null) => void} done  called EXACTLY once; `null` means
+ *   "no authority reachable, or nothing intelligible came back" — never an error.
  */
-function ask(payload, options, done) {
+function request(route, payload, options, done) {
   const o = options || {};
   // ⚠️ Converted HERE, at the moment the kernel reads it — never earlier: on
   //    Linux the abstract form carries a NUL byte, which cannot travel in an
@@ -55,7 +71,7 @@ function ask(payload, options, done) {
   const req = http.request({
     socketPath,
     method: 'POST',
-    path: `/pretool?frame=${o.frame || 1}&frames=${o.frames || 1}`,
+    path: route,
     headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(corps) },
   }, (res) => {
     let texte = '';
@@ -73,4 +89,17 @@ function ask(payload, options, done) {
   req.end(corps);
 }
 
-module.exports = { ask };
+/**
+ * THE GATE'S ROUTE — the PreToolUse question, unchanged.
+ * 🛑 THE FRAME COORDINATES TRAVEL IN THE URL, like the spawn lane's argv. Two
+ *    ways of saying the same thing would drift; the daemon parses one.
+ * @param {object} payload  the harness payload, verbatim
+ * @param {{frame?: number, frames?: number, socketPath?: string}|null} options
+ * @param {(answer: object|null) => void} done
+ */
+function ask(payload, options, done) {
+  const o = options || {};
+  request(`/pretool?frame=${o.frame || 1}&frames=${o.frames || 1}`, payload, o, done);
+}
+
+module.exports = { ask, request };

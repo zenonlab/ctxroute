@@ -29,8 +29,16 @@ require('../deadline').arm();
 const path = require('path');
 const fs = require('fs');
 const lib = require('../lib-pure');
-const store = require('../session-store');
-const { withLock } = require('../lock');
+// 🛑 `store` AND `withLock` COME FROM ONE RESOLVER, AND THEY TRAVEL TOGETHER.
+//    Memory + a file lock is a lock protecting nothing; disk + an empty lock is
+//    the 2026-08-07 production bug, deliberately reintroduced. Resolving them in
+//    one place is what makes "one without the other" unwritable here.
+const { resolveStore } = require('../store-resolve');
+// ⚠️ The increment rule is SHARED with the daemon (`turn-core.js`): a rule about
+//    the shape of a store, read in two places, diverges — paid twice (㊱, ㊳).
+const turnCore = require('../turn-core');
+const client = require('../client-core');
+const { request } = require('./state-client');
 const { readStdinJson } = require('../stdin-json');
 const paths = require('../paths');
 
@@ -51,11 +59,33 @@ readStdinJson(
       // would distort the 'turn' driftUnit of the sub-agents. Without agent_id = the
       // historical key, unchanged.
       const sessionId = lib.scopeId(data.session_id, data.agent_id);
+
+      // 🛑 ONE AUTHORITY, OR NONE. On the client lane the daemon owns the
+      //    counter: incrementing it HERE as well would make TWO memories, and
+      //    the `turn` drift would then read whichever of the two the gate
+      //    happens to be given — silently, and differently per action.
+      // ⚠️ The read-modify-write crosses the socket as ONE request: the kernel
+      //    delivers one connection at a time onto a single-threaded loop, so it
+      //    cannot be crossed. Splitting it into a read and a write would rebuild,
+      //    over a socket, the conversation between peers this lane removes.
+      // ⚠️ NO DAEMON ⇒ nothing is recorded, exactly like every other client on
+      //    this lane. The cost is one uncounted turn, i.e. a re-injection
+      //    arriving one turn late — never a broken prompt.
+      const voie = client.clientLane(process.argv);
+      if (voie) {
+        request(
+          '/turn',
+          { prefix: STORE_PREFIX, scope: sessionId },
+          { socketPath: voie.socketPath },
+          () => process.exit(0),
+        );
+        return;
+      }
+
+      const { store, withLock } = resolveStore();
       const lockDir = path.join(paths.stateDir(), `.lock-turn-${lib.sanitizeSessionId(sessionId)}`);
       withLock(lockDir, () => {
-        const s = store.loadState(STORE_PREFIX, sessionId);
-        const turns = Number.isInteger(s.turns) ? s.turns : 0;
-        store.saveState(STORE_PREFIX, sessionId, { turns: turns + 1 });
+        turnCore.bump(store, STORE_PREFIX, sessionId);
       }, { fallback: null }); // lock unavailable = turn not counted (fail-open)
     } catch {
       /* fail-open */

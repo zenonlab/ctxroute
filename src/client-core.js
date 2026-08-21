@@ -60,6 +60,48 @@ const ETAT_ABSENT = {
 //    full delivery it may not record.
 const SANS_VERROU = (_lockDir, _section, options) => (options ? options.fallback : undefined);
 
+// 🛑 THE LANE IS AN ARGUMENT, AND THE FLAG LIVES HERE SO IT IS ONE WORD, NOT
+//    FOUR. Four shells switch lanes (the gate, the session gate, the turn
+//    counter, the reset); each spelling the literal itself would be four copies
+//    of one truth, and the day one of them is renamed the shell that missed it
+//    keeps writing to the disk while the others talk to the daemon — a SPLIT
+//    BRAIN, silent, which is the exact defect this lane exists to remove.
+// 🔴 AND IT IS AN ARGUMENT RATHER THAN AN ENVIRONMENT VARIABLE, DELIBERATELY.
+//    Env vars are INHERITED: one leak makes a spawned hook believe it is on the
+//    daemon lane, read an EMPTY memory and re-deliver every `once`, with no
+//    error anywhere. The wiring writes the flag; nothing can inherit it.
+const LANE_FLAG = '--client';
+
+/**
+ * IS THIS PROCESS A CLIENT OF THE AUTHORITY, AND WHERE DOES IT KNOCK?
+ *
+ * ⚠️ IT TAKES `argv`, IT DOES NOT READ IT. Reading `process.argv` is a SHELL
+ *    capability (`layers.json`); a shared core receives the arguments. The shell
+ *    passes `process.argv`, this decides.
+ * ⚠️ THE ADDRESS IS OPTIONAL, and its absence is the PRODUCTION case: with no
+ *    address the client knocks on `endpoint()`, the one rendezvous of this
+ *    repository. An explicit address exists so a cell can drive a daemon OF ITS
+ *    OWN instead of the machine's — without it, a test would have to bind the
+ *    real rendezvous and would collide with a live daemon.
+ * ⚠️ A token starting with `-` is the NEXT FLAG, never an address: the wiring
+ *    writes `--client --frame 3 --frames 16`, and reading `--frame` as a socket
+ *    path would send every frame to an address nobody owns — silently.
+ *
+ * @param {string[]} argv
+ * @returns {{socketPath: string|undefined}|null} `null` = the spawn lane, i.e.
+ *   today's behaviour to the byte.
+ */
+function clientLane(argv) {
+  if (!Array.isArray(argv)) return null;
+  const i = argv.indexOf(LANE_FLAG);
+  if (i < 0) return null;
+  const suivant = argv[i + 1];
+  const adresse = typeof suivant === 'string' && suivant !== '' && !suivant.startsWith('-')
+    ? suivant
+    : undefined;
+  return { socketPath: adresse };
+}
+
 /**
  * @param {object} data the harness payload, verbatim
  * @param {{output: Function, emit: Function, ask?: Function, run?: Function}} deps
@@ -95,4 +137,4 @@ function run(data, deps, options) {
   });
 }
 
-module.exports = { run, ETAT_ABSENT, SANS_VERROU };
+module.exports = { run, clientLane, ETAT_ABSENT, SANS_VERROU, LANE_FLAG };

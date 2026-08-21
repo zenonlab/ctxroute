@@ -59,6 +59,33 @@ const EXEMPTIONS = {
   'src/hooks/legacy-mcp-inject.js':
     'Unwired relic (differential oracle). The write is behind an alias; its two call '
     + 'sites both sit inside the withLock of that same file.',
+  // ⚠️ SHARED CORE: the increment rule lives here so the spawned shell and the daemon
+  //    cannot read one store-shape rule in two places and drift apart (paid twice —
+  //    ㊱, ㊳). It therefore cannot take the lock itself without double-locking the
+  //    shell, which already wraps this call.
+  'src/turn-core.js':
+    'The turn counter\'s read-modify-write, shared by two callers with OPPOSITE lock '
+    + 'regimes: the spawned shell wraps it in its own withLock, and the daemon needs '
+    + 'none (see the entry below). Taking the lock here would double-lock the first and '
+    + 'be pure cost for the second.',
+  // 🛑 A THIRD KIND OF REASON, AND IT IS NOT "THE CALLER HOLDS THE LOCK" — writing it
+  //    that way would be a comfortable lie. The daemon writes with NO lock at all
+  //    because there is NOTHING TO SERIALISE AGAINST: it is a single process, on a
+  //    single-threaded loop, and the kernel hands it one connection at a time. That is
+  //    the whole thesis of `kernel-state.md`, proven by TLC and by 16 real frame
+  //    processes delivering one `once` exactly once with zero file written.
+  // ⚠️ A cross-process lock here would protect nothing and cost everything — and
+  //    `store` + `withLock` travelling together is precisely what makes "memory + file
+  //    lock" impossible to build by accident.
+  // 🔴 THIS ENTRY IS TRUE ONLY WHILE THE DAEMON OWNS ITS STATE ALONE. The day a second
+  //    writer touches that memory — a second daemon, a thread, an async route that
+  //    interleaves a read and a write — this line becomes FALSE and the exemption must
+  //    go, not be widened. Every route is synchronous for that reason.
+  'src/hooks/http-server.js':
+    'The daemon: a single process on a single-threaded loop, served one connection at a '
+    + 'time by the kernel. There is no concurrent writer to exclude, so there is no lock '
+    + 'to take — the serialisation is given, above us, for free. TRUE ONLY while it owns '
+    + 'its state alone and every route stays synchronous.',
 };
 
 const REGLE = `

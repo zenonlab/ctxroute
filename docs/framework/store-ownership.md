@@ -1,0 +1,14 @@
+---
+rules: [{"pattern":"store-resolve.js","scope":["ctxroute"]},{"pattern":"turn-core.js","scope":["ctxroute"]},{"pattern":"store-resolve.test.js","scope":["ctxroute"]}]
+mode: dumb
+---
+# store-resolve.js / turn-core.js — ONE STATE, ONE OWNER, EVERYONE ELSE A CLIENT
+🔴 **MEASURED IN PRODUCTION 2026-08-21, THEN ROLLED BACK.** The injection state has FOUR consumers — the gate (`doc-seen-`, `plan-`), the session gate (it SHARES the `remainder-` queue), the turn counter, the PreCompact reset. Wiring ONLY the gate to the daemon moved that one memory into RAM while three kept the disk: inject → `once` consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered **2 bytes**. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate.
+🔑 **THE ROOT CAUSE WAS NOT THE FORGOTTEN RESET**: any shell could open a store ITSELF, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said "the backend is an ARGUMENT, never ambient" and it stopped nobody. **A rule only prose guards is not a rule** ⇒ the capability is REMOVED, not discouraged.
+🛑 **A SHARED STATE IS MIGRATED FOR ALL ITS CONSUMERS OR FOR NONE** (expand/contract). A partial migration is a split brain, and here a split brain is SILENT.
+🛑 **`resolveStore()` RETURNS THE PAIR, ALWAYS BOTH, NEVER ONE**: memory + a file lock is a lock protecting nothing; disk + an empty lock IS the production bug of 2026-08-07. Whoever may pick one half separately can build the incoherent combination — so nobody may.
+🛑 **NO ARGUMENT = TODAY'S BEHAVIOUR, BYTE FOR BYTE** — the historical disk pair, so every differential stays green untouched. That parity is what makes a switch-over safe, and a cell holds it.
+🛑 **AN UNKNOWN BACKEND IS A NAMED REFUSAL, never a quiet fallback to the disk** — a silent fallback hands a SECOND memory to a caller that asked for another one, rebuilding the exact defect above while looking healthy. `client` is refused for as long as the daemon endpoints do not exist.
+🛑 **THE BACKEND IS AN ARGUMENT, NEVER AN ENVIRONMENT VARIABLE**: env vars are INHERITED, and one leak makes a spawned hook read an EMPTY memory — every `once` re-delivered, no error anywhere.
+⚠️ **IMPORTING A STORE IS FORBIDDEN OUTSIDE THE OWNER** (`only-store-resolve-opens-a-store`, dependency-cruiser — imports are ITS job, never the layer table's: two tools for one invariant diverge). The five current importers are INHERITED DEBT measured that day, **not a permission**: the exit condition is that they take the pair as a parameter. A sixth importer is RED the second it is written, and that is the whole point — seen red by adding one to `src/budget.js`.
+⚠️ **THE TURN COUNTER'S READ-MODIFY-WRITE LIVES ONCE, IN `turn-core.js`**, shared by the spawned shell and the daemon: a rule about the shape of a store, read in two places, diverges — this repository has paid that bill twice (㊱, ㊳).

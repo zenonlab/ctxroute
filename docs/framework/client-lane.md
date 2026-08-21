@@ -1,5 +1,5 @@
 ---
-rules: [{"pattern":"client-core.js","scope":["ctxroute"]},{"pattern":"client-core.test.js","scope":["ctxroute"]},{"pattern":"state-client.js","scope":["ctxroute"]}]
+rules: [{"pattern":"client-core.js","scope":["ctxroute"]},{"pattern":"client-core.test.js","scope":["ctxroute"]},{"pattern":"state-client.js","scope":["ctxroute"]},{"pattern":"turn-core.js","scope":["ctxroute"]},{"pattern":"daemon-purge.test.js","scope":["ctxroute"]}]
 mode: dumb
 ---
 # client-core.js — ONE AUTHORITY, OR NONE (2026-08-21, inert)
@@ -10,6 +10,21 @@ mode: dumb
 ⚠️ **NO TIMER, AND NONE MAY BE ADDED.** A missing pipe answers `ENOENT`, a dead socket `ECONNREFUSED`, immediately. If a cell of `client-core.test.js` ever needs a delay to pass, this lane has stopped asking the kernel and started guessing.
 ⚠️ **THE ABSENCE IS NOT SILENT**: the fallback goes through `pretool-core`, which counts what it withheld and announces it — one universal rule instead of a daemon-specific probe (`gate.md`). No liveness probe exists anywhere in this lane, by decision.
 ⚠️ **ANTI-VACUITY IS THE POINT OF THE DISK CELL**: asserting "the inert store wrote nothing" passes trivially, since it writes NOWHERE — including from a store aiming at the real state directory. The CONTROL (same folder, same call, the REAL store, a file must appear) is what gives the emptiness meaning. Seen red by making `saveState` write.
+
+## ALL THE CONSUMERS, OR NONE — the partial migration, MEASURED then rolled back (2026-08-21)
+
+🔴 **THE INJECTION STATE HAS FOUR CONSUMERS, AND WIRING ONE OF THEM IS A SPLIT BRAIN**: `doc-inject` (the gate — `doc-seen-`, memoised `plan-`) · `session-inject` (SHARES the `remainder-` queue with the gate) · `turn-count` (the counter `driftUnit: "turn"` reads) · `ctxroute-reset` (PreCompact — erases everything). **MEASURED** with the gate on the daemon and the three others on disk: inject → `once` consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answers **2 bytes**. After a compaction, skills and `once` documents never come back — no error, no badge, no red.
+🛑 **A SHARED STATE IS MIGRATED FOR ALL ITS CONSUMERS OR FOR NONE** (expand/contract). A partial migration is SILENT, and silent is the only failure this project refuses outright.
+🛑 **THE LANE IS AN ARGUMENT** — `--client [address]` in the wiring, `client.clientLane(process.argv)` in the shell, `LANE_FLAG` declared ONCE so four shells cannot drift apart. Absent ⇒ today's behaviour BYTE FOR BYTE, differentials green untouched; rollback = delete the word. NEVER an environment variable: env vars are INHERITED, and one leak makes a spawned hook read an EMPTY memory — every `once` re-delivered, no error anywhere.
+🛑 **FOUR ROUTES, ONE HANDLER, ONE `store`**: `/pretool` (the gate, unchanged — and the default for any unknown path, which is what keeps old clients identical) · `/purge` `{keys:[…]}` → `{purged:N}` · `/turn` `{prefix,scope}` → `{turns:N}` · `/emit` `{frais,budgetMax,nbFrames,indice,scopeId}` → `{plan}`. Two stores would be the "two memories" defect, reintroduced from inside the daemon.
+🛑 **EVERY ROUTE IS SYNCHRONOUS, AND THAT IS WHAT MAKES IT ATOMIC** — one connection at a time onto a single-threaded loop. NEVER split a read-modify-write into a `load` request and a `save` request: two round trips are two moments, i.e. a file made to carry a conversation between peers, rebuilt over a socket.
+🛑 **THE PURGE IS AN ORDER RECEIVED, never a deduction here that a session is over**, and `memory-store-pure.purge()` (which already clears BOTH key classes) is REUSED, never rewritten. The KEYS come from the shell: the five prefixes have ONE owner — the loop `store-purge-gate` reads.
+🔴 **AN EMPTY KEY IS REFUSED BY `/purge`**: every key starts with the empty string, so one malformed payload would erase the WHOLE fleet's memory in a single call.
+⚠️ **THE DISK PURGE STAYS ON BOTH LANES — the ONE operation where that is safe.** A purge only DESTROYS and is idempotent, so it can never record a delivery and cannot make two memories; every other operation is daemon-ONLY on the client lane.
+⚠️ **`Infinity` CANNOT TRAVEL IN JSON** (`JSON.stringify(Infinity)` is `null`) ⇒ on `/emit` a positive finite number is the budget and `null` MEANS "this harness bounds nothing". Stated on both sides, guessed on neither.
+⚠️ **THE INCREMENT RULE LIVES IN `turn-core.js`**, shared by the daemon and the spawned shell: a rule about the shape of a store, read in two places, diverges (paid twice — ㊱, ㊳).
+⚠️ **A `--client` TOKEN STARTING WITH `-` IS THE NEXT FLAG, NEVER AN ADDRESS.** Absent ⇒ `endpoint()`, this repository's one rendezvous; present ⇒ a cell drives a daemon OF ITS OWN instead of the machine's.
+⚠️ **THE CELL SPAWNS THE REAL SHELL** (`daemon-purge.test.js`): deliver → silent → REAL PreCompact process → it must COME BACK. The silence in the middle IS the anti-vacuity — without it the cell passes on a daemon holding no state at all. **A green on a twin is not a green on the thing.**
 
 ## Publishing a new version — MEASURED 2026-08-21, and the obvious plan is REFUTED
 

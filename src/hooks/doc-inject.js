@@ -44,6 +44,12 @@
 const { run, denyOutput, noticeOutput } = require('../pretool-core');
 const { parseFrameArgs } = require('../lib-pure');
 const { readStdinJson } = require('../stdin-json');
+// ⚠️ THE CLIENT LANE, OPT-IN BY ARGUMENT (2026-08-21). With `--client` in the
+//    wiring this shell ASKS the daemon that owns the state instead of opening the
+//    store itself; without it, NOTHING changes — same call, same code path, same
+//    bytes. That parity is what makes the switch-over safe and the rollback one
+//    word long.
+const client = require('../client-core');
 
 // Hook output — protect-files FORMAT IDENTICAL (switch parity).
 // `systemMessage` is COMPUTED BY THE CALLER: file only = '📄 doc: …'
@@ -91,9 +97,19 @@ function output(decision, fullDoc, systemMessage) {
   return out;
 }
 
-function emit(decision, fullDoc, systemMessage) {
-  console.log(JSON.stringify(output(decision, fullDoc, systemMessage)));
+// ⚠️ THE I/O, AND IT IS SPLIT IN TWO SINCE 2026-08-21 — one function, two
+//    callers, never two copies. `emitJson` takes the FINISHED output object,
+//    which is what the daemon hands back (it ran the same core through the same
+//    dialect, so re-deriving anything from it would be a second formatting of
+//    one decision). `emit` keeps the historical shape for the spawn lane. Both
+//    print and exit, because the lifecycle belongs to the shell.
+function emitJson(json) {
+  console.log(JSON.stringify(json));
   process.exit(0);
+}
+
+function emit(decision, fullDoc, systemMessage) {
+  emitJson(output(decision, fullDoc, systemMessage));
 }
 
 module.exports = { output };
@@ -121,10 +137,26 @@ if (require.main === module) {
       //    there is nothing to emit — it no longer kills the process (layer leak,
       //    same family as ⑯: the life cycle is a shell decision).
       //    When it emits, `emit` terminates the process before this line.
-      run(data, emit, {
+      const options = {
         ...parseFrameArgs(process.argv),
         invocationId: typeof data.tool_use_id === 'string' ? data.tool_use_id : '',
-      });
+      };
+      // 🛑 ONE LINE PER HARNESS, NEVER A SECOND SHELL. The only difference
+      //    between the two lanes is WHO OWNS THE STATE, and this repository
+      //    already made that an argument. A second client shell beside this one
+      //    would multiply LANES × HARNESSES for ever — the engine moving because
+      //    a need appeared, which is precisely what §0bis forbids.
+      // 🛑 AND WE MUST NOT `process.exit(0)` BEHIND IT. Asking the daemon is a
+      //    socket round trip, so the answer arrives on a LATER TICK, while
+      //    `pretool-core.run` answers synchronously. `emitJson` exits when there
+      //    is something to say; otherwise the loop empties by itself.
+      const voie = client.clientLane(process.argv);
+      if (voie) {
+        client.run(data, { output, emit: emitJson },
+          { ...options, socketPath: voie.socketPath });
+        return;
+      }
+      run(data, emit, options);
       process.exit(0);
     },
     () => process.exit(0)

@@ -283,8 +283,9 @@
       "class": "INHERITED_DEBT"
     },
     "test/skill-registry-gate.test.js": {
-      "max": 2,
-      "class": "INHERITED_DEBT"
+      "max": 4,
+      "class": "O(N)",
+      "why": "Both nestings walk the SKILLS REGISTRY against itself: the names declared in ctxroute-config.json and the files of the harness skills folder. Both are bounded by how many skills an operator writes (45 measured today), never by client volume — a site adds pages, it never adds a skill. The quantity that scales in this project reaches no line of this file."
     },
     "test/sources-file.property.test.js": {
       "max": 2,
@@ -343,7 +344,7 @@
       "class": "INHERITED_DEBT"
     },
     "tools/doctor.js": {
-      "max": 12,
+      "max": 10,
       "class": "INHERITED_DEBT"
     },
     "tools/explain.js": {

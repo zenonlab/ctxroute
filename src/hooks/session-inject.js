@@ -60,7 +60,18 @@ const paths = require('../paths');
 //    itself. Sealed by `emission-core-gate.test.js`: every file that
 //    writes `additionalContext` MUST import this module.
 const emission = require('../emission-core');
-const { withLock } = require('../lock');
+// 🛑 `store` AND `withLock` COME FROM ONE RESOLVER, AND THEY TRAVEL TOGETHER.
+//    Memory + a file lock is a lock protecting nothing; disk + an empty lock is
+//    the 2026-08-07 production bug, deliberately reintroduced.
+const { resolveStore } = require('../store-resolve');
+// ⚠️ THE CLIENT LANE (2026-08-21). This gate SHARES the `remainder-` queue with
+//    the PreToolUse gate — that sharing is the only reason a session remainder
+//    ever gets drained. So if the gate's queue moves into the daemon's memory
+//    and this one stays on the disk, the session remainder is NEVER picked up:
+//    a document delivered halfway, with nothing to say so. **All the consumers
+//    of a shared state, or none.**
+const client = require('../client-core');
+const { request } = require('./state-client');
 
 readStdinJson(
   (data) => {
@@ -100,29 +111,70 @@ readStdinJson(
       const declare = lib.declaredBudget(process.argv);
       const budgetMax = declare === undefined ? require('../budget').DEFAULT_BUDGET : declare;
 
+      // ⚠️ THE DIALECT, IN ONE PLACE. Two lanes reach it; two copies of one
+      //    output shape would diverge at the first change — the defect class
+      //    this repository exists to fight.
+      // Empty frame (neither content nor announcement) ⇒ silence, like the PreToolUse gate.
+      const emettre = (plan) => {
+        if (!plan || plan.text === '') process.exit(0);
+        console.log(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext: plan.text,
+          },
+        }));
+        process.exit(0);
+      };
+
+      // ── CLIENT LANE: the QUEUE belongs to the daemon, so the daemon splits ──
+      // ⚠️ THE CORPUS STAYS HERE. Only the queue needs the authority, so what
+      //    crosses the socket is the emission REQUEST, never the corpus.
+      // 🛑 `Infinity` CANNOT TRAVEL IN JSON (`JSON.stringify(Infinity)` is
+      //    `null`), so the contract is explicit: a positive finite number is the
+      //    budget, `null` MEANS "this harness bounds nothing". Nothing is
+      //    guessed on either side.
+      // ⚠️ NO DAEMON ⇒ we deliver the FRESH content and touch no queue — the
+      //    same degradation as a lock we could not take, and for the same
+      //    reason: never write what no authority can record.
+      const voie = client.clientLane(process.argv);
+      if (voie) {
+        request(
+          '/emit',
+          {
+            frais,
+            budgetMax: Number.isFinite(budgetMax) ? budgetMax : null,
+            nbFrames: 1,
+            indice: 1,
+            scopeId,
+          },
+          { socketPath: voie.socketPath },
+          // ⚠️ THE CAST IS THE CONTRACT, WRITTEN RATHER THAN IMPLIED. `request`
+          //    answers a parsed JSON object, so the checker knows nothing of its
+          //    shape; naming it here is what `check:types` confronts with the
+          //    daemon's `/emit` route, and a JSDoc that lies is exactly what that
+          //    ratchet exists to catch. No daemon answer ⇒ we split locally, the
+          //    same content by the same code.
+          (rep) => {
+            const r = /** @type {{plan?: string}} */ (rep);
+            emettre(r && r.plan ? r.plan : emission.split(frais, budgetMax, 1)[0]);
+          },
+        );
+        return;
+      }
+
       // ⚠️ LOCK MANDATORY AROUND THE QUEUE (read then rewrite). Without
       //    mutual exclusion, two processes that cross lose part
       //    of it. Lock unavailable ⇒ we DEGRADE to fresh only (splitting without
       //    the queue, queue left intact) — never keep silent, never write without a
       //    lock. That is exactly the contract of pretool-core.js.
+      const { store, withLock } = resolveStore();
       const lockDir = path.join(paths.stateDir(), `.lock-doc-${lib.sanitizeSessionId(scopeId)}`);
       const res = withLock(
         lockDir,
-        () => emission.emit({ frais, budgetMax, nbFrames: 1, indice: 1, scopeId }),
+        () => emission.emit({ frais, budgetMax, nbFrames: 1, indice: 1, scopeId, store }),
         { fallback: null }
       );
-      const plan = res ? res.plan : emission.split(frais, budgetMax, 1)[0];
-
-      // Empty frame (neither content nor announcement) ⇒ silence, like the PreToolUse gate.
-      if (!plan || plan.text === '') process.exit(0);
-      const fullDoc = plan.text;
-      console.log(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'SessionStart',
-          additionalContext: fullDoc,
-        },
-      }));
-      process.exit(0);
+      emettre(res ? res.plan : emission.split(frais, budgetMax, 1)[0]);
     } catch {
       process.exit(0); // fail-open (missing docs/session folder included)
     }
