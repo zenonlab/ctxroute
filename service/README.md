@@ -205,12 +205,21 @@ disk. The bounded record is the Task Scheduler Operational channel — and enabl
 (elevated shell, once):
 
 ```powershell
-wevtutil sl "Microsoft-Windows-TaskScheduler/Operational" /e:true /rt:false /ms:8388608
+wevtutil sl "Microsoft-Windows-TaskScheduler/Operational" /e:true /rt:false /ms:10485760
 ```
 
-`/e:true` enables the channel (**without it the `201` event never appears and the restart trigger is
-inert, silently**), `/rt:false` overwrites the oldest events when full — that is the rotation —
-and `/ms:` is the ceiling in bytes.
+`/e:true` enables the channel, `/rt:false` overwrites the oldest events when full — that is the
+rotation — and `/ms:` is the ceiling in bytes.
+
+🔴 **`/e:true` IS A PREREQUISITE OF THE WINDOWS INSTALL, NEVER AN OPTION — AND THE DEFAULT IS OFF,
+MEASURED 2026-08-21.** `wevtutil gl Microsoft-Windows-TaskScheduler/Operational` returned
+`enabled: false` (`maxSize: 10485760`) on a stock Windows 11 machine. A disabled channel writes **no**
+event `201` at all, so the task's `EventTrigger` — the only thing that brings the daemon back after
+an exit code 90 — is **inert, and inert in silence**: the daemon exits on its own code change,
+nothing restarts it, `Get-ScheduledTaskInfo` reports a task that completed normally, and the only
+symptom is agents losing their injection with nothing anywhere saying so. ⚠️ Run the `wevtutil sl`
+line **before** registering the task, not after: the ceiling and the mechanism are the same gesture,
+and half of it is worthless.
 
 ---
 
@@ -237,9 +246,15 @@ launchctl print gui/$(id -u)/com.ctxroute.http
 launchctl bootout gui/$(id -u)/com.ctxroute.http
 ```
 
-**Windows** (no elevation needed to register a task for yourself)
+**Windows** (registering a task for yourself needs no elevation; step 1 does)
 
 ```powershell
+# 🛑 STEP 1, ELEVATED, MANDATORY — the channel ships DISABLED (measured 2026-08-21).
+#    Skip it and the EventTrigger never fires: no 201 event, no restart, no error.
+wevtutil sl "Microsoft-Windows-TaskScheduler/Operational" /e:true /rt:false /ms:10485760
+wevtutil gl "Microsoft-Windows-TaskScheduler/Operational"   # must now print enabled: true
+
+# step 2 — register
 Register-ScheduledTask -TaskName 'ctxroute-http' -Xml (Get-Content -Raw .\ctxroute-http.task.xml)
 Get-ScheduledTask -TaskName 'ctxroute-http' | Get-ScheduledTaskInfo
 ```
@@ -264,8 +279,12 @@ Stated so nobody inherits these as facts:
 - **That any of the three units actually starts the daemon.** Nothing here was installed, registered
   or run. They are correct against the documentation, not against a machine.
 - **Windows, the `201` XPath.** That the `EventData` filter on `ResultCode` and `TaskName` matches a
-  real event was not measured. Check with `wevtutil qe "Microsoft-Windows-TaskScheduler/Operational"`
-  against a genuine 201 event before relying on it.
+  real event was not measured, and ⚠️ **it CANNOT be while the channel is off** — measured
+  2026-08-21, `wevtutil gl Microsoft-Windows-TaskScheduler/Operational` returns `enabled: false`, so
+  the log is empty and an empty log confirms no field name. Enable the channel first (see the install
+  section), let one action complete, then check with
+  `wevtutil qe "Microsoft-Windows-TaskScheduler/Operational" /q:"*[System/EventID=201]" /c:1 /f:xml`
+  against a genuine event before relying on it.
 - **Windows, the environment.** Whether a task started at logon picks up a `setx` performed in a
   previous session.
 - **macOS, everything.** No Mac was involved. Worse, Apple's web copies are **archived**: *Creating
