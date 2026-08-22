@@ -102,4 +102,64 @@ const DEFAULT_PROFILE = {
   contentKeys: ['old_string', 'new_string', 'content', 'body'],
 };
 
-module.exports = { DEFAULT_PROFILE };
+// ═══════════════════════════════════════════════════════════════════════
+// WHAT A HARNESS IMPOSES WHEN WE DECLARE NOTHING — the default, as DATA
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🛑 THIS IS **NOT** HERE SO THAT WE ADAPT TO IT. It is here so that
+//    OVERRIDING a harness default becomes a VISIBLE GESTURE — a number written
+//    next to the number it replaces — instead of a silence nobody can read. A
+//    wiring that declares no timeout is not "the safe choice": it is a choice
+//    the harness made for us, and until today that choice was invisible in
+//    every file of this repository.
+//
+// 🛑 AND IT EXISTS SO THE **NEXT HARNESS IS FORCED TO ANSWER THE QUESTION**
+//    instead of suffering it. Porting means filling an entry here; an entry
+//    that cannot be filled is a MEASUREMENT that was never taken, and it must
+//    say so (`UNMEASURED`) rather than borrow a neighbour's number. A default
+//    inherited by accident is exactly the class this whole file abolishes.
+//
+// ⚠️ **AN ABSENT LANE IS AN ABSENCE, NEVER A VALUE.** Codex 0.146.0 has NO
+//    `http` handler at all (*"Only `type:\"command\"` handlers run today"*), so
+//    its `http` default is not zero, not null, not infinity: the lane does not
+//    exist. Written `ABSENT`, so that a reader who confuses "no such lane" with
+//    "no such timeout" is confronted with a word instead of an `undefined`.
+//    ⚠️ A consumer therefore checks `typeof v === 'number'` FIRST; anything else
+//    is a fact ABOUT the harness, never a duration to compute with.
+//
+// 📐 SOURCE, DATED: official hook contracts — `code.claude.com/docs/en/hooks`
+//    read 2026-08-22 for Claude Code, and the Codex 0.146.0 hooks documentation
+//    for the absent lane. Doc-first, like every fact about a third party.
+//    UNIT = SECONDS everywhere (what both harnesses' wirings take).
+//
+// ⚠️ These facts live OUTSIDE `DEFAULT_PROFILE` on purpose: that object is the
+//    MATCHING dialect (parameter names the language reads), it is flattened
+//    into a vocabulary of strings and its shape is sealed key by key. A
+//    duration is not a word of that vocabulary. Two kinds of fact about the
+//    same third party, one file, two structures — never one bag.
+
+/** The lane does not exist on this harness: there is no default to override. */
+const ABSENT = 'absent';
+/** The lane exists and nobody has measured its default yet. Say so, never guess. */
+const UNMEASURED = 'unmeasured';
+
+const HOOK_TIMEOUT_DEFAULTS = {
+  claudeCode: {
+    // A handler declared without a timeout runs under these, in SECONDS.
+    command: 60,
+    // ⚠️ TEN MINUTES. The `http` lane's default is an order of magnitude above
+    //    the spawn lane's, which is precisely why a declared bound matters more
+    //    there, not less: the quieter a default, the longer a hang lasts.
+    http: 600,
+    // Events whose default is LOWER than the handler default above. An event
+    // absent from here inherits the handler's number.
+    events: { UserPromptSubmit: 30, MessageDisplay: 10 },
+  },
+  codex: {
+    command: UNMEASURED,
+    http: ABSENT,
+    events: {},
+  },
+};
+
+module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, ABSENT, UNMEASURED };

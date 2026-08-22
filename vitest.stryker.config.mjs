@@ -92,6 +92,13 @@ export default defineConfig({
       //    mutant. Only this in-process suite can kill them — absent, `wiring-plan.js`
       //    would be mutated and measured by NOTHING.
       'test/wiring-plan.test.js',
+      // ⚠️ The SPLICE half of the same module — the decision that removes
+      //    declarations from the operator's settings.json. Absent from this
+      //    list its cases exist and Stryker never runs them: ownership,
+      //    block keying and entry writing would sit at NoCoverage while the
+      //    fleet suite is green — a decision that DELETES configuration,
+      //    believed mutated and measured by NOTHING.
+      'test/wiring-plan-splice.test.js',
       // ⚠️ `lifecycle-log.js` is the I/O shell (stat/rename/append) and is NOT
       //    mutated; the rules that decide WHEN the journal turns over and WHAT a
       //    record looks like live in `lifecycle-log-pure.js`, which is — and this

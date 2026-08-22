@@ -54,6 +54,16 @@
 //       drift. That is the 2026-08-22 defect, verbatim.
 //    ④ an empty `consumers` list ⇒ the generator refuses, named, exit 2.
 //    ⑤ an invalid JSON settings.json ⇒ RED, never a quiet pass.
+//    ⑥ `transport.kind: "grpc"` ⇒ the generator refuses, named — never a
+//       silent fall back to a spawn the operator never asked for.
+//
+// 🛑 A DECLARATION IS KNOWN BY ITS COORDINATES, NEVER BY ITS `command` FIELD
+//    NOR BY A FILE NAME. The gate travels on `type:"command"` (coordinates in
+//    argv) or on `type:"http"` (coordinates in the URL query, and NO file name
+//    anywhere). Every cell below therefore asks `frameCoordinates`, the same
+//    authority `doctor.js` uses — a cell reading `d.command` alone measured
+//    NOTHING the day the live wiring moved to the http transport, and a
+//    sabotage that spoils nothing is a green that sees nothing.
 
 import { test, expect } from 'vitest';
 import fs from 'node:fs';
@@ -65,7 +75,23 @@ import { createRequire } from 'node:module';
 
 const require_ = createRequire(import.meta.url);
 const paths = require_('../src/paths');
-const { byBlock } = require_('../src/wiring-plan');
+const {
+  byBlock, gateBound, gateTransport, gateFrames, framesMissingBound, frameCoordinates,
+} = require_('../src/wiring-plan');
+
+// 🛑 A DECLARATION IS KNOWN BY ITS COORDINATES, NEVER BY A FIELD OR A FILE
+//    NAME. The gate travels on `type:"command"` (a spawned process, coordinates
+//    in argv) OR on `type:"http"` (a POST to the daemon, coordinates in the
+//    query) — a judge reading `d.command` alone found ZERO frames the day the
+//    live wiring moved to http, and a comparison of nothing against nothing
+//    passes. Same authority as `doctor.js`, and it is IMPORTED, never re-typed.
+/** What a declaration is CALLED in a message: whichever address it carries. */
+const label = (d) => (typeof d.command === 'string' ? d.command : d.url);
+/** Is this the k-th frame? Asked of the coordinates, on either transport. */
+const isFrame = (d, k) => {
+  const c = frameCoordinates(d);
+  return c !== null && c.index === k;
+};
 
 // The repository root FOLLOWS the module that resolves it — never a `../`
 // counted by hand from a test file that may be moved.
@@ -111,8 +137,14 @@ function live(file) {
       const matcher = block && typeof block.matcher === 'string' ? block.matcher : null;
       const entries = block && Array.isArray(block.hooks) ? block.hooks : [];
       for (const h of entries) {
-        const decl = { event, matcher, type: h.type, command: h.command, url: h.url };
+        // Every field a declaration may carry, and ONLY the ones it does: a
+        // `command: undefined` written on an http entry would compare unequal
+        // to a generated one that simply has no such key.
+        const decl = { event, matcher, type: h.type };
+        if (h.command !== undefined) decl.command = h.command;
+        if (h.url !== undefined) decl.url = h.url;
         if (h.timeout !== undefined) decl.timeout = h.timeout;
+        if (h.statusMessage !== undefined) decl.statusMessage = h.statusMessage;
         flat.push(decl);
       }
     }
@@ -134,7 +166,15 @@ function live(file) {
     throw new Error(`${roots.size} framework root(s) measured in the wiring [${[...roots].join(', ')}]. Zero means nothing of this framework is wired (or it was moved and every declaration is dead); more than one means two copies run at the same time. Neither can be compared with a single manifest.`);
   }
   const root = [...roots][0];
-  const own = flat.filter((d) => typeof d.command === 'string' && d.command.startsWith(`node ${root}/`));
+  // ⚠️ OURS BY ROOT *OR* BY COORDINATES. A URL names a port, never a
+  //    directory, so a frame on the http transport can only be recognised by
+  //    what it carries — and a filter that kept the root test alone would drop
+  //    all sixteen of them and compare the seven survivors against twenty-three
+  //    generated ones: loud, but for the wrong reason. Same authority as the
+  //    generator's own `ownedBy`, imported rather than re-typed.
+  const own = flat.filter(
+    (d) => (typeof d.command === 'string' && d.command.startsWith(`node ${root}/`)) || frameCoordinates(d) !== null,
+  );
   return { root, declarations: own, total: flat.length };
 }
 
@@ -157,12 +197,17 @@ function generate(opts) {
 
 /** Both sides reduced to the SAME comparable shape, per (event, matcher) block. */
 function blocks(declarations) {
+  // ⚠️ EVERY FIELD THE HARNESS EXECUTES, on either transport. Dropping one
+  //    here would make the gate blind to it: a `url` left out of the shape and
+  //    sixteen frames pointed at the wrong port compare EQUAL.
   const g = byBlock(declarations.map((d) => ({
     event: d.event,
     matcher: d.matcher,
     type: d.type,
-    command: d.command,
+    ...(d.command === undefined ? {} : { command: d.command }),
+    ...(d.url === undefined ? {} : { url: d.url }),
     ...(d.timeout === undefined ? {} : { timeout: d.timeout }),
+    ...(d.statusMessage === undefined ? {} : { statusMessage: d.statusMessage }),
   })));
   return JSON.stringify([...g.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), null, 2);
 }
@@ -182,6 +227,13 @@ test('the manifest declares real modules, relative, and at least one framed cons
   const absolute = manifest.consumers.map((c) => c.module).filter((m) => /^([A-Za-z]:|\/|~)|\\/.test(m));
   assert.deepStrictEqual(absolute, [],
     `wiring.json carries absolute or Windows-separated module path(s): ${absolute.join(', ')}. This repository is PUBLIC and treats itself as already public — the machine root is measured, never written down.`);
+
+  // The transport is READ, so a `kind` this repository cannot honour is red
+  // HERE, in the manifest, and not at the first generation on the operator's
+  // machine. `gateTransport` refuses by name; an accepted one comes back whole.
+  const transport = gateTransport(manifest);
+  assert.ok(transport && typeof transport.kind === 'string' && transport.kind.length > 0,
+    'wiring.json declares a transport this repository cannot describe. An unknown transport is refused, never wired as a spawn: a harness with no handler for it runs NOTHING, in silence.');
 
   const framed = manifest.consumers.filter((c) => c.framed === true);
   assert.strictEqual(framed.length, 1,
@@ -239,15 +291,59 @@ test.skipIf(!wired)('SABOTAGE: flipping `stateLane` changes the wiring of every 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-sab-'));
   const broken = path.join(dir, 'wiring.json');
   const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
+  // ⚠️ THE SABOTAGE IS EXPRESSED ON THE SPAWN TRANSPORT, and that is a
+  //    CONSEQUENCE of the refusal proven in ⑤bis below: `http` + `files` is a
+  //    SPLIT BRAIN the generator now refuses outright, so flipping the lane
+  //    alone on the live manifest would prove a refusal, not the ONE-PASS
+  //    property this cell exists for. Deleting the key restores the default
+  //    `command` form — the wiring every harness without an http handler
+  //    runs — where the file lane is perfectly coherent and the lane argument
+  //    must therefore vanish from EVERY state consumer at once.
+  delete manifest.transport;
   manifest.stateLane = 'files';
   fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
   try {
     const sabotaged = generate({ settings: file, root: l.root, manifest: posix(broken) }).declarations;
-    const withLane = sabotaged.filter((d) => d.command.includes(' --client'));
-    assert.deepStrictEqual(withLane.map((d) => d.command), [],
+    const withLane = sabotaged.filter((d) => typeof d.command === 'string' && d.command.includes(' --client'));
+    assert.deepStrictEqual(withLane.map(label), [],
       'Flipping `stateLane` to "files" left the lane argument on some declarations: the lane is NOT applied in one pass, so it can still be written on one consumer and forgotten on another.');
     assert.notStrictEqual(blocks(l.declarations), blocks(sabotaged),
       'The gate compares equal against a wiring whose entire lane was removed. It would not see a split brain either.');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── ⑤bis SEEN RED: the PAIR that rebuilds the defect is refused, named ─
+//
+// 🛑 On the `http` transport the frames reach the DAEMON, which owns the
+//    injection state in RAM; `stateLane: "files"` leaves their peers reading
+//    and erasing the state FILES. That is the 2026-08-22 split brain, this
+//    time GENERATED on purpose — and it is exactly the wiring nothing was
+//    able to refuse until the manifest existed. A shared state migrates for
+//    ALL its consumers or for NONE.
+test('the generator REFUSES the http transport paired with the file lane', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-split-'));
+  const broken = path.join(dir, 'wiring.json');
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
+  manifest.transport = { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  manifest.stateLane = 'files';
+  fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
+  try {
+    let failed = null;
+    try { generate({ ...FIXTURE, manifest: posix(broken) }); } catch (e) { failed = e; }
+    assert.ok(failed, 'A wiring with two memories was generated instead of being refused: the frames would record their deliveries in the daemon while their peers erase the disk, and nothing would be red.');
+    assert.match(String(failed.stderr || failed.message), /SPLIT BRAIN/,
+      'The refusal does not NAME the cause, so the reader goes hunting through a manifest that is only half wrong.');
+
+    // CONTROL: the SAME transport with the lane its peers name generates —
+    // otherwise the red above would prove only that this cell reds on the
+    // http transport itself.
+    manifest.stateLane = 'client';
+    fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
+    const coherent = generate({ ...FIXTURE, manifest: posix(broken) }).declarations;
+    assert.ok(gateFrames(coherent).length > 0,
+      'The coherent pair generated no gate declaration at all: the refusal above would then be true of every http wiring, coherent or not.');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -258,7 +354,7 @@ test.skipIf(!wired)('SABOTAGE: stripping the lane from ONE peer alone is a diver
   const file = settingsPath();
   const l = live(file);
   const generated = generate({ settings: file, root: l.root }).declarations;
-  const split = l.declarations.map((d) => (d.command.includes('ctxroute-reset.js')
+  const split = l.declarations.map((d) => (typeof d.command === 'string' && d.command.includes('ctxroute-reset.js')
     ? { ...d, command: d.command.replace(' --client', '') }
     : d));
   assert.notStrictEqual(blocks(split), blocks(generated),
@@ -270,8 +366,12 @@ test.skipIf(!wired)('SABOTAGE: one deleted frame declaration is a divergence', (
   const file = settingsPath();
   const l = live(file);
   const generated = generate({ settings: file, root: l.root }).declarations;
-  const idx = l.declarations.findIndex((d) => d.command.includes('--frame 7 '));
-  assert.ok(idx >= 0, 'No `--frame 7` declaration in the live wiring: this sabotage would delete nothing and prove nothing.');
+  // ⚠️ FOUND BY ITS COORDINATES, on whichever transport carries them — a
+  //    search for the literal `--frame 7 ` deleted NOTHING the day the wiring
+  //    moved to http, and a sabotage that spoils nothing proves nothing while
+  //    still reporting green.
+  const idx = l.declarations.findIndex((d) => isFrame(d, 7));
+  assert.ok(idx >= 0, 'No declaration carrying the coordinates of frame 7 in the live wiring: this sabotage would delete nothing and prove nothing.');
   const amputated = l.declarations.filter((_, i) => i !== idx);
   assert.notStrictEqual(blocks(amputated), blocks(generated),
     'A missing frame declaration compared equal. That content would never leave the gesture, in silence.');
@@ -299,6 +399,122 @@ test('an unreadable or invalid settings.json is RED, never a quiet pass', () => 
       hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'node C:/nowhere/src/hooks/doc-inject.js' }] }] },
     }));
     expect(() => live(foreign)).toThrow(/framework root/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── ⑩ THE BOUND: EVERY GATE DECLARATION CARRIES IT, OR THE GATE IS RED ──
+//
+// 🔴 THE OTHER HALF OF THE 2026-08-22 DEFECT. The `timeout` bound was typed
+//    SIXTEEN TIMES by hand. Sixteen copies of one truth: fifteen cut at ten
+//    seconds and the sixteenth waits ten minutes, and NOTHING says so — an
+//    absent bound does not read as a mistake, it reads as a line. It only
+//    shows itself the day an agent sits waiting on a frame that inherited a
+//    default nobody chose.
+//
+// ⚠️ THE BOUND IS READ FROM THE MANIFEST, never written down here: a judge
+//    holding its own copy of the number would agree with a wiring that has
+//    drifted from the source, which is the defect wearing the judge's coat.
+//
+// ⚠️ THE FIXTURE PATHS EXIST NOWHERE, on purpose: this cell judges what the
+//    generator PRODUCES, so it runs on a fresh clone, in CI and on a machine
+//    where the framework was never wired. Cell ④ is what confronts it with
+//    the live file.
+const FIXTURE = { settings: 'C:/fixture/settings.json', root: 'C:/fixture/ctxroute' };
+
+test('GATE: every gate declaration carries the bound declared in the manifest', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
+  const bound = gateBound(manifest);
+  const declarations = generate(FIXTURE).declarations;
+  const frames = gateFrames(declarations);
+
+  // ── ANTI-VACUITY ──────────────────────────────────────────────────
+  // A judge that finds nothing to judge is indistinguishable from a judge
+  // that approves. So the domain is measured, and it is measured against the
+  // frame count the declarations THEMSELVES carry — never against a number
+  // typed here, which would only ever prove that two copies agree.
+  assert.ok(frames.length >= 2,
+    `${frames.length} gate declaration(s) found in the generated wiring. Below two there is nothing to compare, and "all of them carry the bound" is true of the empty set.`);
+  const announced = frameCoordinates(frames[0]);
+  assert.ok(announced, 'A gate declaration carries no readable total: its own coordinates cannot be read, so the count below would be judged against nothing.');
+  assert.strictEqual(frames.length, announced.total,
+    `${frames.length} gate declaration(s) generated for a wiring that announces ${announced.total} frames. One of the two is wrong, and a frame that never leaves takes its content with it, in silence.`);
+
+  const missing = framesMissingBound(declarations, bound);
+  assert.deepStrictEqual(missing.map(label), [],
+    `Gate declaration(s) do not carry the declared bound of ${bound}s (\`bounds.gateHookTimeoutSeconds\` in wiring.json).\n`
+    + 'An absent bound is inherited from the harness in silence and a divergent one makes ONE frame wait differently from its peers — '
+    + 'both are the 2026-08-22 defect: one truth held in sixteen hand-written copies. Put the number in wiring.json; it is the single place a human edits.');
+
+  // Non-gate declarations are bounded too — an undeclared timeout anywhere is
+  // the same invisible inheritance, it just costs one hook instead of sixteen.
+  const unbounded = declarations.filter((d) => !Number.isInteger(d.timeout) || d.timeout < 1);
+  assert.deepStrictEqual(unbounded.map(label), [],
+    'Declaration(s) generated with no usable `timeout`. Every consumer declares its bound in wiring.json, because a hook with no bound inherits one nobody chose.');
+});
+
+// ── ⑪ SEEN RED: one of sixteen loses the bound ───────────────────────
+// ⚠️ IN MEMORY, NEVER ON A REAL FILE. Sabotaging a tracked file (or the
+//    operator's wiring) to prove a gate bites is how a suite takes down its
+//    neighbours — that class was already paid for in this repository.
+test('SABOTAGE: the bound removed from ONE declaration out of sixteen turns the cell red', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
+  const bound = gateBound(manifest);
+  const declarations = generate(FIXTURE).declarations;
+  const frames = gateFrames(declarations);
+  assert.ok(frames.length >= 2, 'Fewer than two gate declarations: this sabotage would have nothing to spoil and would prove nothing.');
+
+  // Not the first and not the last: a check that only ever looked at an edge
+  // would pass this and still be blind in the middle.
+  const victim = label(frames[Math.floor(frames.length / 2)]);
+
+  const amnesic = declarations.map((d) => {
+    if (label(d) !== victim) return d;
+    const { timeout, ...rest } = d;
+    void timeout;
+    return rest;
+  });
+  assert.strictEqual(framesMissingBound(amnesic, bound).length, 1,
+    'One gate declaration lost its bound entirely and the check still found every frame compliant. It would not see the sixteenth waiting ten minutes either.');
+
+  const divergent = declarations.map((d) => (label(d) === victim ? { ...d, timeout: bound + 590 } : d));
+  assert.strictEqual(framesMissingBound(divergent, bound).length, 1,
+    'One gate declaration carries a DIFFERENT bound and the check agreed. A divergent bound is the same finding as an absent one: this frame waits unlike its peers.');
+
+  // CONTROL: untouched, the same check must find nothing — otherwise the two
+  // reds above would prove only that the check is red on everything.
+  assert.deepStrictEqual(framesMissingBound(declarations, bound), [],
+    'The intact wiring is already reported as non-compliant, so the sabotages above proved nothing at all.');
+});
+
+// ── ⑫ FAIL-CLOSED: an unknown transport is a NAMED REFUSAL, not a spawn ─────
+//
+// 🛑 THE SILENT SHAPE THIS FORBIDS: a `kind` the generator does not understand
+//    quietly rewritten into `type:"command"`. The wiring would then run
+//    sixteen processes nobody asked for — or, on a harness with no handler for
+//    the declared transport, run NOTHING AT ALL: no error, no log, just an
+//    injection that never happens. A transport is honoured or refused.
+test('the generator REFUSES an unknown transport instead of falling back to a spawn', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-transport-'));
+  const broken = path.join(dir, 'wiring.json');
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
+  manifest.transport = { kind: 'grpc', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
+  try {
+    let failed = null;
+    try { generate({ ...FIXTURE, manifest: posix(broken) }); } catch (e) { failed = e; }
+    assert.ok(failed, 'An unknown transport generated a wiring instead of being refused. Whatever it emitted, it is not what the manifest declared.');
+    assert.match(String(failed.stderr || failed.message), /transport\.kind` must be one of/,
+      'The refusal does not NAME the cause, so the reader goes hunting in the wrong file.');
+
+    // CONTROL: the SAME manifest with a known kind must generate. Otherwise
+    // the red above would prove only that this cell reds on everything.
+    manifest.transport = { kind: 'command' };
+    fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
+    const spawned = generate({ ...FIXTURE, manifest: posix(broken) }).declarations;
+    assert.ok(gateFrames(spawned).every((d) => typeof d.command === 'string'),
+      '`kind: "command"` did not produce command declarations: the default form — the only one Codex can run — is no longer reachable.');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

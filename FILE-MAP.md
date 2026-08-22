@@ -145,11 +145,12 @@
 - `test/journal-boundary-gate.test.js` — the journal's TWO FRONTIER contracts, where nothing was looking (the inside is proven by the two `lifecycle-log` suites): ① `disk-writers.json` must declare EXACTLY what the code enforces — two places for one number, and the disk-writer gate only checks a budget EXISTS, so a raised `MAX_BYTES` left the manifest lying while everything stayed green (a DORMANT PERMIT); ② `state-eviction.js` sweeps `state/` and must neither remove nor report this file — two ceilings, one per class (stores bounded by COUNT, the journal bounding ITSELF by SIZE). Anti-inert cell: a declaration disagreeing with the code must really be accused. Says nothing about WHERE the state lives, deliberately.
 - `test/daemon-is-a-cache.test.js` — the acceptance criterion of 2026-08-22, stated by the maintainer: *a restart must be indistinguishable from no restart, from the agent's point of view*. Proves the daemon writes DURABLE keys through to the disk store in the same gesture (the FILE is the proof, never the store's own answer), that the EPHEMERAL class deliberately stays out (one disk write per frame would be paid for a state that dies with the action), and that a daemon killed mid-sequence loses nothing while re-delivering nothing. Anti-vacuity: the same sequence run against an OWNING daemon must FAIL, or the cell proves nothing.
 - `docs/framework/lifecycle-log.md` — injectable doc of the daemon journal.
-- `wiring.json` — wiring manifest: the SINGLE place a human declares the lane and the consumers.
-- `src/wiring-plan.js` — PURE: manifest + machine facts → the ordered declaration list.
+- `wiring.json` — wiring manifest: the SINGLE place a human declares the lane, the transport and the consumers.
+- `src/wiring-plan.js` — PURE: manifest + machine facts → the ordered declaration list, on either transport (`command` spawn / `http` POST), frame coordinates computed once and rendered per transport.
 - `tools/wiring-generate.js` — shell: measures root/frames/lane/consumers, writes a READ-ONLY fragment.
 - `test/wiring-drift-gate.test.js` — regenerates and confronts the LIVE settings.json.
 - `test/wiring-plan.test.js` — in-process suite of the pure decision (mutation carrier).
+- `test/wiring-plan-splice.test.js` — in-process suite of the SPLICE: what we own, what we delete, what stays the operator's (mutation carrier).
 - `docs/framework/wiring-manifest.md` — injectable doc of the manifest (fleet mirror).
 - `docs/framework/windows-service-reference.md` — research record (`inject: never`): why a Windows SERVICE is refused for the daemon, and why `S4U` is too (the named pipe is denied under it). Measured negative, kept so the question is not re-opened.
 - `docs/framework/decision-vocabulary.md` — injectable doc of the CLOSED PreToolUse decision set (fleet mirror): why a fourth word is a fourth decision, and why `defer` killed subagents in silence.

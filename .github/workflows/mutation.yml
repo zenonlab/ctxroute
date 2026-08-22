@@ -93,6 +93,7 @@ on:
       - 'test/kernel-endpoint.test.js'
       - 'test/differential-normalize.test.js'
       - 'test/wiring-plan.test.js'
+      - 'test/wiring-plan-splice.test.js'
       - 'test/corpus-cache.test.js'
       - 'test/lifecycle-log-pure.test.js'
       # ── the mutation config itself + the deps ──
