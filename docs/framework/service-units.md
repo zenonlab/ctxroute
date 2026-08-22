@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"ctxroute-http.socket","scope":["ctxroute"]},{"pattern":"ctxroute-http.service","scope":["ctxroute"]},{"pattern":"com.ctxroute.http.plist","scope":["ctxroute"]},{"pattern":"ctxroute-http.task.xml","scope":["ctxroute"]},{"pattern":"service/","scope":["ctxroute"]},{"pattern":"service-units-gate.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 40
 ---
 # service/ — the OS units of the HTTP lane. NOTHING IS INSTALLED (2026-08-20).
 🛑 Never add a health check, heartbeat, PID file or "is it already running?" probe: the OS supervises, and the KERNEL refuses a duplicate with `EADDRINUSE` — under socket activation that refusal MOVES to systemd (`Accept=no` ⇒ "only one service unit is spawned for all connections"), it never becomes ours. The only admissible delay is the alive-but-wedged one, and it says so where it is written.

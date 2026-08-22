@@ -1,6 +1,7 @@
 ---
 match: keys-operator.test.js
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # keys-operator.test.js — the CONTRACT of `keys` (the "WHERE to look" axis)

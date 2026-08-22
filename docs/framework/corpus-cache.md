@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"corpus-cache.js","scope":["ctxroute"]},{"pattern":"corpus-cache.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # corpus-cache.js — the daemon stops re-reading what nothing changed
 📐 **MEASURED 2026-08-20: a round trip is 41.49 ms of which the TRANSPORT is 0.17 ms.** The other 41 ms were the corpus re-read — the same cost the spawn lane paid, hidden inside node's startup. **The win was never in the pipe**, and anyone optimising the transport again is optimising 0.4 % of the problem.

@@ -274,6 +274,20 @@
       }
     },
     {
+      "name": "lifecycle-log-pure-must-stay-pure",
+      "comment": "⚠️ lifecycle-log-pure.js must NEVER import fs/path/child_process. It DECIDES when the daemon journal turns over and what a record looks like; the stat, the rename and the append live in `lifecycle-log.js`. A dependency here would make the decision non-mutable — and an UNMUTATED ceiling is the worst kind of false gate: it REASSURES while the file grows without bound, and nobody looks again. Same reason as disk-writers-pure.js and state-eviction-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/lifecycle-log-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "only-store-resolve-opens-a-store",
       "comment": "🔴 MEASURED IN PRODUCTION 2026-08-21. The injection state has FOUR consumers (the PreToolUse gate, the session gate which shares the `remainder-` queue with it, the turn counter, the PreCompact reset). Wiring ONLY the gate to the daemon moved that one memory into RAM while the others kept the disk: inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered 2 bytes. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate. The root cause was NOT the forgotten reset: it was that ANY shell could open a store itself, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said \"the backend is an ARGUMENT, never ambient\" and it stopped nobody — a rule only prose guards is not a rule. ⇒ `src/store-resolve.js` is the SINGLE resolution point and hands out `{ store, withLock }` TOGETHER; everyone else receives the pair as a parameter. 🛑 The five paths excluded below are INHERITED DEBT, measured on the day the rule was written, NOT a permission: the exit condition is that they take the pair as an argument, and this list then becomes empty. A sixth importer is RED the second it is written, which is the whole point.",
       "severity": "error",
@@ -290,7 +304,7 @@
     "doNotFollow": {
       "path": "node_modules"
     },
-    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/quadratic-budget-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|tools/scope-reach)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/quadratic-budget-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach)\\.js$|^(fs|path|child_process|os|crypto)$)",
     "tsPreCompilationDeps": false
   }
 }

@@ -30,9 +30,23 @@
 //    '.claude','hooks')` back into `vendor-deadline.js` ⇒ ② fails (it reports
 //    the real fleet, not the tmpdir) · put `path.join(os.homedir(),'.claude',
 //    'projects')` back into `scope-reach.js` ⇒ ⑪ fails the same way, and ③
-//    reddens on it as a second definition · change any accessor's segments ⇒ ①
-//    and ⑧ fail · delete a root from `harnessRoots()` ⇒ ③ loses that root's
-//    control offender and ⑧ fails.
+//    reddens on it as a second definition · put `path.join(os.homedir(),
+//    '.claude','secrets','ctxroute-fuite.json')` back into `leak-list.js` ⇒ ⑫
+//    fails (it names the real store, not the tmpdir) and ③ reddens on it ·
+//    change any accessor's segments ⇒ ① and ⑧ fail · make `secretsLabel()`
+//    call `secretsDir()` ⇒ ⑬ fails on the home · delete a root from
+//    `harnessRoots()` ⇒ ③ loses that root's control offender and ⑧ fails.
+//
+// 🔑 AND THE THIRD WIDENING, 22/08/2026 — THE LAST DECLARED OMISSION IS GONE.
+//    A note beside the registry said `~/.claude/secrets/` was DELIBERATELY not
+//    declared, because declaring it would have accused `src/leak-list.js`, a
+//    file `paths.js` owned no accessor for. Honest, dated, and still an
+//    un-policed harness root — which is the exact shape a permanent exemption
+//    takes. The answer to "the gate would redden the truth" is to MOVE the
+//    truth (`secretsDir`/`secretsLabel`), never to leave the root out. That
+//    root is the highest-stake of the four: it addresses a SECRETS directory,
+//    and the gate reading through it is the only one here whose damage is
+//    irreversible.
 //
 // ⚠️ DRY-RUN ONLY (never `--write`): the real fleet is in production for other
 //    agents. The tmpdir is empty, so the script has nothing to arm anyway.
@@ -48,8 +62,10 @@ import { fileURLToPath } from 'node:url';
 import {
   fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
   transcriptsDir, harnessRoots,
+  secretsDir, secretsLabel,
   fileDocsDir, skillsDir,
 } from '../src/paths.js';
+import { privateListPath, privateListLabel } from '../src/leak-list.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.join(__dirname, '..');
@@ -191,11 +207,18 @@ function scan(files, cwd) {
  * The matches that REBUILD one of the harness roots: every derived segment of
  * SOME declared root present in one and the same path construction.
  * ⚠️ `every` INSIDE a root, `some` ACROSS roots — and the asymmetry is the whole
- *    judgement. `every` because `src/leak-list.js` legitimately assembles
- *    `.claude/secrets/…`, a directory this module does not own: accusing it
- *    would make the gate red on the truth, and a gate red on the truth gets
- *    disarmed within the day. `some` because there is more than one harness
- *    root and rebuilding ANY of them by hand is the same defect.
+ *    judgement. `every` so that a path merely SHARING a first segment with a
+ *    declared root (`.claude/anything-else`) is not accused: a gate red on a
+ *    directory nobody owns gets disarmed within the day. `some` because there
+ *    is more than one harness root and rebuilding ANY of them by hand is the
+ *    same defect.
+ * 🔴 THIS COMMENT USED TO CITE `src/leak-list.js` AND ITS `.claude/secrets/…` AS
+ *    THE REASON FOR `every` — an example that was really an UNPOLICED ROOT
+ *    wearing the clothes of a design rationale. It was closed on 22/08/2026 by
+ *    giving `paths.js` the accessor (`secretsDir`), which is the ONLY way out:
+ *    "the gate would accuse the truth" always means the truth is in the wrong
+ *    place. Kept written here because the example was persuasive and would come
+ *    back.
  * @param {{file: string, line: number, text: string}[]} matches
  * @param {{name: string, segments: string[]}[]} rs
  */
@@ -224,6 +247,8 @@ test('① THE TARGETS HAVE NOT MOVED — every accessor = the historical hardcod
   delete process.env.CTXROUTE_FLEET_HOOKS_DIR;
   delete process.env.CTXROUTE_TRANSCRIPTS_DIR;
   delete process.env.CTXROUTE_SKILLS_DIR;
+  delete process.env.CTXROUTE_SECRETS_DIR;
+  delete process.env.CTXROUTE_LEAK_LIST;
   try {
     assert.strictEqual(
       fleetHooksDir(),
@@ -243,8 +268,25 @@ test('① THE TARGETS HAVE NOT MOVED — every accessor = the historical hardcod
       path.join(os.homedir(), '.claude', 'projects'),
       'the transcript corpus no longer resolves where the harness writes it'
     );
+    // 🛑 THE SECRET STORE — the root `src/leak-list.js` rebuilt by hand until
+    //    22/08/2026. Moving it silently would make the anti-leak gate read an
+    //    EMPTY private list, i.e. run in GENERIC mode while believing itself
+    //    armed: it would stop protecting the client names and first name it
+    //    exists for, and go GREEN doing it. The one gate here whose damage is
+    //    irreversible — pushed data survives in `git log -p`.
+    assert.strictEqual(
+      secretsDir(),
+      path.join(os.homedir(), '.claude', 'secrets'),
+      'the secret store no longer resolves where the fleet keeps it'
+    );
+    assert.strictEqual(
+      privateListPath(),
+      path.join(os.homedir(), '.claude', 'secrets', 'ctxroute-fuite.json'),
+      'the private anti-leak list no longer resolves where it did when leak-list.js owned the root'
+    );
   } finally {
-    for (const k of ['CTXROUTE_FLEET_HOOKS_DIR', 'CTXROUTE_TRANSCRIPTS_DIR', 'CTXROUTE_SKILLS_DIR']) {
+    for (const k of ['CTXROUTE_FLEET_HOOKS_DIR', 'CTXROUTE_TRANSCRIPTS_DIR', 'CTXROUTE_SKILLS_DIR',
+      'CTXROUTE_SECRETS_DIR', 'CTXROUTE_LEAK_LIST']) {
       if (sauve[k] === undefined) delete process.env[k];
       else process.env[k] = sauve[k];
     }
@@ -474,6 +516,7 @@ test('⑧ THE PUBLISHED CONTRACT — the tag prefix is exactly what agents are t
       ['fleetHooksDir', ['.claude', 'hooks']],
       ['transcriptsDir', ['.claude', 'projects']],
       ['skillsDir', ['.claude', 'commands']],
+      ['secretsDir', ['.claude', 'secrets']],
     ],
     'the harness-root registry changed — a root was added, removed or moved.'
     + ' Removing one silently un-polices a directory; check this is intended.'
@@ -556,6 +599,91 @@ test('⑪ THE TRANSCRIPT ROOT IS REALLY CONSUMED — scope-reach.js targets what
     fs.rmSync(faux, { recursive: true, force: true });
     fs.rmSync(docs, { recursive: true, force: true });
   }
+});
+
+test('⑫ THE SECRET ROOT IS REALLY CONSUMED — leak-list.js targets what paths.js says', () => {
+  // 🛑 SAME REASONING AS CELLS ② AND ⑪, WITHOUT A PROCESS — and the difference
+  //    is a fact about the defendant, not a weakening. `vendor-deadline.js` and
+  //    `scope-reach.js` are SCRIPTS: only a spawn can show where they looked.
+  //    `leak-list.js` is a MODULE whose whole answer IS the address, so calling
+  //    it IS the behavioural probe: a source grep would be satisfied by the
+  //    comment that says "never rebuild it here", a returned value cannot be.
+  //    If this file went back to its own `os.homedir()`, it would name the REAL
+  //    secret store and this cell would redden.
+  const saved = { ...process.env };
+  const faux = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-secrets-'));
+  delete process.env.CTXROUTE_LEAK_LIST;
+  try {
+    process.env.CTXROUTE_SECRETS_DIR = faux;
+    assert.strictEqual(privateListPath(), path.join(faux, 'ctxroute-fuite.json'),
+      'leak-list.js ignored the paths.js override (still rebuilding the secret root itself?)');
+    // ⚠️ THE TWO OVERRIDES ANSWER TWO DIFFERENT QUESTIONS and must not collapse
+    //    into one: the ROOT moves with `CTXROUTE_SECRETS_DIR`, the WHOLE file
+    //    path with `CTXROUTE_LEAK_LIST`. Were the file-level one to stop
+    //    winning, every suite that points the anti-leak gate at its own fixture
+    //    would silently read the maintainer's real list instead.
+    process.env.CTXROUTE_LEAK_LIST = path.join(faux, 'elsewhere.json');
+    assert.strictEqual(privateListPath(), path.join(faux, 'elsewhere.json'),
+      'CTXROUTE_LEAK_LIST no longer wins over the root — a fixture would read the REAL private list');
+  } finally {
+    for (const k of ['CTXROUTE_SECRETS_DIR', 'CTXROUTE_LEAK_LIST']) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    fs.rmSync(faux, { recursive: true, force: true });
+  }
+});
+
+test('⑬ NO LEAK — the SECRET store publishes a home-free label, and it is the one in the docs', () => {
+  // 🛑 THE HIGHEST-STAKE CELL IN THIS FILE. `secretsDir()` names a SECRETS
+  //    directory: emitting it would not merely leak a home into a public
+  //    artefact, it would publish the exact address of the maintainer's secret
+  //    store — and the gate reading through that path is the one whose damage
+  //    cannot be undone (pushed data survives in `git log -p`).
+  const label = privateListLabel();
+  assert.strictEqual(secretsLabel(), '.claude/secrets',
+    'the published secret-store prefix changed — a reader is now told to create'
+    + ' their private list somewhere the anti-leak gate never reads, and that gate'
+    + ' would run in GENERIC mode believing itself armed');
+  assert.strictEqual(label, '.claude/secrets/ctxroute-fuite.json',
+    'the published address of the private list changed — this is a contract, not a constant');
+  assert.ok(!path.isAbsolute(label) && !label.includes(os.homedir()),
+    `the published address is absolute or carries the home (${label})`);
+  assert.ok(!label.includes('\\'),
+    "the label carries a backslash — built with `path.join` instead of `.join('/')`,"
+    + ' so it reads differently on Windows and on Linux');
+
+  // ⚠️ THE OVERRIDE MUST NOT REACH THE CONTRACT — a suite pointing the anti-leak
+  //    gate at a tmpdir changes where THIS PROCESS reads, never what a reader on
+  //    a normal machine is told. If this ever couples, a test run would publish
+  //    `/tmp/…` as the place to keep secrets.
+  const saved = { ...process.env };
+  const faux = fs.mkdtempSync(path.join(os.tmpdir(), 'secrets-label-'));
+  try {
+    process.env.CTXROUTE_SECRETS_DIR = faux;
+    process.env.CTXROUTE_LEAK_LIST = path.join(faux, 'x.json');
+    assert.strictEqual(privateListLabel(), label,
+      'a test override rewrote the PUBLISHED address — the label must project the'
+      + ' canonical segments, never the runtime accessor');
+  } finally {
+    for (const k of ['CTXROUTE_SECRETS_DIR', 'CTXROUTE_LEAK_LIST']) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    fs.rmSync(faux, { recursive: true, force: true });
+  }
+
+  // 🛑 THE PROJECTION IS TIED TO THE ARTEFACT THAT PUBLISHES IT. This address
+  //    lives HAND-WRITTEN in a tracked doc of a PUBLIC repo — exactly the shape
+  //    the two hardcoded label prefixes of `source-adapters.js` had, which
+  //    survived because NOTHING READ THROUGH THEM. Without this assertion the
+  //    label could move while the doc kept sending readers to the old address,
+  //    and nothing would go red.
+  const doc = fs.readFileSync(path.join(repo, 'docs', 'framework', 'leak.md'), 'utf8');
+  assert.ok(doc.length > 100, 'docs/framework/leak.md is empty or unreadable — this cell measures nothing');
+  assert.ok(doc.includes(label),
+    `docs/framework/leak.md no longer publishes \`${label}\` — the doc and the code`
+    + ' now name two different secret stores, and the doc is the one a human obeys');
 });
 
 test('⑩ THE TWO PROJECTIONS AGREE — separate is not the same as unrelated', () => {

@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"layers.json","scope":["ctxroute"]},{"pattern":"layers-gate.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # layers.json — THE CAPABILITIES × LAYERS TABLE (2026-08-06)
 🛑 **WIDENING THIS TABLE IS ALMOST ALWAYS THE WRONG ANSWER.** A red gate says the FILE is in the wrong layer, or does work that does not belong to it. Adding a capability to silence the red disarms the guardrail **silently**, and nobody will ever see it — the repo is written by agents and reviewed by nobody. Fix the file, not the table.

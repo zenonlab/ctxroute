@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"scale-bench.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # scale-bench.test.js: the SLOPE at the real sizing, never a millisecond
 🛑 **ASSERT ON RATIOS ONLY.** A duration belongs to this machine; how the cost GROWS when the load multiplies belongs to the algorithm. Never add a threshold in ms, in bytes or in requests per second.

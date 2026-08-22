@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"quadratic-budget.json","scope":["ctxroute"]},{"pattern":"no-undeclared-quadratic.yml","scope":["ctxroute"]},{"pattern":"quadratic-gate.test.js","scope":["ctxroute"]},{"pattern":"quadratic-budget-pure.js","scope":["ctxroute"]},{"pattern":"quadratic-budget-pure.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # quadratic-budget.json — COMPLEXITY DECLARES ITSELF (third twin of TIME and SPACE)
 🛑 **ASK "AND AT 10,000?" BEFORE EVERY LOOP.** A scale defect does not slow anything down, it CLOSES A CONTRACT (target: hundreds of sites, thousands of pages) and its retrofit is prohibitive, so it belongs to the SPEC. This gate exists because the rule lived in PROSE and prose refuses nothing: a quadratic write path reached `src/memory-store-pure.js` and was caught by LUCK (two cells timing out), not by a judge.

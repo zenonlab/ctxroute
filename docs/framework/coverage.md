@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"coverage-gate.test.js","scope":["ctxroute"]}]
 mode: smart
+threshold: 5
 ---
 # coverage-gate.test.js — the repo documents itself, or it goes red
 ⚠️ 5 DERIVED parts (never a copied list — that would be the same bug): ① every root/`sources/` `.js` gets an injectable doc (measured via the REAL source) · ② every TRACKED file is in the skill's file tree · ③ every module is in dependency-cruiser's `includeOnly` · ④ **REMOVED 2026-08-03** (doc LENGTH ceiling) — the framework DELIVERS, it NEVER judges size: an over-heavy doc is CHUNKED and delivered (undeliverability impossible UNDER the total capacity of the N frames; beyond = leftover, cf. budget.md). Do NOT reintroduce it, the reason is engraved in the file · ⑤ **ALSO REMOVED 2026-08-03** (SKILL WEIGHT ceiling). Parts ①→③ remain ACTIVE.

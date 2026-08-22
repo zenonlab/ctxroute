@@ -22,16 +22,50 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const paths = require('./paths');
 
+// The private list's FILE NAME, and nothing above it: the harness SECRET ROOT
+// belongs to `paths.js` (`secretsDir`/`secretsLabel`), like every other
+// home-anchored root.
+// ⚠️ UNTIL 22/08/2026 THIS MODULE REBUILT `~/.claude/secrets` ITSELF from
+//    `os.homedir()` — the very defect `fleet-hooks-path.test.js` judges, on a
+//    different second segment, and it was KNOWN: a note beside the registry
+//    declared the omission deliberate. It was a SECOND DEFINITION either way,
+//    and the copy that rots is never the one you are looking at.
+const LIST_FILE = 'ctxroute-fuite.json';
+
+// ABSOLUTE — the address used to REACH the disk. Env var RESERVED for tests.
+// ⚠️ IT OVERRIDES THE WHOLE FILE PATH, not the root: a test corpus lives in a
+//    tmpdir with a name of its own choosing. `CTXROUTE_SECRETS_DIR` (paths.js)
+//    moves the ROOT and leaves the file name alone — two different questions,
+//    both answerable, neither one guessing at the other.
 function privateListPath() {
-  return process.env.CTXROUTE_LEAK_LIST || path.join(os.homedir(), '.claude', 'secrets', 'ctxroute-fuite.json');
+  return process.env.CTXROUTE_LEAK_LIST || path.join(paths.secretsDir(), LIST_FILE);
+}
+
+// PUBLISHED — relative, POSIX, home-free, override-proof. This is the ONLY form
+// that may reach a reader: a failure message, a doc, anything tracked.
+// 🛑 NEVER print `privateListPath()` into an artefact that survives the command
+//    (a tracked file, a doc, an injected context, a CI log people keep): it
+//    carries the maintainer's real home AND names their secret store, and this
+//    repository is PUBLIC and treats itself as already public. Whoever needs to
+//    SAY where the list goes says it with THIS.
+function privateListLabel() {
+  return paths.secretsLabel() + '/' + LIST_FILE;
 }
 
 /**
  * Private terms = DECLARED + DERIVED from the real folders, MINUS the exceptions.
  * File missing/unreadable ⇒ [] (generic mode, never a failure).
+ * ⚠️ THE SILENCE HERE IS THE ONE DELIBERATE EXCEPTION TO "AN UNREACHABLE TARGET
+ *    IS A NAMED REFUSAL", and it is not a fallback: the gate MUST stay green on
+ *    a clean clone and in CI, where private terms cannot travel by
+ *    construction. Nothing is guessed — ONE address is resolved and, absent,
+ *    yields an EMPTY universe, never a plausible substitute. The NAMING lives
+ *    where a human can act on it: the cells that DEMAND the file print
+ *    `privateListLabel()` and say what resolved it.
+ * @returns {string[]}
  */
 function privateTerms() {
   let decl;
@@ -54,4 +88,4 @@ function privateTerms() {
   return terms.filter((t) => !exceptions.includes(String(t).toLowerCase()));
 }
 
-module.exports = { privateListPath, privateTerms };
+module.exports = { privateListPath, privateListLabel, privateTerms };

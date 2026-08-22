@@ -120,6 +120,16 @@
       "policy": "bounded-count",
       "why": "Creates the state DIRECTORY before binding the rendezvous — macOS answers EACCES where Linux answers ENOENT on a fresh clone, a misleading error that sends the reader towards a permissions problem that does not exist. One idempotent directory; the daemon's own state goes through `memory-store.js` and is declared there."
     },
+    "src/lifecycle-log.js": {
+      "path": "paths.stateDir()",
+      "class": "log",
+      "budget": {
+        "maxFiles": 2,
+        "maxBytes": 524288
+      },
+      "policy": "bounded-count",
+      "why": "The state daemon's JOURNAL OF ITS OWN LIFE — born 2026-08-22 because the daemon died and restarted NINE TIMES IN ONE HOUR with exit code 90 and left NOTHING: no instant, no reason, nothing to count. The deaths are correct by design (`watchOwnCode` refuses to serve stale logic and the OS restarts us); the SILENCE was the defect, and an unobservable failure costs one CI round trip PER HYPOTHESIS. TWO BOUNDS, BOTH STRUCTURAL AND BOTH CONSEQUENCES OF THE MECHANISM RATHER THAN NUMBERS SOMEONE MAINTAINS: ① the rotation renames `ctxroute-daemon.log` onto `.1` and a rename OVERWRITES, so exactly TWO files can ever exist — that single rename IS the file ceiling ② each file turns over at 256 KB (`lifecycle-log-pure.MAX_BYTES`), so the whole component costs 512 KB FOR LIFE, at any traffic and any uptime. The shape is the operator's fleet reaper, deliberately: one convention, never two that drift — and it is RE-IMPLEMENTED rather than imported because this repository is PUBLIC and must not depend on a personal fleet tool. 🛑 WHAT IS WRITTEN IS A CLOSED LIST OF LIFECYCLE EVENTS (start · stale-code-exit · signal-exit · lane-degraded · bind-refused), NEVER A HEARTBEAT AND NEVER A LINE PER REQUEST: one agent action is 16 requests on this daemon, so a per-request line would be a writer growing with TRAFFIC, and SSD wear is a real constraint on this machine — the same fleet reaper carries a gate that reddens on a 'nothing to do' line for exactly that reason. An event outside the list writes zero bytes and does not even create the file. Fail-open throughout: a full disk, a read-only directory or a locked file costs a line, never the daemon. 🛑 It is deliberately NOT swept by `state-eviction.js`: that one bounds the `.json` stores by COUNT, which is the right policy for a store and the wrong one for an append-only file — two ceilings, one per class, never one mechanism pretending to cover both."
+    },
     "src/kernel-bind.js": {
       "path": "kernelEndpoint.endpoint()",
       "class": "rendezvous",

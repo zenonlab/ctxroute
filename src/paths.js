@@ -83,6 +83,15 @@ const TRANSCRIPT_SEGMENTS = Object.freeze(['.claude', 'projects']);
 //    already assembled here and nowhere else; declaring it makes that a
 //    JUDGED fact instead of a lucky one.
 const SKILL_SEGMENTS = Object.freeze(['.claude', 'commands']);
+// ⚠️ Root of the harness SECRET store (Claude Code fleet: ~/.claude/secrets/),
+//    which holds the private anti-leak list. `src/leak-list.js` rebuilt it by
+//    hand until 21/08/2026 — same shape, same silence, different second
+//    segment — and it was left OUT of this registry that day with the written
+//    reason "declaring it would accuse a file this module owns no accessor
+//    for". 🛑 That reason was TRUE and TEMPORARY, and it is the shape every
+//    permanent exemption takes: the answer to "the gate would redden the
+//    truth" is to make the truth OWNED, never to keep the root un-policed.
+const SECRET_SEGMENTS = Object.freeze(['.claude', 'secrets']);
 
 // The home-anchored harness roots this module OWNS, as DATA.
 // 🛑 THIS REGISTRY IS WHAT THE GATE JUDGES (`fleet-hooks-path.test.js`): it
@@ -93,15 +102,18 @@ const SKILL_SEGMENTS = Object.freeze(['.claude', 'commands']);
 // ⚠️ DECLARE A ROOT HERE ONLY IF THIS MODULE OWNS ITS ACCESSOR. Declaring one
 //    that some other file legitimately assembles would redden the truth, and a
 //    gate red on the truth gets disarmed the same day.
-// ⚠️ KNOWN AND DELIBERATE OMISSION: `~/.claude/secrets/` is rebuilt by
-//    `src/leak-list.js`, which owns that path for its own private list. It is
-//    the same SHAPE and it is NOT declared here, because declaring it would
-//    accuse a file this module does not own an accessor for. Moving it here is
-//    a separate work item, not an oversight.
+// ✅ THE LAST OMISSION IS CLOSED (`secretsDir`, 22/08/2026). A note used to sit
+//    here saying `~/.claude/secrets/` was DELIBERATELY not declared because
+//    `src/leak-list.js` owned it and this module had no accessor for it. The
+//    note was honest and it was still an un-policed directory: it is REMOVED
+//    rather than kept, because a stale allowance outlives every reader who
+//    could judge it. 🛑 The lesson generalises — "the gate would accuse the
+//    truth" is a reason to MOVE the truth here, never to leave a root out.
 const HARNESS_ROOTS = Object.freeze([
   Object.freeze({ name: 'fleetHooksDir', segments: FLEET_SEGMENTS }),
   Object.freeze({ name: 'transcriptsDir', segments: TRANSCRIPT_SEGMENTS }),
   Object.freeze({ name: 'skillsDir', segments: SKILL_SEGMENTS }),
+  Object.freeze({ name: 'secretsDir', segments: SECRET_SEGMENTS }),
 ]);
 
 // ROOT of the harness HOOK FLEET (Claude Code: ~/.claude/hooks/). Everything the
@@ -191,9 +203,55 @@ function skillsDir() {
   return process.env.CTXROUTE_SKILLS_DIR || path.join(os.homedir(), ...SKILL_SEGMENTS);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE SECRET STORE — TWO PROJECTIONS, and the leak question is ANSWERED here
+// ═══════════════════════════════════════════════════════════════════════
+// Store of the harness SECRETS (Claude Code fleet: ~/.claude/secrets/). READ
+// ONLY: the framework never writes a secret, it only reads the private
+// anti-leak list that `src/leak-list.js` hangs beneath this root.
+//
+// 🔑 THE LEAK QUESTION, ASKED AND ANSWERED BY MEASUREMENT — NOT BY PREFERENCE.
+//    "Does this address ever travel into a message, a tag, a document or a
+//    COMMITTED file?" For `transcriptsDir()` the answer was NO and one function
+//    was enough. HERE THE ANSWER IS YES, and it was already yes before this
+//    accessor existed: the address `.claude/secrets/ctxroute-fuite.json` is
+//    written, BY HAND, in THREE tracked files of a PUBLIC repository —
+//    `docs/framework/leak.md` (and its byte-identical fleet mirror) tells a
+//    reader where the private list lives, and `test/leak-gate.test.js` prints
+//    it in the remediation message of its schema cell. Three hand-written
+//    copies of one published address: the `source-adapters.js` defect verbatim,
+//    where two hardcoded label prefixes survived precisely BECAUSE nothing read
+//    through them.
+// ⇒ TWO PROJECTIONS, exactly like the fleet root:
+//    · `secretsDir()`   — ABSOLUTE, anchored at the home, overridable. The
+//      address a PROCESS uses to REACH the disk.
+//    · `secretsLabel()` — RELATIVE, POSIX, home-free, NOT overridable. The
+//      address PUBLISHED to a reader.
+// 🛑 AND THE STAKE IS HIGHER HERE THAN ANYWHERE ELSE IN THIS FILE: this root
+//    points at a SECRETS directory. Emitting `secretsDir()` would not merely
+//    leak the maintainer's home into a public artefact, it would publish the
+//    exact filesystem address of their secret store — and the anti-leak gate
+//    that reads this very path is the one gate whose damage is IRREVERSIBLE
+//    (pushed data survives in `git log -p` after the tree is fixed). NEVER make
+//    the label call the accessor "to have a single function".
+// ⚠️ `os.homedir()` is the OS ANSWERING, not a guess — admissible HERE, a defect
+//    everywhere else. Env var RESERVED for tests and for doctor.js.
+function secretsDir() {
+  return process.env.CTXROUTE_SECRETS_DIR || path.join(os.homedir(), ...SECRET_SEGMENTS);
+}
+
+// The secret store as it is PUBLISHED, never as it is reached.
+// ⚠️ NO env override, and its absence is DELIBERATE: a suite pointing the
+//    anti-leak gate at a tmpdir must not rewrite the address a reader is told
+//    to go and create their private list at.
+function secretsLabel() {
+  return SECRET_SEGMENTS.join('/');
+}
+
 module.exports = {
   configPath, docsDir, stateDir,
   fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
   transcriptsDir, harnessRoots,
+  secretsDir, secretsLabel,
   fileDocsDir, sessionDocsDir, skillsDir, ROOT,
 };

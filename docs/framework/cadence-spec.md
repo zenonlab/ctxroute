@@ -1,6 +1,7 @@
 ---
 match: [cadence-spec.js, cadence-differential.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # cadence-spec.js + cadence-differential.test.js — THE OTHER HALF, NOW JUDGED (19/08/2026)

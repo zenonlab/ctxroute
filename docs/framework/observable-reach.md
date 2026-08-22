@@ -1,6 +1,7 @@
 ---
 match: observable-reach-gate.test.js
-mode: dumb
+mode: smart
+threshold: 32
 ---
 
 # observable-reach-gate.test.js — CAN THE LANGUAGE SEE EVERY FACT THE HARNESS HANDS IT?

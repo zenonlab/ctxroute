@@ -1,6 +1,7 @@
 ---
 match: declfor-gate.test.js
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # declfor-gate.test.js — a FILTERED decision key is a DEAD key (2026-08-06)
 🔴 **REAL DEFECT, THE COSTLIEST POSSIBLE**: `enforce` (the word that REFUSES an action, shipped 08-05) was not copied over by `sources/mcp.js#declFor` ⇒ accepted by `validateMcp`, documented everywhere, **INERT on the MCP channel** — that is, precisely where the FOUNDING incident lives (the Stripe payment click). Found 24 h later by arming it FOR REAL: `create_refund` returned `allow`. **A safety catch that does not catch is WORSE than nothing: we trust it.**

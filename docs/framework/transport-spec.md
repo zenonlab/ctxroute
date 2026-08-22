@@ -1,6 +1,7 @@
 ---
 match: [Transport.tla, runs.json, run-tlc.mjs, transport-spec-gate.test.js, transport-conformance.test.js, transport-spec-tlc.test.js]
-mode: dumb
+mode: smart
+threshold: 40
 ---
 # specs/tla/ — TLA+ spec of the TRANSPORT FRONTIERS (2026-08-20)
 

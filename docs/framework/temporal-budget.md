@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"temporal-budget.json","scope":["ctxroute"]},{"pattern":"temporal-call.yml","scope":["ctxroute"]},{"pattern":"temporal-budget-gate.test.js","scope":["ctxroute"]},{"pattern":"temporal-budget-pure.js","scope":["ctxroute"]},{"pattern":"temporal-budget-pure.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # temporal-budget.json — TIME DECLARES ITSELF (2026-08-20)
 🛑 **BEFORE ANY DELAY, ASK WHO KNOWS.** LOCAL, the kernel KNOWS — process exit, closed socket, `EADDRINUSE` are FACTS the OS delivers. Waiting a fixed number of milliseconds instead of asking the authority that knows is not caution: it is a BUG that fires on a loaded machine. Only two motives are admissible, and the gate refuses every other word: **`distant`** (no authority is reachable at all) and **`undecidable`** (alive-versus-frozen, i.e. the halting problem).

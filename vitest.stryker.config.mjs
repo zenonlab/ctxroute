@@ -83,6 +83,13 @@ export default defineConfig({
       //    The behaviour under real processes lives in `state-daemon.test.js`,
       //    which spawns and therefore never enters this runner.
       'test/kernel-endpoint.test.js',
+      // ⚠️ `lifecycle-log.js` is the I/O shell (stat/rename/append) and is NOT
+      //    mutated; the rules that decide WHEN the journal turns over and WHAT a
+      //    record looks like live in `lifecycle-log-pure.js`, which is — and this
+      //    is the deterministic suite that kills its mutants. Absent from this
+      //    list, the ceiling and the closed event vocabulary would be mutated and
+      //    measured by NOTHING: a bounded writer proven by nobody.
+      'test/lifecycle-log-pure.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // ⚠️ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive

@@ -63,7 +63,7 @@ const ICI = git(['rev-parse', '--show-toplevel'], path.dirname(fileURLToPath(imp
 //    `leak-list.js` (SINGLE SOURCE since 16/08/2026): it was copied into the
 //    pre-commit launchers of 2 public repos, three copies of one truth. NEVER
 //    re-inline it here.
-import { privateTerms, privateListPath } from '../src/leak-list.js';
+import { privateTerms, privateListPath, privateListLabel } from '../src/leak-list.js';
 
 function motifs() {
   return forbiddenPatterns(os.userInfo().username, os.homedir(), privateTerms());
@@ -216,7 +216,13 @@ test('②ter the REAL private list matches the CLOSED schema (unknown key = RED)
     'PRIVATE LIST OUT OF SCHEMA — an unknown key is SILENTLY IGNORED by the\n'
     + 'engine, so the protection it carries does not exist (paid 16/08/2026:\n'
     + '`dossiersDerives` left over from a rename ⇒ zero client derived, green\n'
-    + 'gate). Fix ~/.claude/secrets/ctxroute-fuite.json:\n  '
+    // 🛑 THE ADDRESS IS NAMED, AND IT IS NAMED BY THE PROJECTION — never a
+    //    hand-written copy (it was one until 22/08/2026, a second definition of
+    //    the address `paths.secretsLabel()` now owns), and never
+    //    `privateListPath()`: that one carries the maintainer's real home and
+    //    names their secret store, and this repository is PUBLIC.
+    + `gate). Fix ~/${privateListLabel()} (resolved by paths.secretsDir(); `
+    + 'override CTXROUTE_SECRETS_DIR, or CTXROUTE_LEAK_LIST for the whole path):\n  '
     + schemaFaults(decl).join('\n  '));
 });
 

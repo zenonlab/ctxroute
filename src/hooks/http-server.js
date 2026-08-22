@@ -116,6 +116,19 @@ const { createMemoryStore } = require('../memory-store');
 //    kernel who answers. Neither is reimplemented here — see the block in `main`.
 const { endpoint } = require('../kernel-endpoint');
 const { bind } = require('../kernel-bind');
+// 🔴 THE JOURNAL OF THIS PROCESS'S OWN LIFE (2026-08-22). MEASURED that day:
+//    NINE restarts in one hour, exit 90, and NOT ONE TRACE — no instant, no
+//    reason, nothing to count. The deaths are correct (`watchOwnCode` refuses to
+//    serve stale logic); the SILENCE was the defect, and an unobservable failure
+//    costs one round trip PER HYPOTHESIS.
+// 🛑 LIFECYCLE EVENTS ONLY — never a heartbeat, NEVER a line per request. One
+//    agent action is 16 requests here: a per-request line would be a disk writer
+//    growing with TRAFFIC, and SSD wear is a real constraint on this machine.
+//    The vocabulary is a closed list in `lifecycle-log-pure.js`; an event
+//    outside it writes nothing at all.
+// ⚠️ Bounded for life at 256 KB × 2 files, declared in `disk-writers.json`, and
+//    FAIL-OPEN everywhere: nothing below may cost this daemon its life.
+const lifecycle = require('../lifecycle-log');
 
 // ⚠️ LOOPBACK, hardcoded — read the header. This is NOT a setting: an adopter
 //    who needs to move it has a problem this framework must not solve.
@@ -733,8 +746,28 @@ if (require.main === module) {
   // 🛑 THE LIFECYCLE LIVES HERE, in the executable shell — not in the builder.
   //    A second instance must NOT start: the kernel already refused the address,
   //    and it is the authority on duplicates (never a PID file, never a probe).
-  listenOn(createServer({ store: etat, onAddressInUse: (err) => { throw err; } }),
-    process.env, process.pid, port);
+  const laneFd = listenOn(createServer({
+    store: etat,
+    onAddressInUse: (err) => {
+      // ⚠️ The kernel refused the address: a second instance. Say WHICH lane and
+      //    WHY before dying, otherwise the supervisor's restart loop is the only
+      //    symptom and it names nothing.
+      lifecycle.record('bind-refused', { lane: 'port', port, pid: process.pid });
+      throw err;
+    },
+  }), process.env, process.pid, port);
+  // ⚠️ Recorded HERE, right after the listen call, and it says "we began serving"
+  //    — not "the bind succeeded": `listen` reports its failure asynchronously,
+  //    on the error path just above. Two records, two facts, never one guess.
+  // 🛑 `uptimeMs` on every exit below is what makes the RATE readable without any
+  //    counter to maintain: nine short lives in an hour ARE the nine lines, and a
+  //    separate restart count would be a second truth that drifts from the file.
+  lifecycle.record('start', {
+    pid: process.pid,
+    lane: laneFd === null ? 'port' : 'inherited-fd',
+    port: laneFd === null ? port : null,
+    fd: laneFd,
+  });
 
   // ═══════════════════════════════════════════════════════════════════════
   // 🔴 THE SECOND LISTENER — WITHOUT IT THE KERNEL LANE HAS NO OTHER END.
@@ -794,7 +827,17 @@ if (require.main === module) {
       // ⚠️ The cast is the repo's usual form: `Error` has no `code` for the type
       //    checker, and a lying JSDoc is what `check:types` exists to refuse.
       const e = /** @type {NodeJS.ErrnoException} */ (err);
-      if (e && e.code === 'EADDRINUSE') throw err;
+      if (e && e.code === 'EADDRINUSE') {
+        lifecycle.record('bind-refused', { lane: 'rendezvous', code: e.code, pid: process.pid });
+        throw err;
+      }
+      // ⚠️ ONE lane lost, the other still serving. The stderr line reaches a
+      //    supervisor that may or may not keep it; the journal is what is still
+      //    there tomorrow, and a degradation that leaves no trace is
+      //    indistinguishable from a healthy daemon.
+      lifecycle.record('lane-degraded', {
+        lane: 'rendezvous', code: e && e.code, message: e && e.message, pid: process.pid,
+      });
       process.stderr.write(`ctxroute: the client lane is UNAVAILABLE (${e && e.code}: ${e && e.message}). `
         + 'The port lane keeps serving; a spawned hook asking on the rendezvous will decide locally and record nothing.\n');
     },
@@ -806,7 +849,17 @@ if (require.main === module) {
   watchOwnCode(
     (dir, cb) => fs.watch(dir, { persistent: false }, cb),
     require.cache,
-    () => process.exit(EXIT_STALE_CODE)
+    () => {
+      // 🛑 THE RECORD COMES FIRST, AND IT IS THE WHOLE POINT OF THIS WORK ITEM.
+      //    This is the daemon's most frequent death — measured NINE times in one
+      //    hour — and until 2026-08-22 it left nothing at all. It is FAIL-OPEN:
+      //    if the journal cannot be written we still exit, because refusing to
+      //    die here would mean serving stale logic, the green that lies.
+      lifecycle.record('stale-code-exit', {
+        pid: process.pid, code: EXIT_STALE_CODE, uptimeMs: Math.round(process.uptime() * 1000),
+      });
+      process.exit(EXIT_STALE_CODE);
+    }
   );
 
   // ── A SUPERVISOR'S STOP IS A CLEAN DEATH, AND IT MUST BE TREATED AS ONE ──
@@ -828,7 +881,13 @@ if (require.main === module) {
   //    the COUNT exists. Two authorities, and neither pretends to be the other.
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => {
+      // ⚠️ THE STATE FIRST, THE TRACE SECOND. Losing the snapshot costs
+      //    re-deliveries; losing one journal line costs a diagnosis. Both are
+      //    swallowed — housekeeping must never delay nor break a stop.
       try { etat.flush(); } catch { /* housekeeping must never delay a stop */ }
+      lifecycle.record('signal-exit', {
+        pid: process.pid, signal, uptimeMs: Math.round(process.uptime() * 1000),
+      });
       process.exit(0);
     });
   }

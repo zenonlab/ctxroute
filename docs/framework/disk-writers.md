@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"disk-writers.json","scope":["ctxroute"]},{"pattern":"fs-call.yml","scope":["ctxroute"]},{"pattern":"disk-writers-pure.js","scope":["ctxroute"]},{"pattern":"disk-writers-gate.test.js","scope":["ctxroute"]},{"pattern":"disk-writers-pure.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # disk-writers.json — SPACE DECLARES ITSELF (2026-08-21)
 🛑 **ANYTHING THAT WRITES DECLARES ITS CEILING AND ITS EVICTION IN THE SAME GESTURE AS ITS CREATION.** Disk is FINITE and this machine runs 24/7 for YEARS with no operator: without a ceiling the component DOES NOT EXIST — an ARCHITECTURE bug, never an operations one. The question is never "is it big?" but "at 10 years, how much is this worth?"; monotonic growth is a DATED outage and "we will purge later" puts a human back inside the loop.

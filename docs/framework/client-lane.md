@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"client-core.js","scope":["ctxroute"]},{"pattern":"client-core.test.js","scope":["ctxroute"]},{"pattern":"state-client.js","scope":["ctxroute"]},{"pattern":"turn-core.js","scope":["ctxroute"]},{"pattern":"daemon-purge.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 40
 ---
 # client-core.js — ONE AUTHORITY, OR NONE (2026-08-21, inert)
 

@@ -52,6 +52,7 @@ on:
       - 'src/kernel-endpoint.js'
       - 'src/differential-normalize.js'
       - 'src/corpus-cache.js'
+      - 'src/lifecycle-log-pure.js'
       # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
       - 'test/harness-conformance.test.js'
       - 'test/lib-pure.test.js'
@@ -89,6 +90,7 @@ on:
       - 'test/kernel-endpoint.test.js'
       - 'test/differential-normalize.test.js'
       - 'test/corpus-cache.test.js'
+      - 'test/lifecycle-log-pure.test.js'
       # ── the mutation config itself + the deps ──
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'
