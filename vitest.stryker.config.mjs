@@ -62,6 +62,11 @@ export default defineConfig({
       //    this line the verdict would be MUTATED and measured by NOTHING —
       //    exactly the "misleading massacre" the header above warns about.
       'test/disk-writers-pure.test.js',
+      // ⚠️ The DECISION half of the fleet's DEAD-MAN SWITCH. `doctor.test.js` spawns the real tool
+      //    and never enters this runner; absent this line the split-brain, frame-coordinate and
+      //    lane-coherence verdicts would be MUTATED and measured by NOTHING — a misleading
+      //    massacre on the one judge that decides whether the framework is alive at all.
+      'test/doctor-wiring-pure.test.js',
       // ⚠️ The DETERMINISTIC half of the quadratic gate. `quadratic-gate.test.js`
       //    itself spawns `git` and `ast-grep`, so it never enters this runner:
       //    only the PURE verdict is mutated, and this is the suite that kills
@@ -83,6 +88,10 @@ export default defineConfig({
       //    The behaviour under real processes lives in `state-daemon.test.js`,
       //    which spawns and therefore never enters this runner.
       'test/kernel-endpoint.test.js',
+      // ⚠️ The DRIFT GATE spawns and skips without a machine wiring, so it carries NO
+      //    mutant. Only this in-process suite can kill them — absent, `wiring-plan.js`
+      //    would be mutated and measured by NOTHING.
+      'test/wiring-plan.test.js',
       // ⚠️ `lifecycle-log.js` is the I/O shell (stat/rename/append) and is NOT
       //    mutated; the rules that decide WHEN the journal turns over and WHAT a
       //    record looks like live in `lifecycle-log-pure.js`, which is — and this

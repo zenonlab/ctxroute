@@ -59,6 +59,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import {
   fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
   transcriptsDir, harnessRoots,
@@ -703,5 +704,105 @@ test('⑩ THE TWO PROJECTIONS AGREE — separate is not the same as unrelated', 
   } finally {
     if (saved === undefined) delete process.env.CTXROUTE_FLEET_HOOKS_DIR;
     else process.env.CTXROUTE_FLEET_HOOKS_DIR = saved;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑭ THE REGISTRY IS THE ROOTS — every declared name is a LIVE accessor
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 CELLS ① AND ⑧ HOLD THE CONTRACT LITERALLY, ROOT BY ROOT, AND THAT IS WHY
+//    THIS ONE EXISTS BESIDE THEM: they only know the four roots someone wrote
+//    them for. `harnessRoots()` is what the SCAN derives its forbidden segments
+//    from, so a fifth root declared tomorrow — or a `name` that no longer
+//    matches its accessor after a rename — would police a directory nobody can
+//    reach, and the scan would keep passing while the truth moved. A registry
+//    whose entries are not proven to BE the accessors is a table about itself.
+// ⚠️ DERIVED, hence it costs nothing to keep: the day a root is added, it is
+//    already covered; the day one is renamed on one side only, this is RED.
+test('⑭ EVERY DECLARED ROOT IS A LIVE ACCESSOR OF THE SINGLE SOURCE, AND THE REGISTRY IS FROZEN', () => {
+  const req = createRequire(import.meta.url);
+  const mod = req(path.join(repo, 'src', 'paths.js'));
+  const declared = harnessRoots();
+  // 🛑 ANTI-VACUITY: an empty registry disarms the scan of cell ③ AND satisfies
+  //    every loop below. Four measured on 2026-08-22 — the floor sits under it,
+  //    so removing one is red without pinning the number.
+  assert.ok(declared.length >= 4,
+    `only ${declared.length} harness root(s) declared — the registry the scan derives from has shrunk`);
+
+  const saved = { ...process.env };
+  for (const k of Object.keys(process.env)) if (k.startsWith('CTXROUTE_')) delete process.env[k];
+  try {
+    for (const r of declared) {
+      assert.strictEqual(typeof mod[r.name], 'function',
+        `\`${r.name}\` is declared in the registry but is not an exported accessor of paths.js:\n`
+        + '      the scan forbids that root to everybody while nobody can reach it through the single source.');
+      assert.strictEqual(mod[r.name](), path.join(os.homedir(), ...r.segments),
+        `\`${r.name}()\` no longer resolves at the segments the registry declares for it —`
+        + ' the detector and the address have drifted apart');
+      // A consumer able to mutate this would move a root for everyone, at
+      // runtime, INCLUDING for the judge that reads it.
+      assert.ok(Object.isFrozen(r.segments), `the segments of \`${r.name}\` are mutable`);
+      assert.ok(Object.isFrozen(r), `the registry entry \`${r.name}\` is mutable`);
+    }
+    assert.ok(Object.isFrozen(declared), 'the harness-root registry itself is mutable');
+  } finally {
+    for (const k of Object.keys(process.env)) if (k.startsWith('CTXROUTE_')) delete process.env[k];
+    for (const [k, v] of Object.entries(saved)) if (k.startsWith('CTXROUTE_')) process.env[k] = v;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// ⑮ EVERY PUBLISHED PROJECTION IS HOME-FREE AND OVERRIDE-PROOF
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 CELLS ⑨ AND ⑬ PROVE THIS ONE LABEL AT A TIME, BY HAND — so the THIRD label
+//    written tomorrow would be published by nobody's judge. The leak question
+//    ("does this address travel into a message, a tag or a committed file?")
+//    is asked of every new accessor; this cell is what answers it MECHANICALLY
+//    for every accessor that says yes. A published address that carried the
+//    absolute form would leak the operator's real home into every injected
+//    document of a PUBLIC repository — and one that followed a test override
+//    would let a tmpdir rewrite a contract read on a normal machine.
+// ⚠️ THE OVERRIDES ARE DERIVED FROM THE SOURCE (`process.env.CTXROUTE_*`), not
+//    listed: an env var added tomorrow is applied here the day it is written.
+test('⑮ EVERY `*Label()` PUBLISHES A RELATIVE, POSIX, HOME-FREE ADDRESS THAT NO OVERRIDE CAN REWRITE', () => {
+  const req = createRequire(import.meta.url);
+  const src = fs.readFileSync(path.join(repo, 'src', 'paths.js'), 'utf8');
+  const mod = req(path.join(repo, 'src', 'paths.js'));
+  const labels = Object.keys(mod).filter((k) => k.endsWith('Label') && typeof mod[k] === 'function');
+  const overrides = [...new Set([...src.matchAll(/process\.env\.(CTXROUTE_[A-Z_]+)/g)].map((m) => m[1]))];
+  // 🛑 ANTI-VACUITY on BOTH halves: no label found is a suite proving nothing,
+  //    and no override found makes the second half of every assertion inert.
+  assert.ok(labels.length >= 2, `only ${labels.length} published projection(s) found — this cell measures nothing`);
+  assert.ok(overrides.length >= 5, `only ${overrides.length} env override(s) found in paths.js — the rewrite half is inert`);
+
+  const home = os.homedir();
+  const faux = fs.mkdtempSync(path.join(os.tmpdir(), 'label-override-'));
+  const saved = { ...process.env };
+  try {
+    const avant = labels.map((k) => mod[k]());
+    for (const [i, k] of labels.entries()) {
+      const v = avant[i];
+      assert.strictEqual(typeof v, 'string', `\`${k}()\` no longer publishes a string`);
+      assert.ok(v.length > 0, `\`${k}()\` publishes nothing`);
+      assert.ok(!v.includes(home),
+        `\`${k}()\` publishes the operator's REAL HOME — that address travels into documents of a PUBLIC repo`);
+      assert.ok(!/\\/.test(v),
+        `\`${k}()\` publishes a Windows separator: the published form is POSIX and must read identically on both OSes`);
+      assert.ok(!/^([A-Za-z]:|\/|~)/.test(v), `\`${k}()\` publishes an ABSOLUTE address`);
+    }
+    // 🛑 THE OVERRIDE MUST NOT REACH IT. Every override the module reads is
+    //    pointed at a tmpdir at once: a label that moved would mean a suite can
+    //    rewrite the contract an agent reads on a normal machine.
+    for (const k of overrides) process.env[k] = faux;
+    const apres = labels.map((k) => mod[k]());
+    assert.deepStrictEqual(apres, avant,
+      'a published projection FOLLOWED a test override: the address agents are told to go and update'
+      + ' now depends on the environment of whoever ran the engine last');
+  } finally {
+    for (const k of overrides) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    fs.rmSync(faux, { recursive: true, force: true });
   }
 });

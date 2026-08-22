@@ -288,6 +288,20 @@
       }
     },
     {
+      "name": "doctor-wiring-pure-must-stay-pure",
+      "comment": "⚠️ doctor-wiring-pure.js must NEVER import fs/path/child_process. It DECIDES whether the harness wiring is alive — split brain, frame coordinates 1..N with no gap and no duplicate, lane coherence, divergent `--frames` — and it reads NOTHING: the settings file, the config, the `src/hooks/` scan and the path resolution live in `tools/doctor.js`. Those ~325 lines used to sit INSIDE that I/O tool, hence outside Stryker's `mutate`, so the judgement of the fleet's DEAD-MAN SWITCH had never been mutated: an inverted comparison or a `some` turned into an `every` would have stayed green for ever, and a false dead-man switch is worse than none — it REASSURES, so nobody looks again. Same reason as disk-writers-pure.js and lifecycle-log-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/doctor-wiring-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "only-store-resolve-opens-a-store",
       "comment": "🔴 MEASURED IN PRODUCTION 2026-08-21. The injection state has FOUR consumers (the PreToolUse gate, the session gate which shares the `remainder-` queue with it, the turn counter, the PreCompact reset). Wiring ONLY the gate to the daemon moved that one memory into RAM while the others kept the disk: inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered 2 bytes. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate. The root cause was NOT the forgotten reset: it was that ANY shell could open a store itself, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said \"the backend is an ARGUMENT, never ambient\" and it stopped nobody — a rule only prose guards is not a rule. ⇒ `src/store-resolve.js` is the SINGLE resolution point and hands out `{ store, withLock }` TOGETHER; everyone else receives the pair as a parameter. 🛑 The five paths excluded below are INHERITED DEBT, measured on the day the rule was written, NOT a permission: the exit condition is that they take the pair as an argument, and this list then becomes empty. A sixth importer is RED the second it is written, which is the whole point.",
       "severity": "error",
@@ -304,7 +318,7 @@
     "doNotFollow": {
       "path": "node_modules"
     },
-    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/quadratic-budget-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|tools/wiring-generate)\\.js$|^(fs|path|child_process|os|crypto)$)",
     "tsPreCompilationDeps": false
   }
 }

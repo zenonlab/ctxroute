@@ -1,5 +1,5 @@
 ---
-rules: [{"pattern":"lifecycle-log-pure.js","scope":["ctxroute"]},{"pattern":"lifecycle-log.js","scope":["ctxroute"]},{"pattern":"lifecycle-log-pure.test.js","scope":["ctxroute"]},{"pattern":"lifecycle-log.test.js","scope":["ctxroute"]}]
+rules: [{"pattern":"lifecycle-log-pure.js","scope":["ctxroute"]},{"pattern":"lifecycle-log.js","scope":["ctxroute"]},{"pattern":"lifecycle-log-pure.test.js","scope":["ctxroute"]},{"pattern":"lifecycle-log.test.js","scope":["ctxroute"]},{"pattern":"journal-boundary-gate.test.js","scope":["ctxroute"]}]
 mode: dumb
 ---
 # lifecycle-log — THE DAEMON SAYS WHAT HAPPENED TO IT (2026-08-22)
@@ -12,6 +12,7 @@ mode: dumb
 ⚠️ **ONE RECORD IS ONE LINE, ENFORCED.** Values include an OS error message — text this process does not author — and a newline in one would FORGE an extra entry in a line-delimited journal. Collapsed on the instant AND on every value.
 ⚠️ **NO COUNTER IS MAINTAINED, DELIBERATELY.** The rate is READ from the file (N lines, N instants, `uptimeMs` on every exit); a stored restart count would be a second truth that drifts from the journal it claims to summarise.
 ⚠️ **`state-eviction.js` DOES NOT SWEEP IT, AND MUST NOT**: that one bounds the `.json` stores by COUNT, the right policy for a store and the wrong one for an append-only file. Two ceilings, one per class — never one mechanism pretending to cover both. Declared in `disk-writers.json` (class `log`, 2 files, 524 288 bytes).
+🛑 **BOTH FRONTIERS ARE NOW JUDGED, NOT WRITTEN DOWN** (`journal-boundary-gate.test.js`): the manifest must declare EXACTLY what the code enforces — a budget that can drift from what it bounds is a DORMANT PERMIT, and the disk-writer gate only checks that a budget EXISTS — and the sweeper must neither remove nor report this file. Teach `state-eviction` the `.log` suffix, or rename the journal to `.json`, and a mechanism that knows nothing of the ceiling deletes the trace of a death nobody will look for.
 ⚠️ **THE DECISION IS PURE AND MUTATED**; the shell only stats, renames and appends. Written next to the `appendFileSync` the ceiling would be measured by NOTHING — and an unmutated ceiling REASSURES while the file grows.
 📐 **PROVEN BY OVERFLOW, never by reading the code**: 1.57 MB offered ⇒ **2 files, 340 016 bytes on disk**, rotated file at 262 544 (an eviction is proven by what it DELETES — a cleaner that matches nothing is indistinguishable from one that works).
 ✅ **SEEN RED on SIX sabotages, each restored** (rotation disabled · `>=` weakened to `>` · vocabulary opened · newline collapse removed · the daemon's `stale-code-exit` emitter renamed · the fail-open `catch` made to rethrow). 🛑 One of those sabotages SILENTLY FAILED TO APPLY the first time and the suite stayed green — a green on an unmodified file proves NOTHING. Always print the sabotaged line before believing the run.

@@ -341,7 +341,7 @@
       "class": "INHERITED_DEBT"
     },
     "tools/doctor.js": {
-      "max": 10,
+      "max": 3,
       "class": "INHERITED_DEBT"
     },
     "tools/explain.js": {

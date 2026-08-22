@@ -38,6 +38,12 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// ⚠️ THE WIRING DECISIONS LIVE IN A PURE, STRYKER-MUTATED MODULE. This file is I/O: it is
+//    deliberately outside `mutate` (equivalent mutants guaranteed), so anything it DECIDES is
+//    measured by nothing. `checkWiring` used to hold ~325 lines of pure judgement — the fleet's
+//    dead-man switch judging itself with no mutation at all. 🛑 Never bring a decision back here.
+const wiringPure = require('../src/doctor-wiring-pure');
+
 // ⚠️ SINGLE HOOK since the merge (17/07/2026): doc-inject.js (the gate)
 //    injects ALL docs — file (frontmatters) AND MCP (docs/mcp/).
 //    legacy-mcp-inject.js is REMOVED from the wiring (kept in the repo for
@@ -401,306 +407,56 @@ function checkWiring(settingsPath) {
   check('settings.json is valid JSON', settings !== null, `invalid JSON: ${settingsPath}`);
   if (!settings) return;
 
-  // Collect every hook command, whatever the event — we then cross-check with
-  // EACH of our wired files (reset, gate, session, guard, turn counter,
-  // canary). ⚠️ It used to say "our 2 files" (fixed on 09/08/2026): that was
-  // true before the 17/07 merge, there are SIX.
-  // We do NOT presume the exact structure of settings.json (it evolves with
-  // Claude Code; rigid parsing would be a false negative).
-  // 🛑 BOTH TRANSPORTS, AND THIS IS THE ONLY COVERAGE OF THE WIRING (2026-08-21).
-  //    A declaration is `type:"command"` (a spawned process, coordinates in
-  //    `--frame k --frames N`) OR `type:"http"` (a POST to the daemon,
-  //    coordinates in the URL's query string). Reading only `"command"` was
-  //    CORRECT until the http lane was wired and became a BLINDNESS the moment
-  //    it was: the doctor counted ZERO frames and accused the config of a
-  //    divergence that did not exist. **A judge that only knows one transport
-  //    stops judging the day the other is used** — and here it screamed, which
-  //    is the acceptable failure direction, but it judged nothing.
-  const commands = JSON.stringify(settings).match(/"(?:command|url)"\s*:\s*"([^"]+)"/g) || [];
+  // ── WHAT THIS SHELL MEASURES, AND NOTHING MORE ─────────────────────────
+  // ⚠️ The DECISIONS live in `src/doctor-wiring-pure.js` — split brain, frame coordinates 1..N,
+  //    lane coherence, divergent `--frames`. They used to live HERE, i.e. inside an I/O tool, i.e.
+  //    OUTSIDE Stryker's `mutate`: the judgement of the fleet's dead-man switch had NEVER been
+  //    mutated, so an inverted comparison would have stayed green for ever. 🛑 NEVER move a decision
+  //    back into this file "to keep it together": that would silently un-mutate it again.
+  //    This shell reads the disk, resolves paths, prints and exits — that is its whole job.
 
-  // ── RESET (ctxroute-reset.js, PreCompact): without it, docs are never
-  //    re-injected after compaction, in silence.
-  const resets = commands.filter((c) => c.includes('ctxroute-reset'));
-  check('the PreCompact reset is wired (ctxroute-reset.js)', resets.length >= 1,
-    'ctxroute-reset.js missing from settings.json: no more re-injection after compaction, in silence.');
-  for (const c of resets) {
-    const m = /([A-Za-z]:[\\/][^"]*?|\/[^"]*?)ctxroute-reset\.js/.exec(c);
-    if (!m) continue;
-    const file = `${m[1]}ctxroute-reset.js`;
-    check('the wired file exists: ctxroute-reset.js', fs.existsSync(file),
-      `settings.json points at a NON-EXISTENT file: ${file} — hook dead in silence.`);
-    check('the wired file really is THIS repo: ctxroute-reset.js',
-      path.resolve(file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', 'ctxroute-reset.js')),
-      `settings.json points at ANOTHER copy of the framework: ${file} (this repo: ${__dirname}) — your changes here do not apply.`);
-  }
-
-  // ── SINGLE HOOK: since the merge (17/07/2026), legacy-mcp-inject.js must
-  //    NO LONGER be wired — the gate also injects MCP docs. Leaving it =
-  //    MCP docs injected TWICE on every call (tokens burned in silence).
-  check('legacy-mcp-inject.js is NO LONGER wired (the gate covers MCP — otherwise double injection)',
-    !commands.some((c) => c.includes('legacy-mcp-inject')),
-    'legacy-mcp-inject.js still wired in settings.json: MCP docs injected TWICE (gate + legacy).');
-
-  // ── GATE (doc-inject.js): the UNIQUE injector (file + MCP) since the merge.
-  // ⚠️ `doc-inject.js` ≠ `legacy-mcp-inject.js` (legacy removed). A gate not
-  //    wired, or pointing at a dead file, = NO doc injected at all, IN
-  //    SILENCE — exactly the failure mode this dead-man switch exists to catch.
-  // ⚠️ A GATE DECLARATION IS RECOGNISED BY WHAT IT CARRIES, NEVER BY ITS FILE
-  //    NAME ALONE: on the http lane there is no file name at all, only a URL
-  //    carrying the frame coordinates. Anchored on `frames=` and not on the
-  //    host or the port, which are the operator's to choose.
-  const porte = commands.filter(
-    (c) => (/doc-inject\.js/.test(c) || /[?&]frames=\d+/.test(c)) && !c.includes('legacy-mcp-inject'),
-  );
-  check('the GATE (doc-inject.js) is wired — otherwise NO doc is injected at all', porte.length >= 1,
-    'doc-inject.js missing from settings.json: since the merge, IT is what injects ALL docs. Silent death.');
-
-  // ── MULTI-FRAME COHERENCE (06/08/2026) — THE WIRING MUST BE COMPLETE.
-  //
-  // 🛑 JUDGEMENT REVERSED THE SAME DAY, WRITTEN HERE SO IT IS NOT REDONE.
-  //    Two checks lived here for a few hours: "the gate is declared ONLY
-  //    ONCE" and "no `--frames N>1`". They are DELETED because their premise
-  //    was FALSE, not because they were inconvenient.
-  //
-  // 🔴 WHAT I HAD MISSED: the maintainer's requirement was never the display
-  //    order, it is that **the context be COMPLETE before the next tool
-  //    call**. Now one process = one output = one frame ceiling. Delivering a
-  //    corpus bigger than that BEFORE the next gesture therefore requires
-  //    several frames on the SAME gesture — that is, N declarations.
-  //    Falling back to 1 did not "slow things down": it made the agent work
-  //    with incomplete knowledge for N-1 gestures.
-  //
-  // 🔴 AND THE MEASUREMENT I HAD USED TO JUSTIFY THE REMOVAL WAS BIASED:
-  //    I had counted "the 12 frames saturated only 1 time out of 74 gestures",
-  //    looking at the frames USED. The right observable was the deferred-doc
-  //    counter, which no longer came back down to zero: the `dumb` corpus is
-  //    re-decided at EVERY gesture, so under-sizing N puts the queue in
-  //    PERPETUAL ROTATION (invariant already written in `gate.md`, which I
-  //    failed to connect to what I had in front of me).
-  //
-  // ⚠️ ARRIVAL ORDER REMAINS UNGUARANTEED at N>1 (the harness returns outputs
-  //    when the processes FINISH) and that is ACCEPTED: each frame is
-  //    self-describing (`FRAME k/N` + common marker, RFC 2046/6455), hence
-  //    re-assemblable. A readable disorder beats absent knowledge.
-  //    ⚠️ The DUPLICATE, however, is a real bug (race on the queue) — it gets
-  //    FIXED, it is not worked around by deleting the capability.
-  //
-  // ⇒ WHAT IS CHECKED HERE is therefore the COHERENCE of the wiring, never
-  //    its size: a missing or duplicated index makes an entire frame vanish
-  //    IN SILENCE, and nothing else can see it (the wiring lives OUTSIDE the
-  //    repo).
-  // ⚠️ ONE READER FOR THE TWO DIALECTS, never two copies: the total and the
-  //    index must be read by the SAME code, or a transport gains an index
-  //    check and loses the total one, silently.
-  const coord = (c, word) => {
-    const spawn = new RegExp(`--${word}\\s+(\\d+)`).exec(c);
-    if (spawn) return Number(spawn[1]);
-    const http = new RegExp(`[?&]${word}=(\\d+)`).exec(c);
-    return http ? Number(http[1]) : null;
-  };
-  const declares = porte.map((c) => {
-    const n = coord(c, 'frames');
-    return n === null ? 1 : n;
-  });
-  const uniqueN = [...new Set(declares)];
-  check('every gate declaration announces the SAME number of frames',
-    uniqueN.length === 1,
-    `Divergent --frames values in settings.json: ${uniqueN.join(', ')}. The processes would split the content differently: the frames would no longer re-assemble.`);
-
-  const nAttendu = uniqueN.length === 1 ? uniqueN[0] : porte.length;
-  check('there are exactly as many declarations as announced frames',
-    porte.length === nAttendu,
-    `${porte.length} declaration(s) of doc-inject.js for --frames ${nAttendu}. Each frame is carried by ONE process: ${nAttendu - porte.length} are missing, so that content will NEVER leave this gesture.`);
-
-  // ── BANDWIDTH IS DECLARED IN A SINGLE PLACE (07/08/2026).
-  //
-  // 🔴 ERROR CLASS ALREADY PAID FOR, ON 05/08/2026: a setting written in a
-  //    harness's wiring and NEVER READ BACK by the engine. Measured result: a
-  //    skill delivered in 11 gestures instead of 1 — with 995 green tests,
-  //    100 % mutation, doctor 27/27 and a live canary. A GREEN THAT LIES:
-  //    nothing was broken, everything was degraded. Two places for the same
-  //    number ALWAYS end up diverging, and that divergence is silent.
-  //
-  // ⇒ `ctxroute-config.json` carries the user's INTENT (`frames`);
-  //    `settings.json` carries the WIRING the harness executes. The engine
-  //    cannot impose the latter (the harness launches what is declared there,
-  //    cold) — so the only possible defence is to CONFRONT the two here.
-  // ⚠️ Key absent from the config = no opinion, no blame: nobody is forced to
-  //    declare their bandwidth (a language does not impose a policy — same
-  //    doctrine as `skillsWithoutPerimeter`).
+  // ⚠️ The declared bandwidth: `ctxroute-config.json` carries the user's INTENT, `settings.json`
+  //    carries the WIRING the harness executes. Key absent = no opinion, no blame.
   let wantedFrames = null;
   try {
     const cfg = require('../src/collect-core').loadConfig();
     if (cfg && Number.isInteger(cfg.frames) && cfg.frames >= 1) wantedFrames = cfg.frames;
   } catch { /* unreadable config: the config gate says so, not this one */ }
-  if (wantedFrames !== null) {
-    check(`the wiring honours the declared bandwidth (frames: ${wantedFrames})`,
-      nAttendu === wantedFrames && porte.length === wantedFrames,
-      `ctxroute-config.json asks for ${wantedFrames} frame(s), settings.json wires ${porte.length} (--frames ${nAttendu}). The harness obeys settings.json: the REAL capacity is ${porte.length}, not ${wantedFrames}. Realign the two — this is exactly the silent divergence of 05/08/2026.`);
-  }
 
-  const indices = porte
-    .map((c) => {
-      const i = coord(c, 'frame');
-      return i === null ? 0 : i;
-    })
-    .sort((a, b) => a - b);
-  const expectedOnes = Array.from({ length: nAttendu }, (_, i) => i + 1);
-  check('the frame indices cover 1..N, with no gap and no duplicate',
-    JSON.stringify(indices) === JSON.stringify(expectedOnes),
-    `Declared --frame indices: [${indices.join(', ')}] instead of [${expectedOnes.join(', ')}]. A missing index = a frame never emitted; a duplicated index = content delivered twice. Both are SILENT.`);
-  for (const c of porte) {
-    const m = /([A-Za-z]:[\\/][^"]*?|\/[^"]*?)doc-inject\.js/.exec(c);
-    if (!m) continue;
-    const file = `${m[1]}doc-inject.js`;
-    check('the wired file exists: doc-inject.js', fs.existsSync(file),
-      `settings.json points at a NON-EXISTENT GATE: ${file} — hook dead in silence.`);
-    check('the wired GATE really is THIS repo: doc-inject.js',
-      path.resolve(file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', 'doc-inject.js')),
-      `settings.json points at ANOTHER copy of the gate: ${file} (this repo: ${__dirname}).`);
-  }
-
-  // ── SESSION GATE (session-inject.js, SessionStart): without it, no session
-  //    doc is injected at startup / after compaction, in silence.
-  const sessionPorte = commands.filter((c) => c.includes('session-inject'));
-  check('the SESSION gate (session-inject.js) is wired on SessionStart', sessionPorte.length >= 1,
-    'session-inject.js missing from settings.json: no docs/session/ doc injected any more, in silence.');
-  for (const c of sessionPorte) {
-    const m = /([A-Za-z]:[\\/][^"]*?|\/[^"]*?)session-inject\.js/.exec(c);
-    if (!m) continue;
-    const file = `${m[1]}session-inject.js`;
-    check('the wired file exists: session-inject.js', fs.existsSync(file),
-      `settings.json points at a non-existent session gate: ${file} — hook dead in silence.`);
-    check('the wired SESSION gate really is THIS repo: session-inject.js',
-      path.resolve(file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', 'session-inject.js')),
-      `settings.json points at ANOTHER copy of the session gate: ${file} (this repo: ${__dirname}).`);
-  }
-
-  // ── WRITE GUARD (doc-write-guard.js, PostToolUse Write|Edit): without it,
-  //    an invalid doc is only seen at the next startup/push.
-  check('the write guard (doc-write-guard.js) is wired on PostToolUse',
-    commands.some((c) => c.includes('doc-write-guard')),
-    'doc-write-guard.js missing from settings.json: no more real-time feedback on an invalid doc.');
-
-  // ── TURN GATE (turn-count.js, UserPromptSubmit): without it, any doc/skill
-  //    on driftUnit 'turn' is NEVER re-injected again (frozen counter), in silence.
-  check('the TURN gate (turn-count.js) is wired on UserPromptSubmit',
-    commands.some((c) => c.includes('turn-count')),
-    'turn-count.js missing from settings.json: driftUnit turn dead — docs never re-injected, in silence.');
-
-  // ── CANARY (canary-check.js, UserPromptSubmit) ──────────────────────
-  // ⚠️ This is the ONLY witness looking at the OTHER end of the pipe: that
-  //    the HARNESS still consumes our injections. Everything else in the
-  //    framework tests itself and would stay GREEN if Claude Code stopped
-  //    reading `additionalContext`. Unwired, it therefore "degrades" nothing
-  //    visible — it just makes that failure mode UNDETECTABLE, for good.
-  // ⚠️ Match BOTH spellings: the repo file is `canary-check.js` (renamed
-  //    2026-08-16), but a not-yet-migrated wiring may still say `canari-check`.
-  const canaris = commands.filter((c) => c.includes('canary-check') || c.includes('canari-check'));
-  check('the CANARY (canary-check.js) is wired on UserPromptSubmit', canaris.length >= 1,
-    'canary-check.js missing from settings.json: NO witness checks any more that the harness still consumes '
-    + 'our injections. The day it stops, everything stays green and nothing reaches the agent any more.');
-  for (const c of canaris) {
-    const m = /([A-Za-z]:[\\/][^"]*?|\/[^"]*?)canary-check\.js/.exec(c);
-    if (!m) continue;
-    const file = `${m[1]}canary-check.js`;
-    check('the wired file exists: canary-check.js', fs.existsSync(file),
-      `settings.json points at a NON-EXISTENT file: ${file} — the witness died before serving.`);
-    check('the wired file really is THIS repo: canary-check.js',
-      path.resolve(file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', 'canary-check.js')),
-      `settings.json points at ANOTHER copy of the framework: ${file} (this repo: ${__dirname}).`);
-  }
-
-  // ── LANE COHERENCE — ALL THE CONSUMERS, OR NONE (2026-08-21) ────────
-  //
-  // 🔴 MEASURED IN PRODUCTION, THEN ROLLED BACK, THE SAME DAY. The injection
-  //    state has FOUR consumers: the gate (`doc-inject`), the session gate
-  //    (which SHARES the `remainder-` queue with it), the turn counter and the
-  //    PreCompact reset. Only the gate was moved onto the daemon's `type:"http"`
-  //    lane; the daemon then owned its state IN RAM while the three others kept
-  //    reading and erasing FILES. Sequence measured: inject → the `once` is
-  //    consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered
-  //    **2 bytes**. After a compaction, skills and `once` documents never came
-  //    back — no error, no badge, no red gate anywhere. That is TWO MEMORIES,
-  //    the exact defect `client-core.js` exists to forbid ("one authority, or
-  //    none"), reintroduced from OUTSIDE the repo, where nothing here could see
-  //    it. The wiring is this defect's ONLY possible witness.
-  //
-  // ⚠️ THE PEER LIST IS DERIVED, NEVER WRITTEN. A hand-written list only knows
-  //    the consumers that existed the day it was typed; the fifth one would join
-  //    the split in silence. The authority is the CODE: a shell is a consumer of
-  //    the shared state exactly when it asks `client.clientLane()` which lane it
-  //    is on. Same reasoning for the flag itself — `LANE_FLAG` is read from
-  //    `client-core.js`, never re-spelled here (four shells and one judge must
-  //    not be able to drift).
-  //
-  // ⚠️ A PEER WITH NO DECLARATION AT ALL IS NOT JUDGED HERE: "not wired" is the
-  //    business of the checks above, and accusing it twice would turn one fault
-  //    into two reds. We judge only what IS declared.
-  //
-  // 🛑 ANTI-VACUITY: this check must be IMPOSSIBLE to pass while examining
-  //    nothing. No gate declaration, no derived consumer, or an unreadable
-  //    `LANE_FLAG` ⇒ RED — "we could not measure" is never "it is coherent".
-  // ⚠️ EVERY TEST BELOW IS A REGEX, NEVER `.includes()`, AND THAT IS NOT A
-  //    STYLE CHOICE: `rules/no-undeclared-quadratic.yml` counts `.includes()`
-  //    among its traversal atoms, so one of them inside a loop would spend a
-  //    line of this file's complexity budget on a plain substring test.
+  // ⚠️ `LANE_FLAG` is READ from `client-core.js`, never re-spelled here: four shells and one judge
+  //    must not be able to drift apart. Unreadable ⇒ null ⇒ the anti-vacuity check turns RED.
   let LANE_FLAG = null;
   try { ({ LANE_FLAG } = require('../src/client-core')); } catch { /* stays null */ }
-  const flagLisible = typeof LANE_FLAG === 'string' && LANE_FLAG.length > 0;
-  const laneRe = flagLisible
-    ? new RegExp(LANE_FLAG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    : null;
 
-  const GATE_FILE = 'doc-inject.js';
+  // ⚠️ THE PEER LIST IS DERIVED FROM THE CODE, NEVER WRITTEN: a shell consumes the shared injection
+  //    state exactly when it asks `clientLane()` which lane it is on. A hand-written list only knows
+  //    the consumers that existed the day it was typed, and the fifth would join a split in silence.
   const hooksDir = path.join(__dirname, '..', 'src', 'hooks');
-  let fichiers = [];
-  try { fichiers = fs.readdirSync(hooksDir); } catch { /* stays empty — anti-vacuity turns red */ }
-  const consommateurs = [];
-  for (const f of fichiers) {
+  let files = [];
+  try { files = fs.readdirSync(hooksDir); } catch { /* stays empty — the anti-vacuity check turns red */ }
+  const consumers = [];
+  for (const f of files) {
     if (!/\.js$/.test(f)) continue;
     let source = '';
     try { source = fs.readFileSync(path.join(hooksDir, f), 'utf8'); } catch { continue; }
-    if (/clientLane\s*\(/.test(source)) consommateurs.push(f);
+    if (/clientLane\s*\(/.test(source)) consumers.push(f);
   }
-  const pairs = new Set(consommateurs.filter((f) => f !== GATE_FILE));
 
-  // ONE PASS over the declarations: a file name identifies the consumer (a
-  // `command` always carries one), and `--client` says which lane it reaches.
-  // A consumer declared SEVERAL times reaches the daemon only if EVERY one of
-  // its declarations does — one disk-bound process is enough to make a second
-  // memory.
-  const voies = new Map();
-  for (const c of commands) {
-    const m = /([A-Za-z0-9_.-]+\.js)/.exec(c);
-    if (!m || !pairs.has(m[1])) continue;
-    const atteint = laneRe !== null && laneRe.test(c);
-    voies.set(m[1], voies.has(m[1]) ? voies.get(m[1]) && atteint : atteint);
+  const findings = wiringPure.wiringFindings({
+    settings, wantedFrames, laneFlag: LANE_FLAG, consumers, repoDir: __dirname,
+  });
+  for (const f of findings) {
+    if (f.kind === 'check') { check(f.name, f.ok, f.detail); continue; }
+    // ⚠️ THE TWO QUESTIONS ONLY THE DISK CAN ANSWER — and they are the most likely cause of a silent
+    //    death: a renamed or moved file, and a stale absolute path aiming at ANOTHER copy of the
+    //    framework (where your changes here simply do not apply). The WORDING is contract and comes
+    //    from the pure module, per hook: a dead-man switch naming the wrong organ wastes the very
+    //    time it exists to save.
+    check(f.existsName, fs.existsSync(f.file), f.absentDetail);
+    check(f.copyName,
+      path.resolve(f.file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', f.base)),
+      f.copyDetail);
   }
-  const cotedisque = [...voies.keys()].filter((n) => !voies.get(n));
-  const cotedaemon = [...voies.keys()].filter((n) => voies.get(n));
-
-  check('the lane-coherence check has something to judge (flag read, consumers derived, gate declared)',
-    flagLisible && consommateurs.includes(GATE_FILE) && pairs.size >= 1 && porte.length >= 1,
-    `Lane coherence UNMEASURABLE: LANE_FLAG ${flagLisible ? `= ${LANE_FLAG}` : 'unreadable from src/client-core.js'}, `
-    + `${consommateurs.length} consumer(s) derived from src/hooks/ (gate ${consommateurs.includes(GATE_FILE) ? 'found' : 'MISSING'}), `
-    + `${porte.length} gate declaration(s) in settings.json. A check that examines nothing is not a check that passes.`);
-
-  // The GATE reaches the daemon when ANY of its declarations does: `type:"http"`
-  // (recognised by the `"url"` key — the http lane has no file name at all) or a
-  // `--client` argument on the spawn lane. One frame on the daemon is enough:
-  // that frame's deliveries are recorded in a memory the disk-bound peers will
-  // never read, and never erase.
-  const porteSurDaemon = porte.some((c) => /^\s*"url"/.test(c) || (laneRe !== null && laneRe.test(c)));
-  check('every consumer of the injection state reaches the SAME authority (no split brain)',
-    !porteSurDaemon || cotedisque.length === 0,
-    `SPLIT BRAIN in settings.json. On the DAEMON: ${[GATE_FILE, ...cotedaemon].join(', ')}. `
-    + `On the DISK (no ${LANE_FLAG || '--client'}): ${cotedisque.join(', ')}. `
-    + 'The gate records its deliveries in the daemon\'s RAM while those peers read and erase the state FILES: TWO MEMORIES. '
-    + 'MEASURED COST: after a compaction the reset wipes a disk the daemon never reads, so skills and `once` documents NEVER '
-    + 'come back — no error, no badge, no red anywhere. '
-    + `FIX: add \`${LANE_FLAG || '--client'}\` to the declaration of each consumer listed on the disk side, or take the gate `
-    + 'back off the daemon lane. All the consumers, or none — a shared state migrates for ALL of them or for NONE.');
 }
 
 // ── 2bis. CODEX WIRING (~/.codex/hooks.json or config.toml) ──────────
@@ -872,6 +628,44 @@ if (idxC !== -1 && process.argv[idxC + 1]) checkCodexWiring(process.argv[idxC + 
 const idxF = process.argv.indexOf('--codex-config');
 if (idxF !== -1 && process.argv[idxF + 1]) checkCodexFeatures(process.argv[idxF + 1]);
 
+
+// ── A REDUCED MEASUREMENT MUST DECLARE ITSELF REDUCED (2026-08-22) ───────
+//
+// 🔴 MEASURED THAT DAY: `node tools/doctor.js` ran 14 checks, `--settings <path>` ran 67, and BOTH
+//    printed `0 problem(s)` IN IDENTICAL WORDS. The wiring was validated with the reduced form,
+//    read as healthy, and production shipped with a SPLIT BRAIN. The switch did not lie — it
+//    answered a SMALLER question than the one it was asked, and said nothing about the difference.
+// 🛑 SAME LAW AS `lint-corpus`'s LIVENESS PROBE: "I could not measure" is never "it is healthy".
+// 🛑 THE FLAGS ARE NOT MADE MANDATORY: a clean clone and CI legitimately have no settings.json, and
+//    a doctor unusable there would be a diagnostic lost to protect its own completeness. What is
+//    refused is SILENCE about the gap.
+// ⚠️ IT RIDES THE SUCCESS CHANNEL (`say`), never stderr and never a failed check: nothing here is
+//    BROKEN. `--quiet` therefore still means total silence — that mode is wired on SessionStart WITH
+//    `--settings`, so it is not a reduced run, and a diagnostic that talks at every session becomes
+//    noise, then gets ignored the day it matters. The notice sits next to the health claim it
+//    qualifies, so the two can never be read apart.
+// ⚠️ THE CONVENTIONAL ADDRESS IS DERIVED FROM THE ONE ACCESSOR THAT OWNS IT (`paths.fleetHooksDir()`
+//    — settings.json is that directory's sibling), NEVER re-assembled from `os.homedir()`: a harness
+//    root rebuilt by hand is a second definition that rots without a word.
+{
+  const paths = require('../src/paths');
+  let settingsPath = null;
+  let settingsExists = false;
+  try {
+    settingsPath = path.join(paths.fleetHooksDir(), '..', 'settings.json');
+    settingsExists = fs.existsSync(settingsPath);
+  } catch { /* address unknown ⇒ the notice says nothing about it, it never guesses */ }
+  const given = [];
+  for (const flag of ['--settings', '--codex-hooks', '--codex-config']) {
+    const i = process.argv.indexOf(flag);
+    if (i !== -1 && process.argv[i + 1]) given.push(flag);
+  }
+  const notice = wiringPure.reducedNotice({
+    flagsGiven: given, ranCount: checks.length, settingsPath, settingsExists,
+  });
+  if (notice.length > 0) say('');
+  for (const line of notice) say(line);
+}
 
 const failed = checks.filter((c) => !c.ok).length;
 if (failed > 0 || !QUIET) console.log(`\n${checks.length - failed} ok, ${failed} problem(s)`);

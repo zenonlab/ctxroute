@@ -1,0 +1,56 @@
+{
+  "$schema-note": "The framework's wiring, declared ONCE. `tools/wiring-generate.js` turns this into the hook declarations a harness executes; `test/wiring-drift-gate.test.js` regenerates and compares against the LIVE file. See docs/framework/wiring-manifest.md.",
+  "stateLane": "client",
+  "consumers": [
+    {
+      "module": "src/hooks/session-inject.js",
+      "event": "SessionStart",
+      "matcher": null,
+      "timeout": 10
+    },
+    {
+      "module": "tools/doctor.js",
+      "event": "SessionStart",
+      "matcher": null,
+      "args": ["--quiet", "--settings", "{settings}"],
+      "timeout": 15
+    },
+    {
+      "module": "tools/lint-corpus.js",
+      "event": "SessionStart",
+      "matcher": null,
+      "args": ["--quiet"],
+      "timeout": 15
+    },
+    {
+      "module": "src/hooks/doc-inject.js",
+      "event": "PreToolUse",
+      "matcher": "*",
+      "framed": true
+    },
+    {
+      "module": "src/hooks/doc-write-guard.js",
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "timeout": 10
+    },
+    {
+      "module": "src/hooks/turn-count.js",
+      "event": "UserPromptSubmit",
+      "matcher": null,
+      "timeout": 5
+    },
+    {
+      "module": "src/hooks/canary-check.js",
+      "event": "UserPromptSubmit",
+      "matcher": null,
+      "timeout": 10
+    },
+    {
+      "module": "src/hooks/ctxroute-reset.js",
+      "event": "PreCompact",
+      "matcher": null,
+      "timeout": 5
+    }
+  ]
+}
