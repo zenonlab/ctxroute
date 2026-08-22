@@ -27,7 +27,7 @@ import { createRequire } from 'node:module';
 //    so Stryker saw no test at all. The rule was already written; it was broken
 //    here. Reaching the pure module directly is what makes the score real.
 import {
-  key, evict, touch, adopt, purge, isEphemeral, persistTick, shouldFlush,
+  key, evict, touch, adopt, purge, isEphemeral, isWriteThrough, persistTick, shouldFlush,
   createState, set as poser, keys as clefs, size as taille,
   MAX_SCOPES, MAX_EPHEMERAL, PERSIST_EVERY,
 } from '../src/memory-store-pure.js';
@@ -500,4 +500,38 @@ test('EVICT returns what it removed across BOTH classes, added', () => {
   assert.equal(evict(e, 1, 1), 2,
     'one durable and one ephemeral were dropped: a SUBTRACTION would report 0, i.e. "nothing was '
     + 'evicted" while the memory just shrank');
+});
+
+// ── WHICH KEYS THE DISK OWNS ────────────────────────────────────────────
+// 🛑 REACHED DIRECTLY, AND THAT IS THE WHOLE POINT OF THIS CELL. Exercised only
+//    THROUGH the I/O shell, this decision showed **2 mutants with NO COVERAGE**
+//    on its first run — Stryker saw no test at all, exactly the defect the
+//    header of this file records (45 survivors out of 45 on 2026-08-20). A
+//    decision is proven where it is TAKEN, never where it is consumed.
+// 🔑 WHAT IT PROTECTS, in one sentence: inverted, the DURABLE class would live
+//    in RAM and die with the daemon (every `once` re-delivered to the whole
+//    fleet, silently) while the EPHEMERAL class would cost one disk write per
+//    frame per action on a machine whose SSD wear is a declared budget.
+test('the DURABLE class is written through, the EPHEMERAL one is not', () => {
+  // The three durable prefixes, written LITERALLY: they are the contract, and
+  // reading them from the module would prove `x === x`.
+  for (const p of ['doc-seen-', 'turn-count-', 'remainder-', 'ctxroute-seen-']) {
+    assert.equal(isWriteThrough(key(p, 'sess')), true,
+      `${p} stopped being written through: its loss re-delivers a document, which is the visible bug`);
+  }
+  assert.equal(isWriteThrough(key('plan-', 'sess--inv-1')), false,
+    'an ephemeral key became write-through: one disk write per frame per action, for a state that dies with the action');
+
+  // ⚠️ ANTI-VACUITY — the two answers must actually DIFFER. A function stuck on
+  //    `true` satisfies every durable assertion above, and a cell that cannot
+  //    tell a constant from a decision measures nothing.
+  assert.notEqual(isWriteThrough(key('doc-seen-', 's')), isWriteThrough(key('plan-', 's')),
+    'the classification returns the same answer for both classes: it is a constant, not a decision');
+
+  // The classification is the EXACT complement of `isEphemeral` — a second list
+  // of prefixes would be a second truth about the same keys.
+  for (const k of ['doc-seen-x', 'plan-y', '', 'plan', 'planX-']) {
+    assert.equal(isWriteThrough(k), !isEphemeral(k),
+      `the two classifications disagree on ${JSON.stringify(k)}: there is a second enumeration somewhere`);
+  }
 });
