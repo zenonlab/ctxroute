@@ -110,6 +110,10 @@ const turnCore = require('../turn-core');
 const { output } = require('./doc-inject');
 const path = require('path');
 const paths = require('../paths');
+// The REAL cross-process lock: since 2026-08-22 the daemon is no longer the only
+// writer of the durable state — a client that cannot reach it writes the same
+// files. Serialising against that client is the reason this is not a no-op.
+const lockModule = require('../lock');
 const { createMemoryStore } = require('../memory-store');
 // ⚠️ THE SECOND TRANSPORT (2026-08-21). `endpoint()` names the kernel rendezvous
 //    per OS; `bind` takes it, clearing a DEAD macOS entry only after asking the
@@ -503,7 +507,14 @@ function handle(body, url, deps) {
       //    2026-08-07 production bug, deliberately reintroduced.
       // ⚠️ Absent `store` ⇒ the historical modules, byte-identical: that is what
       //    keeps the spawn lane and every differential untouched.
-      ...(store ? { store, withLock: (_dir, section) => section() } : {}),
+      // 🔴 THE REAL LOCK, NOT A NO-OP (2026-08-22). The kernel serialises the
+      //    daemon's OWN requests — that has not changed — but the daemon is no
+      //    longer the only writer of the durable state: a client that cannot
+      //    reach it writes the same files directly, and that client is on the
+      //    disk lane with a real lock. A no-op here would leave the two writers
+      //    unserialised against each other, and an interleaved read-modify-write
+      //    loses a recorded delivery in silence.
+      ...(store ? { store, withLock: lockModule.withLock } : {}),
     });
   } catch {
     // ⚠️ FAIL-OPEN, and it matters MORE here than on the spawn lane: there, a
@@ -741,7 +752,20 @@ if (require.main === module) {
   //    on any edit of this repository, so a working session restarts the daemon
   //    repeatedly: a volatile state would reopen the duplicate delivery closed
   //    this morning, through a brand-new door.
-  const etat = createMemoryStore({ snapshotPath: path.join(paths.stateDir(), 'daemon-state.json') });
+  // 🔑 THE DAEMON IS A CACHE, NOT AN OWNER (2026-08-22). `durableStore` forwards
+  //    every durable key (`doc-seen-`, `turn-count-`, `remainder-`) to the disk
+  //    store, which is the truth again. What remains in RAM — and in the
+  //    snapshot — is the EPHEMERAL class only: a `plan-` dies with its action,
+  //    so losing it costs a recomputation, never a re-delivered document.
+  // 🛑 `daemon-state.json` IS NO LONGER AN AUTHORITY. It kept the durable state
+  //    across a restart, which made this process the single point of failure for
+  //    the whole fleet: it exits BY DESIGN at every edit of this repository, and
+  //    each exit withheld every `once` document until it came back (15 silent
+  //    minutes measured that morning). Do not put durable keys back into it.
+  const etat = createMemoryStore({
+    snapshotPath: path.join(paths.stateDir(), 'daemon-state.json'),
+    durableStore: require('../session-store'),
+  });
   etat.restore();
   // 🛑 THE LIFECYCLE LIVES HERE, in the executable shell — not in the builder.
   //    A second instance must NOT start: the kernel already refused the address,

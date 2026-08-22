@@ -57,8 +57,24 @@ test('an UNKNOWN backend is REFUSED, loudly, and the message names it', () => {
   assert.throws(() => resolveStore({ backend: 'ram' }), /unknown backend "ram"/);
 });
 
-test('the `client` backend is REFUSED while the daemon endpoints do not exist', () => {
-  // 🛑 The measured defect in one line: answering with the disk pair here would
-  //    look perfectly healthy and rebuild the split brain.
-  assert.throws(() => resolveStore({ backend: 'client' }), /not wired yet/);
+test('the `client` backend hands back the DISK pair — the daemon owns nothing any more', () => {
+  // 🔑 THIS CELL WAS INVERTED ON 2026-08-22, AND THE REVERSAL IS THE POINT.
+  //    It used to require a refusal, because the daemon then held the durable
+  //    state in RAM: answering with the disk pair would have been a SECOND
+  //    memory. Since the daemon writes durable keys THROUGH to those same
+  //    files, the disk is the one truth, and a client reading it directly is
+  //    reading that truth — slower, never divergent.
+  // 🛑 WHAT MUST NEVER COME BACK is an EMPTY pair here. A store that writes
+  //    nothing withholds every document needing a record, so a dead daemon
+  //    starved the whole fleet of its `once` documents and skills — 15 silent
+  //    minutes measured that morning, on a daemon that dies BY DESIGN dozens of
+  //    times a day.
+  const vues = resolveStore({ backend: 'client' });
+  const disque = resolveStore({ backend: 'disk' });
+  assert.equal(vues.store, disque.store,
+    'the client backend answered with something other than the disk store: a second memory');
+  assert.equal(vues.withLock, disque.withLock,
+    'the client backend answered without the REAL lock: two writers on one file, unserialised');
+  assert.notEqual(vues.store.saveState, resolveStore({ backend: 'none' }).store.saveState,
+    'the client backend fell back to the INERT pair — it records nothing, so every `once` is delivered for ever');
 });

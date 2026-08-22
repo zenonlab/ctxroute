@@ -167,16 +167,29 @@ const { run } = require(${src('pretool-core.js')});
 const { output } = require(${src('hooks', 'doc-inject.js')});
 const { parseFrameArgs } = require(${src('lib-pure.js')});
 
+// 🛑 THE CEILING IS READ FROM THE CODE THAT ENFORCES IT, HERE AND IN THE TEST —
+//    never typed twice. \`state-eviction-pure\` takes it from the RAM store, so
+//    raising it in one place moves the levels, the bar and the assertions
+//    together. A bench that hard-codes 4096 measures the number, not the rule.
+const PLAFOND = require(${src('state-eviction-pure.js')}).MAX_DURABLE;
+
 // 2^7 … 2^10 scopes. It stops UNDER the 4096 durable ceiling on purpose: past it
 // the LRU starts evicting, and a bench that measures eviction is measuring a
 // different property while looking like it measures this one.
+// ⇒ THAT IS AXIS C's JOB (cells ⑤ and ⑥, 2026-08-22): the SAME driver, driven
+//   across the ceiling. Two axes, one code path.
 // 🔴 IT WAS 64…512 FOR ONE RUN, AND THAT RANGE COULD NOT SEE THE DEFECT. Cell ②
 //    measured 2.85x where the shape predicts 4x: at those sizes the per-request
 //    CONSTANT is a real fraction of the cost, and a constant compresses a ratio
 //    towards 1. Doubling the range halves that fraction. The criterion was NOT
 //    touched to fix it — moving the margin to fit a measurement is how a gate
 //    stops measuring anything.
-const LEVELS = [128, 256, 512, 1024];
+// ⚠️ THE LEVELS ARE AN ARGUMENT SINCE 2026-08-22, and the default is axis A's
+//    own range — byte for byte what it measured before. Axis C (eviction) drives
+//    this SAME code with levels DERIVED FROM THE CEILING READ IN THE SOURCE, so
+//    the two axes cannot drift apart: one populate loop, one median, one verdict
+//    shape. A second copy of this driver would be a second truth.
+const LEVELS = process.argv[3] ? JSON.parse(process.argv[3]) : [128, 256, 512, 1024];
 const SOUS_LOTS = 5;        // sub-batches per reading (see \`mediane\`)
 const TURN_PAR_LOT = 160;   // ⇒ 800 timed \`/turn\` calls per level
 const PRETOOL_PAR_LOT = 8;  // ⇒ 40 timed \`/pretool\` calls per level (they cost ~ms)
@@ -266,7 +279,11 @@ for (const cible of LEVELS) {
 
   global.gc(); global.gc();
   const heap = process.memoryUsage().heapUsed;
-  readings.push({ scopes: created, turnNs, pretoolNs, retenu: heap - heapAvant });
+  // ⚠️ COUNTED OUTSIDE THE TIMED REGION (it walks the state). It is the ONLY
+  //    observable that can say whether the ceiling was actually crossed at this
+  //    level, or whether the bench merely believes it was.
+  const durablesIci = store.scopes().filter((k) => !k.startsWith('plan-')).length;
+  readings.push({ scopes: created, durables: durablesIci, turnNs, pretoolNs, retenu: heap - heapAvant });
   heapAvant = heap;
 }
 
@@ -296,7 +313,7 @@ srv.listen(0, '127.0.0.1', async () => {
     if (t.includes('CORPS-BENCH')) livres += 1;
   }
   const durables = store.scopes().filter((k) => !k.startsWith('plan-')).length;
-  console.log(JSON.stringify({ readings, calls, delivered, servis, livres, durables, taille: store.size(), puits }));
+  console.log(JSON.stringify({ readings, calls, delivered, servis, livres, durables, plafond: PLAFOND, taille: store.size(), puits }));
   srv.close();
   process.exit(0);
 });
@@ -831,6 +848,53 @@ const round = (x) => Math.round(x);
 //    straddle the bar WITH ROOM, re-derive by shrinking the constant or the noise
 //    again. Never widen, never lower, never tune the sabotage.
 const BAR_CONC = Math.sqrt(mean(CONC_LEVELS.slice(-2)) / mean(CONC_LEVELS.slice(0, 2)));
+
+// ═══════════════════════════════════════════════════════════════════════
+// AXIS C — WHAT HAPPENS **AT** AND **ABOVE** THE EVICTION CEILING (2026-08-22)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 THE GAP THIS CLOSES, AND IT WAS WRITTEN IN THIS FILE BEFORE IT EXISTED:
+//    limit ③ of the header says axis A "stops at 1024 scopes, deliberately UNDER
+//    the 4096 durable ceiling, so it says nothing about behaviour AT or ABOVE
+//    eviction". A ceiling nobody crosses is a ceiling nobody has measured: the
+//    fleet's steady state at the target sizing is EXACTLY the far side of it
+//    (3 durable keys per agent ⇒ the ceiling is reached at ~1300 agents), so the
+//    only regime never exercised was the only one production will live in.
+// 🛑 THE CEILING IS READ FROM `state-eviction-pure.js`, NEVER TYPED. It takes it
+//    from the RAM store, which is what actually evicts. Raise it there and the
+//    levels, the bar and the assertions all move together — that is the whole
+//    reason no `4096` appears below.
+// 📐 THE LEVELS: P/4, P/2, P, 2P — the last one is STRICTLY ABOVE the ceiling,
+//    which is the point. Head = P/4 and P/2 (nothing is evicted yet), tail = P
+//    and 2P (the LRU is running on every write).
+// 📐 THE BAR, derived like axis B's, from TWO MODELS and no measurement:
+//    · model ① — eviction is O(1) amortised (`elaguer` deletes the FIRST key of
+//      an insertion-ordered Map, i.e. the coldest, one delete per write) and the
+//      per-request cost depends on nothing that grows ⇒ ratio **1**;
+//    · model ② — the per-request cost is LINEAR IN THE HELD STATE. Past the
+//      ceiling the held state STOPS GROWING, so the honest load factor is over
+//      `min(level, P)`, never over the requested scopes ⇒ ratio **K_C**.
+//    Bar = √(1 × K_C), the geometric mean — the only point equally distant from
+//    both models when the quantity is a ratio.
+// 🛑 USING THE REQUESTED SCOPES INSTEAD WOULD INFLATE K_C TO 4 AND HAND THE
+//    HEALTHY DAEMON A BAR IT CANNOT FAIL. A capped quantity is what the cost can
+//    depend on; asking for more scopes than the ceiling holds does not make the
+//    state bigger, it makes the LRU busier — and that is precisely what this
+//    axis is here to price.
+// ⚠️ WHAT IT STILL DOES NOT PROVE: the same five limits as axis A (one machine,
+//    one OS, synthetic corpus, no real agent), plus one of its own — it exercises
+//    the DURABLE class only. The ephemeral ceiling has its own LRU and its own
+//    flood, measured NOWHERE here.
+const PLAFOND_DURABLE = require('../src/state-eviction-pure.js').MAX_DURABLE;
+const EVICT_LEVELS = [PLAFOND_DURABLE / 4, PLAFOND_DURABLE / 2, PLAFOND_DURABLE, PLAFOND_DURABLE * 2];
+const tenu = (n) => Math.min(n, PLAFOND_DURABLE);
+const BAR_EVICT = Math.sqrt(mean(EVICT_LEVELS.slice(-2).map(tenu)) / mean(EVICT_LEVELS.slice(0, 2).map(tenu)));
+
+// ⚠️ CAPTURED BY CELLS ① AND ②, CONSUMED BY THE LAST CELL. `test.sequential`
+//    is what makes this safe, and it is already load-bearing for the timings.
+//    🛑 NEVER let the last cell RE-RUN the drivers to get its pair: two extra
+//    driver runs on the operator's workstation to recompute a number the run
+//    already produced is exactly the toil this house exists to delete.
+const paireRunner = { sain: null, sabote: null, scopes: null };
 
 // ── ① THE MEASUREMENT ────────────────────────────────────────────────────
 // 🛑 `test.sequential` ON ALL FOUR CELLS, AND IT IS LOAD-BEARING, NOT TIDINESS.

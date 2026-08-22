@@ -40,6 +40,11 @@
 
 const { ask } = require('./hooks/state-client');
 const pretool = require('./pretool-core');
+// 🔑 THE FALLBACK RESOLVES ITS PAIR THROUGH THE ONE OWNER OF THAT DECISION.
+//    Opening a store module directly here would be a second place deciding
+//    which memory this lane speaks to — the exact capability `store-resolve`
+//    exists to remove.
+const { resolveStore } = require('./store-resolve');
 
 // 🛑 A STORE THAT KNOWS NOTHING AND WRITES NOTHING — the shape of "no authority".
 //    It is deliberately NOT the file store: reaching for the files here is
@@ -129,11 +134,27 @@ function run(data, deps, options) {
     //    be a second formatting of one decision.
     if (reponse) { emit(reponse); return; }
 
-    // NO AUTHORITY REACHABLE — decide locally, deliver what needs no record,
-    // write nothing, and let `pretool-core` announce what it had to withhold.
+    // 🔑 NO AUTHORITY REACHABLE — DECIDE LOCALLY ON THE DISK, WHICH IS THE TRUTH
+    //    (2026-08-22). The daemon writes the durable state THROUGH to these very
+    //    files, so reading them is not a second memory: it is the same one, at
+    //    the price of a file instead of a socket.
+    // 🔴 THIS USED TO PASS `ETAT_ABSENT`, AND THAT COST A PRODUCTION OUTAGE. A
+    //    pair that writes nothing withholds every document needing a record —
+    //    so a dead daemon silently starved the WHOLE FLEET of its `once`
+    //    documents and skills (15 minutes measured on 2026-08-22). And this
+    //    daemon dies BY DESIGN, dozens of times a day: every edit of this
+    //    repository triggers its stale-code exit. A lane whose normal regime is
+    //    death may not treat death as an incident.
+    // 🛑 THE ACCEPTANCE CRITERION, STATED BY THE OPERATOR AND BINDING: from the
+    //    agent's point of view, a restart must be INDISTINGUISHABLE from no
+    //    restart at all — in the RESULT. Not in the latency: the disk is slower,
+    //    and buying back that speed would mean holding state in RAM again, which
+    //    is the very defect being closed here. Correct-but-slower, never fast-
+    //    but-wrong.
+    const repli = resolveStore({ backend: 'client' });
     moteur(data, (decision, fullDoc, systemMessage) => {
       emit(output(decision, fullDoc, systemMessage));
-    }, { ...o, store: ETAT_ABSENT, withLock: SANS_VERROU });
+    }, { ...o, store: repli.store, withLock: repli.withLock });
   });
 }
 
