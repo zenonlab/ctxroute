@@ -48,10 +48,12 @@
    stops being an arbitration between capacity and cost. **Codex 0.146.0 has no such handler**
    (*"Only `type:"command"` handlers run today"*) and stays on the spawn lane — the normal asymmetry
    of a thin shell per harness, never a degradation to fix. 🛑 **The 10,000 c cap is per OUTPUT, not
-   per process**: N declarations remain REQUIRED, only their price changes. Shipped INERT
-   (`src/hooks/http-server.js`, nothing wired) + proven byte-identical to the spawn lane
-   (`http-lane-differential.test.js`, seen red on a shifted frame). Details and the ONE remaining
-   guess → `http-lane.md`. What is left is the OS service unit and the maintainer's switch-over.
+   per process**: N declarations remain REQUIRED, only their price changes. ✅ **WIRED IN PRODUCTION
+   ON 22/08/2026** (`src/hooks/http-server.js` — it shipped INERT on 20/08 and that word is now
+   FALSE), 16 frames, **5,300 ms → 182 ms per action MEASURED**, proven byte-identical to the spawn
+   lane (`http-lane-differential.test.js`, seen red on a shifted frame). 🛑 More frames buy CAPACITY,
+   never speed — 100 was tried and cancelled the same day (one CLI entry PER declaration). Details
+   → `http-lane.md`.
 0sexies-bis. 🔑 **THE KERNEL SERIALISES, THE DISK ONLY SAVES — SHIPPED INERT 20/08/2026, AND IT IS
    THE RULE THAT EXPLAINS THE THREE FLAKY OF THAT DAY.** Sixteen frame processes had no common
    ground but the disk, so a FILE was made to carry a CONVERSATION between them: a lock to take
@@ -76,12 +78,23 @@
    (`state-write-under-lock-gate` matches the SHAPE of the call site; renaming it blinded the gate
    the same day) · ⑤ **a builder never decides whether its caller lives** — `createServer` used to
    `throw` on `EADDRINUSE` and killed the process before `kernel-bind` could inspect a DEAD socket
-   file; a core returns a verdict, the SHELL decides to die · ⑥ **ONE AUTHORITY, OR NONE**
-   (`client-core.js`, 21/08/2026): with no daemon a frame decides LOCALLY and **writes NOTHING** —
-   a fallback that wrote would make TWO memories, and a `once` delivered by one would be
-   re-delivered by the other for ever, in silence. ⚠️ Its empty state is a FACT (no file, no
-   daemon), the EXACT OPPOSITE of the spawn lane where reading the file is mandatory — the two look
-   alike and the rules are inverted, so never copy one onto the other.
+   file; a core returns a verdict, the SHELL decides to die · ⑥ **ONE TRUTH, NEVER ONE ADDRESS**
+   (`client-core.js`, REWRITTEN 22/08/2026 — it said *"ONE AUTHORITY, OR NONE: with no daemon a
+   frame decides LOCALLY and writes NOTHING"*, and that is now FALSE). 🔴 **READING "one authority"
+   as "one ADDRESS" is exactly what made the daemon a SINGLE POINT OF FAILURE — 15 minutes of
+   documents withheld from the WHOLE fleet, measured.** The daemon is a **write-through CACHE**: it
+   writes the durable keys THROUGH to `session-store`, so it OWNS nothing and the DISK is the
+   truth. ⇒ **the fallback WRITES to disk**, and that is not two memories, it is the same one
+   reached by another road. The old rule was right for exactly as long as the daemon held the truth
+   in RAM; what changed is not the rule's boldness, it is WHO OWNS THE STATE. ⚠️ Only the ephemeral
+   `plan-` class stays out of the write-through (its loss costs a recomputation, never a
+   re-delivery) and the classification is **PURE** (`memory-store-pure.isWriteThrough`) — written in
+   the I/O shell it would be measured by nothing. ⚠️ The acceptance criterion is the operator's, and
+   it is binding: *"we restart it forty billion times a day, and from the agent's point of view it
+   is as if it had never restarted"* ⇒ every fix shaped **"die less" is wrong by construction**; the
+   death has to be FREE. Indistinguishable in the RESULT, not in the LATENCY — correct-but-slower,
+   never fast-but-wrong (`daemon-is-a-cache.test.js`, with its CONTROL cell: an OWNING daemon must
+   FAIL that sequence, or it proves nothing).
    ⚠️ **THE THREE-OS MATRIX EARNED ITS COST IN ONE HOUR** — three real defects, none visible
    locally: a Linux abstract address starts with a NUL byte an `argv` cannot carry · macOS keeps the
    socket FILE after a killed daemon (cleared only after ASKING the kernel who answers, never on
@@ -89,8 +102,12 @@
    because the failure was unobservable** (a 30 s timeout saying only "it timed out", then the
    daemon's `stderr` thrown away by `stdio: 'ignore'`). **A fact documented but not wired protects
    nobody, and an unobservable failure costs one CI round trip PER HYPOTHESIS.**
-   🛑 **NOTHING IS WIRED**: production still runs the spawn lane and its files. Switching over is
-   the maintainer's decision, at a moment when no agent is running. Detail: `kernel-state.md`.
+   ✅ **WIRED IN PRODUCTION 22/08/2026** — this line said *"NOTHING IS WIRED: production still runs
+   the spawn lane and its files"*, and it is FALSE since that day: Claude Code runs the `http` lane
+   against the daemon, Codex stays on the spawn lane as a CLIENT. ⚠️ **AND THE SWITCH-OVER WAS ONLY
+   SAFE BECAUSE THE DAEMON STOPPED OWNING ANYTHING**: it is a write-through CACHE onto
+   `session-store`, so its death — dozens of times a day, by design — costs LATENCY and never a
+   memory. Detail: `kernel-state.md`.
 
 0sexies-quater. 🔑 **THE DAEMON LISTENS ON BOTH TRANSPORTS, AND BEFORE 21/08/2026 THE KERNEL LANE
    HAD NO OTHER END.** `http-server.js` bound ONLY the TCP port while `state-client.js` connects on
@@ -196,17 +213,63 @@
    condition of validity, rather than dressed up as the familiar reason. **TRUE ONLY while the
    daemon owns its state alone and every route stays synchronous.**
    📐 **ORDER OF THE REMAINING WORK, and it is not negotiable — the transport is the LAST step**:
-   ① ownership closed ✅ ② the four consumers on one authority ✅ (code; **nothing is wired**)
+   ① ownership closed ✅ ② the four consumers on one authority ✅ **AND WIRED IN PRODUCTION SINCE
+   22/08/2026** (the parenthesis here said *"code; nothing is wired"* — FALSE since that day)
    ③ **corpus in memory** — measured 41.49 ms per request of which **0.17 ms is transport**: the
    41 ms are the corpus re-read, so that is where the win is, never in the pipe ④ the SNAPSHOT
-   decision (rewritten in FULL on every state write = O(total state) per tool call — a COUNT or the
-   daemon's clean exit; it changes the proven "the state survives a restart" property, hence the
-   maintainer's call) ⑤ **HTTP last, and only with an answer to "daemon dead" other than silence**:
-   a declaration is `command` OR `http`, never both, so that lane has **NO fallback** — the client
-   lane keeps one and announces what it withheld.
+   decision ✅ **CLOSED 21/08/2026** — TWO authorities, both FACTS and never a clock: a COUNT of
+   mutations (`PERSIST_EVERY = 64`, decided PURELY in `memory-store-pure`) AND the daemon's own
+   CLEAN EXIT. The proven property is now *"the state survives a CLEAN restart ENTIRELY, and a
+   `kill -9` loses at most the last N mutations"*, a trade acceptable ONLY because losing a mutation
+   costs a RE-DELIVERY, never a wrong action ⑤ **HTTP** ✅ **IN PRODUCTION SINCE 22/08/2026, 16
+   frames** (this line said *"HTTP last, and only with an answer to 'daemon dead' other than
+   silence'"* — both conditions are met). **MEASURED: 5,300 ms → 182 ms per action** — the gain
+   comes from the TRANSPORT, never from the number of frames: a 100-frame attempt was tried and
+   **CANCELLED the same day** (the CLI renders one entry PER DECLARATION, so the display became
+   unusable). A declaration is `command` OR `http`, never both, so the http lane has **NO
+   fallback** — what answers "daemon dead" is the WITHHELD notice, a COUNT observed by us and true
+   on every harness, never a liveness probe. The client lane keeps its fallback.
    🛑 **A BENCH AT THE REAL SIZING DOES NOT EXIST**: nobody has ever exercised this with hundreds of
    parallel agents. Until that measurement exists — the SLOPE, never an absolute time — every
    sizing claim here is a reasoning, not a proof. Do not write otherwise.
+
+0octies. 🔑 **THE WIRING IS A GENERATED ARTEFACT — NEVER HAND-EDIT `settings.json` AGAIN
+   (22/08/2026).** The harness wiring declared this framework **19 times BY HAND** (16 gate frames +
+   session gate + turn counter + PreCompact reset); the lane argument was written on the 16 and
+   forgotten on the 3, so the gate recorded in the daemon while its peers read and ERASED the state
+   files. Two memories, no error, no badge, nothing red — the doctor caught it hours later.
+   **The class is STRUCTURAL, not human: one truth held in 19 hand-edited copies.** ⇒ `wiring.json`
+   is the source, `wiring-plan.js` decides, `tools/wiring-generate.js` emits, and divergence stops
+   being POSSIBLE instead of being caught (`wiring-manifest.md`).
+   🛑 **THE GENERATOR WRITES SINCE 22/08/2026** (`--write <settings.json>`; the earlier read-only
+   phase is over) — never by default, only when a human types the flag with no agent running, and
+   behind FOUR non-optional guards: timestamped backup whose path is PRINTED · atomic write, re-read
+   and re-parsed · byte-for-byte mismatch ⇒ **backup RESTORED and refusal** · any declaration
+   mentioning this framework that is not ours ⇒ refusal, never a survivor. `--out` (fragment) and
+   `--write` are EXCLUSIVE, and the splice is IDEMPOTENT by construction, never by discipline.
+   🛑 **THE MANIFEST DECLARES THE TRANSPORT, AND A DECLARATION IS KNOWN BY ITS COORDINATES.**
+   `transport.kind` = `command` (the DEFAULT when the key is absent — the spawn form, and **the only
+   one Codex has a handler for**) or `http` + `host`/`port`/`path` (the live Claude Code wiring).
+   An unknown kind is a **NAMED REFUSAL**: a harness with no handler for a transport runs NOTHING,
+   with no error and no log. ⚠️ On `http` the gate carries NO lane argument (the daemon IS the
+   authority) and NO `args` (a URL has no argv). ⚠️ `--frame k --frames N` and `?frame=k&frames=N`
+   are ONE fact in two writings ⇒ **every consumer, `doctor.js` included, recognises a gate
+   declaration by its COORDINATES — never by a `command` field, never by a file name.** A judge
+   reading `d.command` counted ZERO frames the day the wiring moved to http: loud, and judging
+   nothing. 🛑 `kind: "http"` with `stateLane: "files"` is a NAMED REFUSAL — that pair IS the
+   22/08 split brain, generated on purpose.
+   🛑 **THE BOUND IS DECLARED IN THE MANIFEST, AND ITS CEILING IS DERIVED.**
+   `bounds.gateHookTimeoutSeconds` is refused outside `1..N`, where **N comes from the smallest
+   numeric handler default of `harness-profile.HOOK_TIMEOUT_DEFAULTS`** (60 s today) — beyond what
+   the harness applies on its own, a declared bound NEVER FIRES FIRST, so `999999` reads as a
+   decision and bounds nothing. A framed consumer may not declare its own `timeout`: two places for
+   one number. ⚠️ **A HARNESS'S HOOK DEFAULT IS DATA, NOT LORE** (same file, same rule as every other
+   dialect fact): Claude Code = **600 s on `http`, 60 s on `command`** — the quieter lane has the
+   LONGER default, which is exactly why a declared bound matters MORE there, not less; Codex =
+   `http` **ABSENT**, `command` **UNMEASURED**. Measured 22/08: a frame answers in 11 ms and
+   production declares 10 s (~900×). 🛑 KNOWN GAP, WRITTEN NOT HIDDEN: the Codex wiring lives
+   OUTSIDE this repository (`~/.codex/config.toml`), so no manifest generates it — closing that
+   needs a manifest of its own, never a patch to this generator.
 
 
 0septies. 🛑 **WHEN IS A CLASS OF DEFECT ACTUALLY CLOSED? FOUR CONDITIONS, ALL NECESSARY.**
@@ -516,7 +579,7 @@ The ENGINE is portable BY CONSTRUCTION (gate `sources-must-not-know-the-harness`
 
 ⚠️ **THREE PATHS, AND THE 3rd CLOSES EVERYTHING (05/08/2026): it fits ⇒ as-is · it overflows ⇒ chunked · it STILL overflows ⇒ QUEUE, re-emitted at the next action.** The capacity of ONE call is finite (**12 frames, ~91,932 c** — 1 frame = 7,661 c; real worst-case load measured 65,265 c, i.e. 71%) because the harness spawns exactly the declared frames — but it is no longer a DELIVERY ceiling, only a **THROUGHPUT**: the surplus waits in the queue instead of being dropped, exactly like a TCP sender keeps its buffer when the window is full.
 
-🛑 **N FRAMES = THE BANDWIDTH OF ONE ACTION — 16 today (12 until 12/08/2026), tunable via `frames`.** Capacity of an action: **16 × 7,661 ≈ 122,576 c** (91,932 c at 12). 🔴 **This paragraph advocated ONE single declaration for 24 h — FALSE, CANCELLED.** The framing error: I took the DISPLAY ORDER for the requirement, whereas the requirement is **"the COMPLETE context before the next tool call"**. At 1 frame the capacity drops to 7,661 c ⇒ a 53,830 c skill spreads over 8 actions ⇒ **the agent acts 7 times on partial knowledge**. A disorder can be reassembled (`k/N` + a common marker, that is the WHOLE point of the RFCs); knowledge absent at the moment of acting cannot. ⚠️ **AND THE MEASUREMENT JUSTIFYING THE REMOVAL WAS BIASED**: "saturated 1 time in 74" counted the frames USED; the right observable was the deferred-docs counter, **which never came back down to zero** (a `dumb` corpus is re-decided at every action ⇒ a queue in perpetual rotation). ⚠️ **ORDERING IS GUARANTEED BY NO HARNESS and cannot be** — official doc: *"All matching hooks run in parallel"*, aggregation **unspecified**, 10,000 c cap across the **5 handler types**. Guaranteed order ⟺ SINGLE output ⟺ content ≤ one frame. 🛑 NEVER code a precedence chain between processes to force it: that would be a bet on the undocumented (forbidden by `budget.md`). 🛑 **THE DUPLICATE EXISTS — THE 07/08 "REFUTATION" WAS ITSELF TOO HASTY, CAUSE FOUND THE SAME NIGHT.** The morning case (chunk 7/8) was indeed a `PreCompact`, and 12 parallel processes produced 0 duplicates — but **a failed reproduction is not a REFUTATION**, and it was written as one, in bold, in the code, four docs and the backlog. ⚠️ **RULE, in BOTH directions**: a defect is engraved on REPRODUCTION; its ABSENCE is NEVER engraved — the honest status is "not reproduced to date". **REAL CAUSE**: the "lock unavailable" fallback of `pretool-core.js` decided with an EMPTY state ⇒ a `once` already delivered was judged never delivered and re-emitted; not reading the memoized plan either, it recomputed the SAME split on its own (deterministic ⇒ identical marker) and emitted only ITS frame. **Signature = an ORPHAN chunk after a complete delivery, no compaction, empty queue.** 🛑 **ROOT FAULT = an INFERENCE** ("didn't get the lock" ⇒ "nothing was injected"): the lock serializes WRITES, READING never needed it. Fixed: the fallback READS the state, still writes nothing. The system is deterministic again (it depended on who won the race — hence "not reproducible", hence the false refutation). ⚠️ **1,096 tests did not see it**: no suite made the lock FAIL. **A degradation path tested only with an empty state is not tested.** Guardrails = `doctor.js --settings`: same `--frames` everywhere · as many declarations as frames · indices 1..N with no gap and no duplicate · **equality with `frames` from the config** (two places for one number diverge silently — paid on 05/08). ⚠️ **RAISING IT COSTS**: one process per frame on EVERY tool call, even empty (~330 ms) — 12 ⇒ ~4 s, 50 ⇒ ~17 s. 🔴 **AND THAT PRICE BELONGS TO THE `command` LANE, NOT TO `frames` (20/08/2026)**: Claude Code 2.1.237 implements `type:"http"`, where a frame costs one local POST against an already-running service. The HTTP shell exists and is PROVEN identical to the spawn lane, deliberately UNWIRED (`http-lane.md`). Codex has no such handler and keeps this cost. 🛑 The cap is per OUTPUT, not per process ⇒ N declarations stay REQUIRED on both lanes.
+🛑 **N FRAMES = THE BANDWIDTH OF ONE ACTION — 16 today (12 until 12/08/2026), tunable via `frames`.** Capacity of an action: **16 × 7,661 ≈ 122,576 c** (91,932 c at 12). 🔴 **This paragraph advocated ONE single declaration for 24 h — FALSE, CANCELLED.** The framing error: I took the DISPLAY ORDER for the requirement, whereas the requirement is **"the COMPLETE context before the next tool call"**. At 1 frame the capacity drops to 7,661 c ⇒ a 53,830 c skill spreads over 8 actions ⇒ **the agent acts 7 times on partial knowledge**. A disorder can be reassembled (`k/N` + a common marker, that is the WHOLE point of the RFCs); knowledge absent at the moment of acting cannot. ⚠️ **AND THE MEASUREMENT JUSTIFYING THE REMOVAL WAS BIASED**: "saturated 1 time in 74" counted the frames USED; the right observable was the deferred-docs counter, **which never came back down to zero** (a `dumb` corpus is re-decided at every action ⇒ a queue in perpetual rotation). ⚠️ **ORDERING IS GUARANTEED BY NO HARNESS and cannot be** — official doc: *"All matching hooks run in parallel"*, aggregation **unspecified**, 10,000 c cap across the **5 handler types**. Guaranteed order ⟺ SINGLE output ⟺ content ≤ one frame. 🛑 NEVER code a precedence chain between processes to force it: that would be a bet on the undocumented (forbidden by `budget.md`). 🛑 **THE DUPLICATE EXISTS — THE 07/08 "REFUTATION" WAS ITSELF TOO HASTY, CAUSE FOUND THE SAME NIGHT.** The morning case (chunk 7/8) was indeed a `PreCompact`, and 12 parallel processes produced 0 duplicates — but **a failed reproduction is not a REFUTATION**, and it was written as one, in bold, in the code, four docs and the backlog. ⚠️ **RULE, in BOTH directions**: a defect is engraved on REPRODUCTION; its ABSENCE is NEVER engraved — the honest status is "not reproduced to date". **REAL CAUSE**: the "lock unavailable" fallback of `pretool-core.js` decided with an EMPTY state ⇒ a `once` already delivered was judged never delivered and re-emitted; not reading the memoized plan either, it recomputed the SAME split on its own (deterministic ⇒ identical marker) and emitted only ITS frame. **Signature = an ORPHAN chunk after a complete delivery, no compaction, empty queue.** 🛑 **ROOT FAULT = an INFERENCE** ("didn't get the lock" ⇒ "nothing was injected"): the lock serializes WRITES, READING never needed it. Fixed: the fallback READS the state, still writes nothing. The system is deterministic again (it depended on who won the race — hence "not reproducible", hence the false refutation). ⚠️ **1,096 tests did not see it**: no suite made the lock FAIL. **A degradation path tested only with an empty state is not tested.** Guardrails = `doctor.js --settings`: same `--frames` everywhere · as many declarations as frames · indices 1..N with no gap and no duplicate · **equality with `frames` from the config** (two places for one number diverge silently — paid on 05/08). ⚠️ **RAISING IT COSTS**: one process per frame on EVERY tool call, even empty (~330 ms) — 12 ⇒ ~4 s, 50 ⇒ ~17 s. 🔴 **AND THAT PRICE BELONGS TO THE `command` LANE, NOT TO `frames` (20/08/2026)**: Claude Code 2.1.237 implements `type:"http"`, where a frame costs one local POST against an already-running service. ✅ **AND IT IS LIVE SINCE 22/08/2026 — this line said "deliberately UNWIRED", which is FALSE.** The `http` lane runs the production wiring at **16 frames**, MEASURED **5,300 ms → 182 ms per action** (`http-lane.md`). 🛑 **THE GAIN COMES FROM THE TRANSPORT, NEVER FROM THE NUMBER**: a 100-frame attempt was made and **CANCELLED the same day** — the CLI renders ONE ENTRY PER DECLARATION, so the display became unusable long before anything else broke. Raising `frames` buys capacity, never speed. Codex has no such handler and keeps the spawn cost. 🛑 The cap is per OUTPUT, not per process ⇒ N declarations stay REQUIRED on both lanes.
 ⚠️ **CAPACITY ALARM (07/08/2026)**: as soon as a doc is DEFERRED, the badge says so and names the setting (`frames`) — on the LAST frame only (12 screams = an unreadable alarm). Sealed by `capacity-alarm.test.js` (real spawn, positive case + silence when capacity suffices). It closes the "nothing measures THROUGHPUT" hole: the degradation was SILENT, hence invisible to all tests.
 ⚠️ **LESSON, wider than that bug: 1,066 green tests + 100% mutation + green doctor, and TWO defects visible to the naked eye** (badges out of order, duplicated chunk). Tests prove what someone thought of proving. When the maintainer says "that's weird", it is a MEASUREMENT to investigate — never a feeling to reassure. And `budget.property` was structurally blind here: it proves CONSERVATION, and a segment delivered twice is perfectly "conserved". **Conservation AND uniqueness — two properties, we only had one.**
 ✅ **THE RESERVATION IS LIFTED (05/08/2026, ⑯+⑮ SHIPPED) — transport is a LAYER, no longer a caller's choice.** `emission-core.js` is the ONLY way a context leaves; `pretool-core.js` AND `session-inject.js` go through it. The SESSION gate had NO transport (no seal, no chunking, no queue) and only held because `docs/session/` weighed ~1.2 KB — static sizing.

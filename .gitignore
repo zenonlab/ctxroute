@@ -53,3 +53,8 @@ specs/tla/*.cfg
 #    created with NO declared bound, in the ONE place that never forgets. Growth
 #    would have been ~464 files per `spec:tlc` run, for ever.
 specs/tla/states/
+
+# Scratch files an agent leaves behind. MEASURED 2026-08-22: one was swept into a
+# commit by a `git add -A`, and coverage-gate found it — the exhaustiveness net
+# judges TRACKED files, so a stray artefact becomes a permanent red until removed.
+*.tmp.json
