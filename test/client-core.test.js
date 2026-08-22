@@ -22,6 +22,7 @@ import { createRequire } from 'node:module';
 
 const require_ = createRequire(import.meta.url);
 const client = require_('../src/client-core.js');
+const { resolveStore } = require_('../src/store-resolve.js');
 
 /** A shell dialect reduced to what the contract needs: a pure formatter. */
 const dialecte = (decision, doc, message) => ({ decision, doc, message });
@@ -60,19 +61,23 @@ test('with no daemon, the frame decides locally and the store it is given can ne
   assert.deepEqual(emis, { decision: 'allow', doc: 'LOCAL', message: 'BADGE' },
     'the local path must still deliver through the shell dialect');
 
-  // 🛑 THE STORE MUST BE THE ABSENT ONE, NEVER THE FILE STORE. Reaching for the
-  //    files here is exactly the second memory this design forbids.
-  assert.deepEqual(vues.store.loadState('doc-seen-', 's'), {},
-    'the fallback store claims to know something: with no daemon, nothing anywhere has recorded anything');
-  assert.equal(vues.store.saveState('doc-seen-', 's', { x: 1 }), undefined,
-    'saveState must be inert — making it write reintroduces the duplicate delivery in production');
-
-  // 🛑 AND THE LOCK MUST NEVER GRANT: handing back `fallback` is what routes
-  //    `pretool-core` into its lock-less branch, the one proved sufficient by
-  //    TLC. Returning anything else would make this frame emit a full delivery
-  //    it is not allowed to record.
-  assert.equal(vues.withLock('/nowhere', () => 'SECTION', { fallback: null }), null,
-    'the lock granted the critical section: the frame would deliver a `once` it cannot record');
+  // 🔑 THE STORE MUST BE THE DISK PAIR — INVERTED ON 2026-08-22, AND THE
+  //    REVERSAL IS THE WHOLE FIX. This cell used to demand an INERT store, on a
+  //    reasoning that was correct at the time: while the daemon held the durable
+  //    state in RAM, a fallback that wrote files would have been a SECOND
+  //    memory. Since the daemon writes durable keys THROUGH to those same files,
+  //    the disk is the one truth and reading it is not divergence.
+  // 🔴 WHAT THE OLD INVARIANT COST: a store that writes nothing withholds every
+  //    document needing a record, so a dead daemon starved the WHOLE FLEET of
+  //    its `once` documents and skills — 15 silent minutes measured that
+  //    morning, on a daemon that exits BY DESIGN at every edit of this
+  //    repository. A lane whose normal regime is death may not treat death as
+  //    an incident.
+  const disque = resolveStore({ backend: 'disk' });
+  assert.equal(vues.store, disque.store,
+    'the fallback is not the disk store: either a second memory, or a memory that records nothing');
+  assert.equal(vues.withLock, disque.withLock,
+    'the fallback took no real lock: it races the daemon, which now writes the same files');
 });
 
 // ── ③ THE ABSENT STORE IS INERT ON DISK, MEASURED ───────────────────────

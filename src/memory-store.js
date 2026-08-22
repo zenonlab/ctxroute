@@ -56,6 +56,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// The single source of paths — a writer names its destination through it, never
+// through a literal or an ad-hoc `path.join(__dirname, 'state')`.
+const paths = require('./paths');
 // 🛑 THE DECISIONS LIVE NEXT DOOR, AND THAT SPLIT IS NOT COSMETIC. Stryker never
 //    mutates an I/O file (equivalent mutants guaranteed), so an LRU or a shape
 //    check written HERE would ship measured by nothing. This file owns the
@@ -84,6 +87,7 @@ const DEFAULT_EXIT_HOOK = (fn) => {
 
 /**
  * @param {{ snapshotPath?: string|null,
+ *           durableStore?: {loadState: Function, saveState: Function}|null,
  *           onExit?: (fn: () => void) => (() => void) }} [options]
  * @returns {{ loadState: Function, saveState: Function, purge: Function,
  *            restore: Function, size: Function, scopes: Function,
@@ -103,12 +107,45 @@ function createMemoryStore(options) {
 
   const cle = pur.key;
 
+  // 🔑 WRITE-THROUGH ON THE DURABLE KEYS — THE DAEMON IS A CACHE, NOT AN OWNER
+  //    (2026-08-22). Until today this store OWNED the durable state in RAM and
+  //    saved it every N mutations. That made the daemon a SINGLE POINT OF
+  //    FAILURE: it dies BY DESIGN at every edit of this repository (stale-code
+  //    exit, dozens of times a day), and each death withheld every `once`
+  //    document from the WHOLE fleet — 15 silent minutes measured that morning.
+  // 🛑 THE FIX IS NOT "DIE LESS". Raising a restart budget from 3 to 100 is the
+  //    same patch with a bigger number; the regime is permanent, so the DEATH
+  //    must become free. The disk (`session-store`) is the truth again, this
+  //    store forwards to it, and a client that cannot reach the daemon reads the
+  //    SAME files — never a second memory.
+  // ⚠️ ONLY THE DURABLE CLASS. A `plan-` is born at every tool call and dies
+  //    with its action (88 % of the state files measured on the live install):
+  //    forwarding those would buy nothing and cost one disk write per frame, on
+  //    a machine whose SSD wear is a declared budget. Losing an ephemeral key
+  //    costs a recomputation, never a re-delivery — that asymmetry is the whole
+  //    justification, and it is why the two classes are treated differently.
+  // 🛑 NO CACHE OF THE DURABLE CLASS IN RAM, DELIBERATELY. A cached copy would
+  //    need validating against a fallback writer, and a validation that is ever
+  //    wrong re-delivers documents in silence. One process reading one file is
+  //    already sixteen times cheaper than what the disk lane did.
+  const durable = (options && options.durableStore) || null;
+  const estDurable = (k) => durable !== null && !pur.isEphemeral(k);
+
   function loadState(prefix, sessionId) {
+    if (estDurable(cle(prefix, sessionId))) return durable.loadState(prefix, sessionId);
     const v = pur.touch(etat, cle(prefix, sessionId));
     return v === undefined ? {} : v;
   }
 
   function saveState(prefix, sessionId, state) {
+    if (estDurable(cle(prefix, sessionId))) {
+      // ⚠️ `session-store.saveState` is ATOMIC (tmp + bounded rename retries), so
+      //    a concurrent reader never sees a half-written file. The read-modify-
+      //    write around it is serialised by the caller's `withLock`, which the
+      //    daemon now takes for real instead of the no-op it used to pass.
+      durable.saveState(prefix, sessionId, state);
+      return;
+    }
     pur.set(etat, cle(prefix, sessionId), state);
     // ⚠️ EVICT IN THE SAME GESTURE AS THE WRITE. Doing it "later", on a timer or
     //    at shutdown, is the same as not doing it: the timer is one more
@@ -130,7 +167,23 @@ function createMemoryStore(options) {
    *    made here about a session being over.
    */
   function purge(prefixeCle) {
-    const n = pur.purge(etat, prefixeCle);
+    let n = pur.purge(etat, prefixeCle);
+    // 🛑 THE DURABLE CLASS NOW LIVES ON DISK, SO THE PURGE MUST REACH IT THERE.
+    //    Forgetting this half would leave a compaction erasing only the
+    //    ephemeral keys: skills and `once` documents would never come back, the
+    //    exact production symptom of 2026-08-21. A purge only ever DESTROYS and
+    //    is idempotent, so doing it on both sides can never make two memories.
+    if (durable !== null) {
+      try {
+        const dir = paths.stateDir();
+        for (const f of fs.readdirSync(dir)) {
+          if (f.startsWith(prefixeCle) && f.endsWith('.json')) {
+            fs.rmSync(path.join(dir, f), { force: true });
+            n += 1;
+          }
+        }
+      } catch { /* fail-open: a purge that cannot read the folder never breaks a compaction */ }
+    }
     if (n > 0) compter();
     return n;
   }

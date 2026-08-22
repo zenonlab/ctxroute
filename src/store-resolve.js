@@ -81,11 +81,18 @@ function resolveStore(options) {
   }
   if (nom === 'none') return { store: ETAT_ABSENT, withLock: SANS_VERROU };
   if (nom === 'client') {
-    // 🛑 REFUSED LOUDLY, NOT SILENTLY DEGRADED. The daemon lane needs endpoints
-    //    the four consumers can all reach (purge included); until they exist,
-    //    answering with the disk pair would rebuild the split brain measured on
-    //    2026-08-21 while looking perfectly healthy.
-    throw new Error('store-resolve: the "client" backend needs the daemon endpoints — not wired yet');
+    // 🔑 THE DISK PAIR, AND THAT IS NOT A DEGRADATION — IT IS THE TRUTH ITSELF
+    //    (2026-08-22). The daemon no longer OWNS the durable state: it writes it
+    //    through to these very files. So a client that cannot reach the daemon
+    //    is not falling back to a SECOND memory — it is reading the ONE memory
+    //    directly, just without the daemon's speed.
+    // 🛑 THIS USED TO THROW, and the refusal was correct AT THE TIME: while the
+    //    daemon held the truth in RAM, answering with the disk pair would have
+    //    rebuilt the split brain of 2026-08-21 while looking perfectly healthy.
+    //    What changed is not this line's boldness, it is WHO OWNS THE STATE.
+    // ⚠️ NEVER re-introduce an empty pair here. `ETAT_ABSENT` writes nothing, so
+    //    a `once` it delivers is delivered again for ever, with nothing to see.
+    return { store: disque, withLock: lockModule.withLock };
   }
   return { store: disque, withLock: lockModule.withLock };
 }
