@@ -236,3 +236,71 @@ test('ONLY absence is retried — a real error is NOT swallowed by repetition', 
   assert.deepStrictEqual(store.readThrough(tronque, 'x'), {});
   assert.strictEqual(lectures, 1, 'a truncated JSON is a real defect: retrying it would mask a broken write');
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// purgeByPrefix — THE ONE OPERATION SAFE ON BOTH LANES, AND ITS GUARD
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔑 WHY IT EXISTS HERE AND NOT IN THE CALLER (2026-08-22). The daemon writes
+//    the durable class THROUGH to these files, so it must purge them too — and
+//    the PreCompact reset already swept them. Two hand-written traversals of one
+//    truth diverge, and this repository has paid that bill twice. This module
+//    owns the files, so it owns the sweep.
+// 🔴 UNTESTED UNTIL NOW, AND FOUND BY AUDIT RATHER THAN BY A GATE: reached only
+//    INDIRECTLY through `memory-store.purge()`, its own three contracts were
+//    judged by nothing. It is I/O, hence outside mutation — which is exactly why
+//    the contract has to be written down as cells: nothing else measures it.
+test('purgeByPrefix REFUSES an empty prefix — the guard that protects the whole fleet', () => {
+  const dir = fs.mkdtempSync(path.join(TMP, 'purge-'));
+  const avant = process.env.CTXROUTE_STATE_DIR;
+  process.env.CTXROUTE_STATE_DIR = dir;
+  try {
+    fs.writeFileSync(path.join(dir, 'doc-seen-a.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'turn-count-b.json'), '{}');
+
+    // 🛑 EVERY name starts with the empty string. One malformed caller would
+    //    erase the memory of EVERY agent on the machine in a single call — the
+    //    same guard the daemon's `/purge` route carries, for the same reason.
+    assert.strictEqual(store.purgeByPrefix(''), 0,
+      'an empty prefix deleted something: one malformed caller now wipes the whole fleet memory at once');
+    assert.strictEqual(store.purgeByPrefix(null), 0, 'a non-string prefix must be refused, not coerced');
+    assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['doc-seen-a.json', 'turn-count-b.json'],
+      'the refusal was not total: something was removed on a prefix that names nothing');
+
+    // CONTROL — without it the assertions above pass on a function that deletes
+    // NOTHING EVER, which is indistinguishable from a working guard.
+    assert.strictEqual(store.purgeByPrefix('doc-seen-'), 1,
+      'a real prefix removed nothing: this cell cannot tell a guard from a no-op, so its verdict is worthless');
+    assert.deepStrictEqual(fs.readdirSync(dir), ['turn-count-b.json'],
+      'the sweep took a file it does not own — a purge must never reach beyond its prefix');
+  } finally {
+    if (avant === undefined) delete process.env.CTXROUTE_STATE_DIR;
+    else process.env.CTXROUTE_STATE_DIR = avant;
+  }
+});
+
+test('purgeByPrefix takes ONLY `.json`, and fails open on a directory it cannot read', () => {
+  const dir = fs.mkdtempSync(path.join(TMP, 'purge2-'));
+  const avant = process.env.CTXROUTE_STATE_DIR;
+  process.env.CTXROUTE_STATE_DIR = dir;
+  try {
+    fs.writeFileSync(path.join(dir, 'plan-x.json'), '{}');
+    // ⚠️ A `.tmp` belongs to a LIVE writer mid-rename: taking it would lose that
+    //    write in silence. Only the published `.json` is ours to remove.
+    fs.writeFileSync(path.join(dir, 'plan-x.json.1234.tmp'), '{}');
+
+    assert.strictEqual(store.purgeByPrefix('plan-'), 1, 'the sweep did not take the published state');
+    assert.deepStrictEqual(fs.readdirSync(dir), ['plan-x.json.1234.tmp'],
+      'a `.tmp` was swept: a live writer just lost its write, and nothing says so');
+
+    // 🛑 FAIL-OPEN, like every write here: a purge that cannot run costs one
+    //    document not re-injected; a purge that THROWS costs the compaction it
+    //    was called from. It answers 0, it never raises.
+    process.env.CTXROUTE_STATE_DIR = path.join(dir, 'nexiste-pas');
+    assert.strictEqual(store.purgeByPrefix('plan-'), 0,
+      'an unreadable state directory raised instead of answering 0 — that exception lands in a PreCompact hook');
+  } finally {
+    if (avant === undefined) delete process.env.CTXROUTE_STATE_DIR;
+    else process.env.CTXROUTE_STATE_DIR = avant;
+  }
+});
