@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"gate.js","scope":["ctxroute"]},{"pattern":"gate.test.js","scope":["ctxroute"]},{"pattern":"gate.property.test.js","scope":["ctxroute"]},{"pattern":"doc-inject.js","scope":["ctxroute"]},{"pattern":"pretool-core.js","scope":["ctxroute"]},{"pattern":"codex-doc-inject.js","scope":["ctxroute"]},{"pattern":"codex-doc-inject.test.js","scope":["ctxroute"]},{"pattern":"source-adapters.js","scope":["ctxroute"]},{"pattern":"doc-inject.test.js","scope":["ctxroute"]},{"pattern":"corpus.js","scope":["ctxroute"]},{"pattern":"session-store.js","scope":["ctxroute"]},{"pattern":"session-store.test.js","scope":["ctxroute"]},{"pattern":"pretool-differential.test.js","scope":["ctxroute"]},{"pattern":"turn-count.js","scope":["ctxroute"]},{"pattern":"turn-count.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 20
+threshold: 28
 ---
 # gate.js / doc-inject.js / corpus.js / session-store.js — SINGLE GATE (LIVE 2026-07-17)
 
