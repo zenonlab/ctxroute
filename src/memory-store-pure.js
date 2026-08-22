@@ -151,6 +151,39 @@ function key(prefix, sessionId) {
   return `${prefix}${sessionId}`;
 }
 
+/**
+ * MUST THIS KEY BE WRITTEN THROUGH TO THE DISK? (2026-08-22)
+ *
+ * 🛑 THIS DECISION LIVES HERE AND NOT IN `memory-store.js`, AND THE REASON IS THE
+ *    SAME ONE THAT PUT `persistTick` HERE: Stryker never mutates an I/O shell, so
+ *    a rule written next to the `writeFileSync` would ship MEASURED BY NOTHING —
+ *    an inverted test would send the DURABLE class into RAM and the EPHEMERAL one
+ *    to disk, and every suite would stay green. It was written there for one
+ *    commit, and that was a defect, not a shortcut.
+ *
+ * 🔑 WHY THE TWO CLASSES DIVERGE, since the asymmetry is the whole point. Losing a
+ *    DURABLE key (`doc-seen-`, `turn-count-`, `remainder-`) re-delivers a document
+ *    that was already delivered — the visible production bug. Losing an EPHEMERAL
+ *    one (`plan-`) costs a RECOMPUTATION of a splitting that is deterministic by
+ *    construction, and nothing else. A `plan-` is also born at EVERY tool call
+ *    (88 % of the state files measured on the live install), so writing it through
+ *    would cost one disk write per frame per action, on a machine whose SSD wear
+ *    is a declared budget.
+ *
+ * ⚠️ NO SECOND LIST OF PREFIXES. The classification is `isEphemeral`, the one this
+ *    module already uses to pick a map — a second enumeration would be a second
+ *    truth about the same keys, and this repository has paid that bill twice.
+ * ⚠️ IT ANSWERS ON THE KEY ALONE. Whether a durable store even EXISTS is the
+ *    shell's business (a volatile store has none); mixing the two would make this
+ *    decision depend on I/O and take it straight back out of mutation.
+ *
+ * @param {string} k a state key, as built by `key()`
+ * @returns {boolean} true ⇒ the disk is the truth for this key
+ */
+function isWriteThrough(k) {
+  return !isEphemeral(k);
+}
+
 /** @returns {{durable: Map<string,object>, ephemere: Map<string,object>}} */
 function createState() {
   return { durable: new Map(), ephemere: new Map() };
@@ -278,7 +311,7 @@ function purge(etat, prefixeCle) {
 
 module.exports = {
   key, createState, mapFor, set, size, keys, entries,
-  evict, touch, adopt, purge, isEphemeral,
+  evict, touch, adopt, purge, isEphemeral, isWriteThrough,
   persistTick, shouldFlush,
   MAX_SCOPES, MAX_EPHEMERAL, PREFIXE_EPHEMERE, PERSIST_EVERY,
 };

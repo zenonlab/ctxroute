@@ -87,7 +87,7 @@ const DEFAULT_EXIT_HOOK = (fn) => {
 
 /**
  * @param {{ snapshotPath?: string|null,
- *           durableStore?: {loadState: Function, saveState: Function}|null,
+ *           durableStore?: {loadState: Function, saveState: Function, purgeByPrefix: Function}|null,
  *           onExit?: (fn: () => void) => (() => void) }} [options]
  * @returns {{ loadState: Function, saveState: Function, purge: Function,
  *            restore: Function, size: Function, scopes: Function,
@@ -128,8 +128,14 @@ function createMemoryStore(options) {
   //    need validating against a fallback writer, and a validation that is ever
   //    wrong re-delivers documents in silence. One process reading one file is
   //    already sixteen times cheaper than what the disk lane did.
+  // 🛑 THE CLASSIFICATION ITSELF IS NOT DECIDED HERE — `pur.isWriteThrough` owns
+  //    it, for the same reason `persistTick` lives next door: a rule written in
+  //    an I/O shell is a rule Stryker never mutates, hence a rule NOTHING
+  //    measures. Inverted, it would send the durable class into RAM and the
+  //    ephemeral one to disk with every suite still green. This line may only
+  //    ask "do I even have a disk store", which is the shell's own business.
   const durable = (options && options.durableStore) || null;
-  const estDurable = (k) => durable !== null && !pur.isEphemeral(k);
+  const estDurable = (k) => durable !== null && pur.isWriteThrough(k);
 
   function loadState(prefix, sessionId) {
     if (estDurable(cle(prefix, sessionId))) return durable.loadState(prefix, sessionId);
@@ -173,17 +179,11 @@ function createMemoryStore(options) {
     //    ephemeral keys: skills and `once` documents would never come back, the
     //    exact production symptom of 2026-08-21. A purge only ever DESTROYS and
     //    is idempotent, so doing it on both sides can never make two memories.
-    if (durable !== null) {
-      try {
-        const dir = paths.stateDir();
-        for (const f of fs.readdirSync(dir)) {
-          if (f.startsWith(prefixeCle) && f.endsWith('.json')) {
-            fs.rmSync(path.join(dir, f), { force: true });
-            n += 1;
-          }
-        }
-      } catch { /* fail-open: a purge that cannot read the folder never breaks a compaction */ }
-    }
+    // 🛑 AND THE SWEEP IS NOT WRITTEN HERE — `session-store.purgeByPrefix` owns
+    //    it, because that module owns the files. Written inline it would be a
+    //    SECOND hand-made traversal beside the one in `ctxroute-reset.js`, and
+    //    two enumerations of one truth diverge (paid twice: ㊱, ㊳).
+    if (durable !== null) n += durable.purgeByPrefix(prefixeCle);
     if (n > 0) compter();
     return n;
   }

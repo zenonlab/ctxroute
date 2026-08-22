@@ -110,4 +110,47 @@ function saveState(prefix, sessionId, state) {
   }
 }
 
-module.exports = { storeFile, loadState, saveState, readThrough };
+/**
+ * ERASE EVERY STATE WHOSE FILE NAME STARTS WITH `prefixeCle` (2026-08-22).
+ *
+ * 🔑 IT LIVES HERE BECAUSE THIS MODULE OWNS THE FILES. Until today the sweep was
+ *    written inline in `ctxroute-reset.js`, and the daemon — which now writes the
+ *    durable class through to these same files — grew a SECOND copy of it. Two
+ *    hand-written traversals of one truth diverge, and this repository has paid
+ *    that bill twice (㊱, ㊳). One owner, two callers.
+ * ⚠️ A PURGE ONLY EVER DESTROYS AND IS IDEMPOTENT — that is what makes it the one
+ *    operation safe to perform on both lanes: it can never RECORD a delivery, so
+ *    it cannot make two memories. Every other operation stays daemon-only on the
+ *    client lane.
+ * ⚠️ AN EMPTY PREFIX IS REFUSED, LOUDLY. Every name starts with the empty string,
+ *    so one malformed caller would erase the WHOLE fleet's memory in a single
+ *    call — the same guard the daemon's `/purge` route already carries.
+ * ⚠️ FAIL-OPEN like every write here: an unreadable directory yields 0, never an
+ *    exception. A purge that cannot run costs one document not re-injected; a
+ *    purge that throws costs the compaction it was called from.
+ * ⚠️ ONE `readdir` PER CALL, and the traversal is the DIRECTORY's size — the same
+ *    order the eviction sweep already pays on this folder, which is bounded by
+ *    count (`state-eviction-pure.js`). It is NOT sized by the number of prefixes:
+ *    a caller purging five prefixes should read the listing once, which is why
+ *    this takes ONE prefix and returns a count rather than doing the loop itself.
+ *
+ * @param {string} prefixeCle file-name prefix, e.g. `doc-seen-<scope>`
+ * @param {string[]} [listing] the directory listing, when the caller already has it
+ * @returns {number} how many files were actually removed
+ */
+function purgeByPrefix(prefixeCle, listing) {
+  if (typeof prefixeCle !== 'string' || prefixeCle === '') return 0;
+  const dir = paths.stateDir();
+  let noms = listing;
+  if (!Array.isArray(noms)) {
+    try { noms = fs.readdirSync(dir); } catch { return 0; }
+  }
+  let n = 0;
+  for (const f of noms) {
+    if (!f.startsWith(prefixeCle) || !f.endsWith('.json')) continue;
+    try { fs.rmSync(path.join(dir, f), { force: true }); n += 1; } catch { /* fail-open */ }
+  }
+  return n;
+}
+
+module.exports = { storeFile, loadState, saveState, readThrough, purgeByPrefix };
