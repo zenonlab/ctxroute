@@ -1,0 +1,108 @@
+{
+  "_doc": [
+    "SINGLE SOURCE of the TLC run matrix for MODULE State — the DURABILITY frontier.",
+    "Same contract as runs.json: `run-tlc.mjs --matrix state-runs.json` GENERATES every",
+    ".cfg from here and demands the EXACT verdict declared in `expect`.",
+    "The gate is TWO-WAY. A run expected RED that turns green fails as loudly as a green",
+    "that turns red: either the spec stopped biting (a hollow spec) or the code was fixed",
+    "and the check must move into the baseline. NEVER edit `expect` to silence a run."
+  ],
+  "module": "State",
+  "constantsDefault": {
+    "Writers": "{w1, w2}",
+    "Records": "{r1, r2}",
+    "USE_LOCK": "TRUE",
+    "STALE_FORCING": "FALSE",
+    "KERNEL_FORCING": "FALSE",
+    "SLOT_PER_WRITER": "FALSE",
+    "MaxPurges": "1",
+    "MaxDeaths": "1"
+  },
+  "shippedInvariants": ["TypeOK", "NoLostRecord", "AtMostOneInCrit"],
+  "runs": [
+    {
+      "cfg": "State",
+      "why": "THE DESIGN AS SHIPPED SINCE 2026-08-23 — both the daemon routes and the spawned peers take the REAL lock at the SAME address. Daemon death, restart and a concurrent compaction are all enabled: the write-through is what makes the death free, and this run is where that shows. Answers question ① : with the lock and WITHOUT stale forcing, no recorded delivery is lost.",
+      "constants": {},
+      "invariants": ["#shipped"],
+      "expect": { "green": true }
+    },
+    {
+      "cfg": "StateLockless",
+      "why": "NEGATIVE-CHECK ①, AND THE VALIDATION OF THE WHOLE MODEL: the daemon of 2026-08-22, whose /emit and /turn routes wrote the durable class with NO lock while spawned peers wrote the same files under one. This is the race REPRODUCED IN REALITY on 2026-08-23 (209 lost read-modify-writes out of 800 on one `remainder-` key). If TLC could not find it, this spec would be describing a comfortable fiction instead of the code. NEVER make it green.",
+      "constants": { "USE_LOCK": "FALSE" },
+      "invariants": ["TypeOK", "NoLostRecord"],
+      "expect": { "violated": "NoLostRecord" }
+    },
+    {
+      "cfg": "StateStaleForcing",
+      "why": "NEGATIVE-CHECK ② — THE LOCK IS TAKEN AND A RECORD IS STILL LOST. `lock.js` STALE_MS forces a lock it BELIEVES abandoned; that is an INFERENCE about death, and forcing it lets a SECOND writer into the critical section while the first is merely descheduled. It is the residual measured on 2026-08-23 (0-1 lost out of 800 with both writers correctly locked) and it is the reason `STALE_MS` still needs an answer of its own. Modelled WITHOUT any clock: a guess abstracts to nondeterminism, never to a timer.",
+      "constants": { "STALE_FORCING": "TRUE" },
+      "invariants": ["TypeOK", "NoLostRecord"],
+      "expect": { "violated": "NoLostRecord" }
+    },
+    {
+      "cfg": "StateKernelForcing",
+      "why": "THE ANSWER TO StateStaleForcing, SHIPPED 2026-08-23 — and the reason this module now has a second forcing knob. `lock.js` no longer infers death from a clock: it ASKS THE KERNEL whether the holder's pid still exists (`process.kill(pid, 0)`; official Node v22 doc: 'a platform independent way to test for the existence of a process'), and forces ONLY on `ESRCH`, which is a PROOF. Modelled as `~alive[lockOwner]`. Both dilemma horns are answered at once: a dead holder's lock is released (so StateStuckLock stops being permanent) AND no record is lost (so StateStaleForcing's counter-example is gone). 🛑 Its green is worth exactly what StateForcingFires proves — that forcing REALLY happens here.",
+      "constants": { "KERNEL_FORCING": "TRUE" },
+      "invariants": ["#shipped"],
+      "expect": { "green": true }
+    },
+    {
+      "cfg": "StateForcingFires",
+      "why": "ANTI-VACUITY OF THE RUN ABOVE, AND IT IS NOT OPTIONAL. Same constants, requiring NeverForced to be VIOLATED: without it, StateKernelForcing's green could mean 'nobody ever took a held lock' rather than 'taking a PROVABLY dead holder's lock is harmless' — and 'nobody ever forced' is equally true of the design that deadlocks for ever. A green that explored nothing is this repository's worst failure mode.",
+      "constants": { "KERNEL_FORCING": "TRUE" },
+      "invariants": ["NeverForced"],
+      "expect": { "violated": "NeverForced" }
+    },
+    {
+      "cfg": "StateCommutativeShared",
+      "why": "QUESTION ② , HALF ONE — AND THE ANSWER IS NO. The recorded operation here IS commutative and idempotent (set union), and the property STILL breaks without the lock. Commutativity settles the ORDER of operations; the loss happens in the READ-MODIFY-WRITE, when a whole shared value is replaced from a stale snapshot. Same constants as StateLockless by construction, and that identity IS the finding: 'make the writes commute' changes nothing at all as long as one file is replaced whole.",
+      "constants": { "USE_LOCK": "FALSE", "SLOT_PER_WRITER": "FALSE" },
+      "invariants": ["TypeOK", "NoLostRecord"],
+      "expect": { "violated": "NoLostRecord" }
+    },
+    {
+      "cfg": "StateCommutativeSlots",
+      "why": "QUESTION ② , HALF TWO — WHAT ACTUALLY WORKS, WITH NO LOCK AT ALL. Each writer owns its own file and a reader takes the union: a writer then only ever replaces its OWN slot, monotonically, so no interleaving can erase another's contribution. Daemon death, restart and a concurrent compaction stay enabled. 🛑 Its green is only worth what StateSlotsOverlap proves: that two writers really are in the critical section at the same time in exactly this configuration.",
+      "constants": { "USE_LOCK": "FALSE", "SLOT_PER_WRITER": "TRUE" },
+      "invariants": ["TypeOK", "NoLostRecord"],
+      "expect": { "green": true }
+    },
+    {
+      "cfg": "StateSlotsOverlap",
+      "why": "ANTI-VACUITY OF THE RUN ABOVE, AND IT IS NOT OPTIONAL. Same constants as StateCommutativeSlots, requiring AtMostOneInCrit to be VIOLATED: without it, the lock-free green could mean 'no two writers ever overlapped' rather than 'overlap is harmless'. A green that explored nothing is this repository's worst failure mode.",
+      "constants": { "USE_LOCK": "FALSE", "SLOT_PER_WRITER": "TRUE" },
+      "invariants": ["AtMostOneInCrit"],
+      "expect": { "violated": "AtMostOneInCrit" }
+    },
+    {
+      "cfg": "StatePurgeWindow",
+      "why": "A FINDING, NOT A SABOTAGE — and it holds in BOTH designs. A compaction takes NO LOCK (measured: neither `ctxroute-reset.js` nor `session-store.purgeByPrefix` mentions one), so a writer whose snapshot predates the purge republishes it. The consequence is the mirror of a lost update: a `doc-seen-` record RESURRECTED after a compaction withholds a document that was owed, silently, for the rest of the session. Required RED until the code answers it; if it ever goes green, the answer shipped and this check moves into the baseline.",
+      "constants": {},
+      "invariants": ["TypeOK", "NoResurrection"],
+      "expect": { "violated": "NoResurrection" }
+    },
+    {
+      "cfg": "StateStuckLock",
+      "why": "THE DILEMMA AS A REACHABLE FACT. A writer dying inside the critical section leaves the `.lock-doc-*` DIRECTORY behind — the lock survives the process. This run requires that state to be reachable with forcing DISABLED, which is precisely why STALE_MS exists; StateStaleForcing shows what enabling it costs. Two runs, one trade-off, no prose.",
+      "constants": {},
+      "invariants": ["NeverStuckLock"],
+      "expect": { "violated": "NeverStuckLock" }
+    },
+    {
+      "cfg": "StateVacuityCommit",
+      "why": "ANTI-VACUITY ① — the model really records something. Without it every invariant above could hold over a state that never writes.",
+      "constants": {},
+      "invariants": ["NeverCommits"],
+      "expect": { "violated": "NeverCommits" }
+    },
+    {
+      "cfg": "StateVacuityPurge",
+      "why": "ANTI-VACUITY ② — the compaction is really reachable, so the crash-and-purge configurations are not proven over a state where no purge ever happens.",
+      "constants": {},
+      "invariants": ["NeverPurges"],
+      "expect": { "violated": "NeverPurges" }
+    }
+  ]
+}

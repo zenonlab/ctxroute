@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a DECLARED IDENTIFIER. NO POLICY.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ WHAT IT IS FOR. This repository is PUBLIC and its language decision says
+#    the WHOLE project is in English. A machine already holds the PROSE half
+#    (`english-only-gate.test.js`, scope `docs/framework/`). The IDENTIFIERS of
+#    the code were guarded by NOTHING, and French ones shipped in the published
+#    repository: `verrou`, `chemin`, `voiePrete`, `docsFantomes`, `morceau`…
+#    A reader who cannot read the identifiers cannot read the code, and no
+#    contributor can extend a vocabulary they do not understand.
+#
+# 🛑 THIS RULE JUDGES NO WORD. It only says WHERE the words that must be
+#    English live: the identifiers WE DECLARE. The verdict — is this word
+#    English? — belongs to `cspell` through `src/foreign-identifier-pure.js`
+#    and `foreign-identifier-budget.json`. Same separation of powers as the
+#    quadratic, temporal and state-entry-rebuild twins: the rule DETECTS with
+#    zero exemption, the budget carries the POLICY and the RATCHET. An
+#    `ignores:`/`files:` added here would hide identifiers from the budget in
+#    silence — sealed by a dedicated check.
+#
+# ⚠️ AST, NEVER REGEX, and here it is the entire viability of the gate. A
+#    French word inside a COMMENT or a STRING is a FALSE POSITIVE by
+#    construction: this repository's comments deliberately quote defects,
+#    French sentences live inside `english-only-gate.test.js` as detector
+#    fixtures, and a `.md` corpus is embedded in test heredocs. A regex would
+#    accuse every one of them. Matching the AST node means a word is judged
+#    only where it is a NAME.
+#
+# ⚠️ DECLARATIONS ONLY, NEVER USES — and that asymmetry is deliberate. A
+#    member access (`obj.chemin`) or an imported name from a third-party
+#    package is not ours to name; flagging it would report the SAME defect at
+#    every call site and turn one rename into a hundred reds. Every occurrence
+#    reported here is a place where somebody CHOSE a word.
+#
+# ⚠️ EVERY ATOM BELOW IS A DECLARATION SITE, and the gate DERIVES its witness
+#    table from this list: an atom added tomorrow stays RED until someone pairs
+#    it with a real line of code whose detection is REQUIRED.
+id: declared-identifier
+language: JavaScript
+severity: error
+message: >-
+  DECLARED IDENTIFIER — the name chosen here must be English. This rule only
+  LOCATES the name; whether it is English is decided by `cspell` against an
+  ENGLISH-ONLY dictionary, and declared in `foreign-identifier-budget.json`.
+
+rule:
+  any:
+    # A `const`/`let`/`var` binding: `const lock = …`
+    - kind: identifier
+      inside: { kind: variable_declarator, field: name }
+    # A named function: `function withLock(…)`
+    - kind: identifier
+      inside: { kind: function_declaration, field: name }
+    # A named class: `class Frame { … }`
+    - kind: identifier
+      inside: { kind: class_declaration, field: name }
+    # A parameter: `(candidate, index) => …`
+    - kind: identifier
+      inside: { kind: formal_parameters }
+    # An object-literal key: `{ lockDir: … }`
+    - kind: property_identifier
+      inside: { kind: pair, field: key }
+    # A method: `class X { emit() {} }`
+    - kind: property_identifier
+      inside: { kind: method_definition, field: name }
+    # A destructured binding: `const { verdict, CLASSES } = require(…)`
+    - kind: shorthand_property_identifier_pattern
+      inside: { kind: object_pattern }

@@ -1,0 +1,18 @@
+---
+rules: [{"pattern":"explain.js","scope":["ctxroute"]},{"pattern":"explain.test.js","scope":["ctxroute"]},{"pattern":"collect-core.js","scope":["ctxroute"]}]
+mode: smart
+threshold: 6
+---
+# explain.js / collect-core.js — "why does this inject (or not)?"
+
+⚠️ **BEFORE concluding that a doc is mute or that the engine has a bug: `node explain.js --doc <name> --tool X --input '{"command":"…"}'`.** It returns the EXACT reason (invalid frontmatter · `inject: never` · empty body · inert trigger · tool not targeted · scope · exclude · pattern absent + contexts tested · git command ignored).
+✅ **INVOKE IT HOWEVER YOU LIKE — the bypass is CLOSED (㊼, 2026-08-14).** `cd ~/Desktop/ctxroute && node explain.js` used to pull in 53 KB of skill despite its `exclude`, the single word `node` was enough; `exclude` is now **∀¬ over all params ∪ the context**, so the way the action is written changes nothing any more. The "absolute path, never from the repo" recipe is no longer an obligation, only a habit with no effect.
+⚠️ **WHAT THIS CASE COST, worth keeping**: I first served a FALSE cause ("language limitation"), then the "deliberate asymmetry" line of OUR doc as a VERDICT; the code gave the real answer in 3 minutes. **Facing OUR engine, the code is the authority and the doc is only a witness** — settle it with `explain.js` (A/B control), never by re-reading.
+⚠️ **Do NOT run a diagnostic to "validate" that injection works**: the framework proves itself THROUGH USE (memory `feedback-framework-preuve-par-usage`) — show what has ALREADY been injected in the session, and instrument only if something is MISSING.
+⚠️ **NEVER reimplement the engine to probe it**: cost MEASURED on 2026-07-31 = a whole session, 3 false probes, a FALSE conclusion "the engine must be modified". A homemade harness gets the format wrong and returns a "mute" that is taken for a verdict.
+⚠️ **It DECIDES nothing**: read-only, ZERO state writes (a `once` doc consumed by a diagnostic would deprive the real session). Off the critical path — no gate may import it (dependency-cruiser gate).
+⚠️ **It consumes the SAME functions as the gate** (`collect-core` → ADAPTERS → `gate.decide`). The "why NOT" comes from PROBES that re-query the real sources with a rule amputated of one operator — never from a 2nd matching logic. Missing reason ⇒ add a probe, NEVER a homemade condition.
+✅ **`keys` PROBE (19/08/2026) — asked BEFORE the other reasons.** `keys` sits UPSTREAM of the three operators, so a silence it causes surfaces through `match`, `scope` OR `exclude` depending on which key carried the term: without a dedicated probe the tool answers something TRUE and MISLEADING, sending the author to fix an operator doing its job. 🛑 **And the existing probes had to be repaired**: `sansFiltres`/`sansScope` rebuilt the rule WITHOUT `keys`, so they were answering about a DIFFERENT rule. They now keep it — a probe that changes two things at once explains nothing. Both halves are tested: the reason is given when `keys` is the cause, and NOT given when it is not.
+⚠️ **FAIL-LOUD** (exit 2 + "TOOL FAILURE"), unlike the fail-open hooks: a diagnostic mute about its own failure reads as "nothing injects" = a false engine verdict.
+⚠️ `collect-core.js` = collection SHARED between gate and explain. Duplicating it reopens the divergence this tool exists to kill.
+⚠️ `explain.test.js`: the 2 FOUNDING CASES replay the false greens of 07-31. **NEVER delete them** — if the behavior changes, we INVERT the expected verdict (done for the wildcard), the case stays. A founding case deleted is the bug class becoming invisible again.

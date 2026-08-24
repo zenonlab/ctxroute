@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a temporal call. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🛑 STRICT SEPARATION, DO NOT BLUR IT: this file DETECTS, it never exempts.
+#    The policy (which motive is admissible, which file may hold how many,
+#    the ratchet) lives in `temporal-budget.json` + `test/temporal-budget-gate.test.js`.
+#    Adding a `files:`/`ignores:` here would silently hide occurrences from
+#    the budget — an exemption nobody would ever read again.
+#
+# ⚠️ AST, NEVER REGEX (fleet doctrine): a `setTimeout` quoted in a comment or
+#    in a string is a FALSE POSITIVE. Measured in this very repository —
+#    `test/session-store.test.js` carries an `Atomics.wait` inside a template
+#    literal (the source of a child script): a regex counts it, the AST does
+#    not, and the AST is right about THIS file (the call belongs to another
+#    program). That blind cell is DECLARED in `docs/framework/temporal-budget.md`.
+#
+# ⚠️ EVERY `pattern:` BELOW IS AN ATOM, and the gate DERIVES its witness table
+#    from this list: an atom added tomorrow stays RED until someone proves,
+#    with a real line of code, that it detects something. Never add an atom
+#    without adding its witness to `temporal-budget.json`.
+#
+# ⚠️ WHAT IS DELIBERATELY OUT OF SCOPE, WITH ITS REASON (measured 2026-08-20,
+#    40 occurrences): an option key named `timeout`/`testTimeout`/`hookTimeout`
+#    is a BOUND, not a WAIT — it makes nothing slower, it only refuses to wait
+#    for ever. The doctrine budgets what SPENDS wall-clock time. Widening the
+#    rule to those keys would enrol 40 legitimate bounds into the budget, and
+#    a noisy gate is a gate people stop reading.
+# ⚠️ ALSO OUT OF SCOPE, DECIDED 2026-08-21 (1 occurrence measured,
+#    `test/client-core.test.js`): `setImmediate` is a TICK, not a WAIT — it
+#    yields to the next iteration of the event loop, makes nothing slower and
+#    guesses NO number of milliseconds. 🛑 It is deliberately NOT an atom: the
+#    budget admits exactly `distant` and `undecidable`, a tick is NEITHER, so
+#    enrolling it would force an INVENTED justification — and an invented
+#    justification makes a case look settled. The clause and its COUNT live in
+#    `test/temporal-budget-gate.test.js`, which also refuses this atom here.
+id: temporal-call
+language: JavaScript
+severity: error
+message: >-
+  TEMPORAL CALL — declare it in `temporal-budget.json` with its motive.
+  Only `distant` (no reachable authority) and `undecidable` (alive-vs-frozen,
+  the halting problem) are admissible. In LOCAL the kernel KNOWS (process
+  exit, closed socket, EADDRINUSE): a delay is a BUG.
+rule:
+  any:
+    - pattern: setTimeout($$$)
+    - pattern: setInterval($$$)
+    - pattern: $T.setTimeout($$$)
+    - pattern: $T.setInterval($$$)
+    - pattern: Atomics.wait($$$)
+    - pattern: sleep($$$)
+    - pattern: $T.sleep($$$)
+    # 🔴 A CLOCK USED AS A VERDICT — added 2026-08-23, and it was the ONE shape
+    #    this rule could not see. `lock.js` decided a PROCESS WAS DEAD from
+    #    `Date.now() - mtime > 5000`: no call, no timer, nothing to detect, so
+    #    the budget was blind to the only inference-about-death in `src/`.
+    #    A wait SPENDS time and is caught by the atoms above; this one JUDGES
+    #    time, which is worse — it acts on a guess. Both belong to the budget.
+    # ⚠️ AST and not regex, exactly as above: `lock.js` QUOTES the defect it
+    #    removed in its own header, and a regex counts that quotation.
+    - pattern: Date.now() - $A > $B
+    - pattern: Date.now() - $A >= $B
+    - pattern: Date.now() - $A < $B
+    - pattern: Date.now() - $A <= $B

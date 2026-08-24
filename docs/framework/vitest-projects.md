@@ -1,0 +1,19 @@
+---
+match: [vitest-projects.mjs, vitest-projects-gate.test.js, vitest.config.mjs]
+scope: [ctxroute]
+mode: smart
+rank: 512
+---
+# vitest `projects` — TWO LANES, and the friction can no longer come back (2026-08-15)
+
+🔴 **A RELAPSE, AND THAT IS THE POINT.** Test friction had already been "fixed" in July — by an INSTRUCTION ("target the relevant suite"). It gave way: the agent reran **212 s** of the full suite for a ONE-line fix, **twice in a row**. *An instruction depends on vigilance, so it always ends up giving way.* The suite grows with every work item (74 files) and **nothing bounded that growth** — the disk doctrine, applied to TIME.
+📐 **THE MEASUREMENT THAT DECIDES**: `import 274 s` for `tests 188 s` ⇒ **the cost is starting environments, not the assertions**. Result: **212 s → 1.4 s** (42 suites, 872 tests) on the fast lane. The full lane: 69 suites, 1,209 tests.
+🔑 **`npm run t -- <file>` = THE DEFAULT COMMAND WHILE WORKING (1.3 s).** Vitest computes, through the module graph, WHICH suites cover the modified file (`vitest related`). 🔴 **THAT IS THE ROOT CAUSE OF THE FRICTION, settled on 2026-08-15**: I reran everything because **I did not know which test covered my edit** — ignorance of coverage disguised as prudence. The tool knows the map; I do not. ⇒ **NEVER run a suite wider than the file touched**, and after a RED, rerun **the red file**, never the whole set.
+- **`npm test`** = fast lane (**1.4 s**, 42 suites) — at every edit · **`npm run test:all`** = EVERYTHING (69 suites) — **LOCALLY, at the end of a work item and before any commit** · `npm run test:int` = the heavy lane alone · `npm run test:lanes` = who is in which lane, without running a test.
+🛑 **THE TIERING IS IN TIME, NEVER IN PLACE.** Everything keeps running **locally**: we no longer pay 3 min at EVERY iteration, we pay them ONCE at the end of the work item. ⚠️ CI remains a **BONUS** (doctrine: *GitHub is NEVER a dependency*) — writing "CI is the net" would be false and would make it load-bearing.
+⚠️ **TIMEOUT PER LANE**: 5 s on `unit` (no spawn — the classification PROVES it), 30 s on `integration` (measured 07-27: a test launching 4 processes takes 6 s). *A timeout is a BOUND, not a wait*: keeping 30 s on the pure lane would make you wait 30 s for a stuck test that should fail in 5.
+🛑 **THE CLASSIFICATION IS DERIVED FROM THE FILES' CONTENT, never a list** (`vitest-projects.mjs`): a suite that **spawns** (`spawnSync`/`execFile`/…) or that **mutates `process.env`/`chdir`** goes to `integration`; everything else goes to `unit`. ⇒ a new suite lands in the right lane automatically, **the fast loop cannot get heavy again in silence**. Industry equivalent: Google's *test sizes* (small/medium/large), where the size is **imposed by the machine**.
+⚠️ **`isolate: false` + `pool: 'threads'` ONLY on `unit`** — official Vitest doc (read 2026-08-15): safe only for a project "that does not rely on side effects and cleans up its state". **This condition is PROVEN by the classification**, not hoped for. 🔴 Measured the same day: when `doc-inject.test.js` ended up in `unit`, **3 tests turned red**.
+🛑 **NO `include` AT THE ROOT when `projects` exists**: the root creates an IMPLICIT project that reruns EVERYTHING — `--project=unit` still launched the 68 files (3 min 34 instead of 6 s), and the filter looked like it "did not work". A setting that silently CANCELS a filter is worse than a missing setting. Sealed by a part of the gate.
+🛑 **`experimental.fsModuleCache` = REFUSED** (suggested by the same doc): it persists the module graph **on disk**, it is `experimental`, and **its growth is neither documented nor bounded**. Doctrine: anything that writes declares a cap + eviction in the SAME action. Without a growth measurement, no — all the more so since Windows Search is disabled on this machine precisely for SSD wear.
+⚠️ `--shard` = spreading over SEVERAL machines: moot on a single workstation, useful one day in CI.

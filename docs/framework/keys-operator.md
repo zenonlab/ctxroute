@@ -1,0 +1,20 @@
+---
+match: keys-operator.test.js
+mode: smart
+threshold: 30
+---
+
+# keys-operator.test.js — the CONTRACT of `keys` (the "WHERE to look" axis)
+
+⚠️ **THE TWO HALVES ONLY MEAN SOMETHING TOGETHER**: citing a project in a command must STOP injecting it, AND working in it must STILL inject it. A suite proving only the first would certify a mute operator — that is how you ship an exclusion that silences the agents genuinely working in the repo (measured in July: 117 verdicts changed over 3,116 actions, ≥59 of them real work).
+⚠️ Covers both forms (flat = the three axes · object = one universe per axis), the fact that a whitelist **WIDENS** (it REPLACES the universe, payload keys included), axis independence, and the anti-inertness cases.
+⚠️ **RUNTIME ROBUSTNESS IS PART OF THE CONTRACT**, not a bonus: a hand-edited config is never validated, so a MIXED list must be read the MOST RESTRICTIVE way and a non-list `keys` must be INERT, never a throw. An engine that guesses must always guess in the direction that does NOT inject.
+🛑 **THIS SUITE IS NOT THE JUDGE OF THE SEMANTICS.** It calls the engine, so it proves what the engine DOES. What it MUST do lives in `language-spec.js` + `spec-differential`, and in `language-atoms` / `operator-consumption-gate`. 🔴 On 19/08/2026 this suite was green, 100 % mutation was green, and the operator was still **inert on 8 fleet skill entries out of 8**, its whitelist half-blind and `cwd` unreachable. **Never take a green here for a proof that the operator acts.**
+⚠️ Wired into `vitest.stryker.config.mjs` AND into `mutation.yml` `paths:` — a suite Stryker runs must trigger the workflow, otherwise the per-file floor is computed without it.
+✅ **THE MIXED FORM IS ADMITTED SINCE 2026-08-20, AND THE REFUSAL WAS THE HOLE.** Reading rule, decidable by looking: **at least one `-` present ⇒ you ADJUST the default universe (minus the removals, plus the bare names) · no `-` at all ⇒ the list REPLACES the universe.** Before, "the default PLUS this key" was writable only by re-enumerating the whole universe by hand — an ENUMERATION, hence born stale: the day the profile gains a key, the entry stops following it IN SILENCE (class ㊽, reintroduced by a well-meaning validator). The old argument ("nobody can decide what the author meant") only held while the rule was UNWRITTEN.
+⚠️ **What stays refused is what NAMES NOTHING**: a bare `-`, an empty list. A mute entry is indistinguishable from a forgotten one.
+⚠️ **AN EMPTY LIST IS INERT, never a whitelist of nothing** — decision of 19/08 KEPT, but now STATED instead of falling out of the arithmetic (0 removals === 0 entries). `validate` refuses it, but a hand-edited config is never validated.
+🔴 **`-command` NO LONGER MEANS "blind to the command" (2026-08-20)**: it drops the raw TEXT and keeps the facts DERIVED from it — the directory a `cd X && …` designates (`commandCwd`) AND the paths that `cd` reconstructs word by word (`commandPaths`). Measured: reading it as "blind" destroyed **47.7 % of real work**.
+🔴 **AND KEEPING THE RECONSTRUCTION REOPENED THE DOOR — the 10th defect, same evening.** A project name merely QUOTED after a `cd` becomes a plausible path OF that project: **402,734 fabricated paths over 13,910 real actions, up to 1,740 for one command**, one of which delivered a FOREIGN project's 90 KB skill into an unrelated session. ⇒ the pair an entry actually writes is **`["-command", "-commandPaths"]`**: citing stops injecting, working in the project still does. The 8 fleet entries carry it.
+⚠️ **EVERY DERIVED FACT IS PROVEN IN BOTH DIRECTIONS** (reachable ALONE, and really DROPPABLE), and the cells are DERIVED from `derived-observables.js` — one direction alone would pass on an engine that ignores the name entirely, which is the exact shape of the "accepted and inert" defect of 19/08.
+⚠️ **The directory is a PREFIX of every reconstructed path** ⇒ dropping ONLY `commandCwd` changes nothing while the reconstruction lives. Know it before writing a `keys` you believe restrictive.

@@ -1,0 +1,55 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════════
+# COMMIT-MSG — the commit MESSAGE cannot slip out of English.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔴 REASON FOR EXISTING: this repository is published. `docs/framework/` is
+#    already guarded by `english-only-gate.test.js`, but the HISTORY is a
+#    published surface too — `git log` is one of the first things a fork
+#    reads — and nothing guarded it. Decision ㉒ ("the WHOLE project is in
+#    English") was broken THREE times in four days on the docs alone, every
+#    time by an agent that had just READ the rule. A rule that only prose
+#    guards is not a rule.
+#
+# 🛑 IT MAY BLOCK, FOR THE SAME REASON AS ITS NEIGHBOUR `pre-commit`: the
+#    "gates never block" rule targets COST, and the damage avoided here is
+#    IRREVERSIBLE — a pushed message survives in the history for ever. Cost:
+#    ONE node start plus the detector (~1.7 s measured). 🛑 NEVER add a test
+#    suite to it: the day it costs 10 s it gets uninstalled, and an
+#    uninstalled gate protects nothing.
+#
+# ⚠️ FAIL-OPEN WITHOUT `node_modules` (fresh clone, `npm ci` not yet run): it
+#    lets the commit pass WHILE SAYING SO. A hook that breaks the first commit
+#    of whoever clones the repo is a hook that gets uninstalled.
+#
+# ⚠️ NEVER PIPE the checker (`| tail`, `| grep`): in sh the exit code is the
+#    LAST link's, so a refusal would read as SUCCESS and the gate would become
+#    decorative. Same trap as `pre-commit`, same answer: capture, THEN decide.
+#
+# ⚠️ WHAT IT DELIBERATELY LETS THROUGH (rules in src/commit-msg-lang.js): a
+#    message too short to decide, the subjects git generates (merge, revert,
+#    fixup), trailers, comments and the `-v` diff. A rebase or an amend must
+#    never become impossible.
+#
+# ⚠️ BYPASS = `git commit --no-verify`, LEGITIMATE in an emergency, but it
+#    must stay a CONSCIOUS act: never automate it, never script it.
+
+set -e
+
+RACINE="$(git rev-parse --show-toplevel)"
+cd "$RACINE"
+
+if [ ! -d node_modules/eld ]; then
+  echo "ctxroute/commit-msg: node_modules missing — English-only gate NOT run."
+  echo "  (run 'npm ci' to enable it; the commit passes so you are not blocked)"
+  exit 0
+fi
+
+SORTIE="$(mktemp)"
+trap 'rm -f "$SORTIE"' EXIT
+if ! node tools/commit-msg-check.js "$1" >"$SORTIE" 2>&1; then
+  cat "$SORTIE"
+  echo ""
+  echo "The repository is public: its history cannot be rewritten after publication."
+  exit 1
+fi

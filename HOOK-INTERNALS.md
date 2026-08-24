@@ -1,0 +1,18 @@
+# legacy-mcp-inject.js — generic injectable doc per MCP server (frozen oracle)
+
+PreToolUse hook, `mcp__.*` matcher in settings.json. Generic framework: 1 single code file, N docs dropped into `docs/mcp/{server}.md`, config in `ctxroute-config.json`.
+**3 modes** (`ctxroute-config.json` → `mode`): `dumb` (re-injects on every call, noisy, never the default) · `once` (server's 1st call, never again until compaction) · `smart` (default — like once, BUT re-injects when ≥ N calls to OTHER tools happened since the last call to THIS server; threshold = `defaultThreshold` or `servers.{server}.threshold`).
+Per-server `sinceLastCall` counter: incremented by EVERY FOREIGN tool (native tool OR a call to ANOTHER MCP server — not only non-MCP tools), smart mode only. Reset to 0 as soon as the server is called again (injected or not). ⚠️ Counters are INDEPENDENT between servers — never a shared global counter (Stripe→Odoo→Stripe advances the Stripe counter during the Odoo call, and vice versa).
+**PER-SERVER mode**: `servers.{server}.mode` overrides the global `mode` for THAT server only (e.g. Stripe pinned to "dumb" while everything else stays "smart").
+**Filtering** (`filterMode`: "none"|"whitelist"|"blacklist" + `filterList`): controls WHICH servers are covered (injection + state), independently of whether a doc.md exists. ⚠️ A server EXCLUDED by the filter STILL counts as "foreign" for the OTHER active servers (the increment loop knows nothing about the filter — a call remains a real call).
+Store = `state/ctxroute-seen-<session_id>.json`: `{server: {seen, sinceLastCall}}`. Keyed by session_id.
+**3-level granularity** (docs concatenated, global → specific): `docs/mcp/{server}.md` → `docs/mcp/{server}/{tool}.md` (suffix after `mcp__{server}__`) → `docs/mcp/{server}/{subTool}.md` (parameter, via `servers.{server}.subToolParam` = dotted path into `tool_input`, e.g. `"args.tool"` for Odoo whose `tool_name` is always `odoo_call`). Without `subToolParam` configured, level 3 is inactive — no false positive.
+**`state/` purge**: probabilistic (`~1/50` invocations, avoids a `readdir`/`stat` on every call), 30-day TTL by default (`mtime`). Tunable via `CTXROUTE_GC_PROBABILITY`/`CTXROUTE_GC_TTL_MS` — TEST usage only, never in normal production.
+⚠️ PURELY informative — NEVER blocks (no deny/ask). Blocking remains the role of dedicated hooks.
+Adding an MCP to the standard = dropping `docs/mcp/{server}.md` (**FREE size — the engine imposes no format**). NO code to write per server.
+⚠️ ABSOLUTE RESET at compaction (all modes): `ctxroute-reset.js` (PreCompact hook) deletes the whole session store — session_id does not change at compaction; without this reset the store would stay "seen" while the context is emptied.
+`serverName()` extracts `{server}` from `mcp__{server}__{tool}` via regex (handles multi-underscore names, e.g. `plugin_discord_discord`).
+⚠️ **Critical section under LOCK** (`lock.js`, atomic cross-process `fs.mkdirSync`): Claude Code can launch independent tool calls IN PARALLEL — without the lock, two concurrent hook invocations for the SAME session_id would silently lose a write (read-modify-write race). Tested for real (20 parallel process spawns, `legacy-mcp-inject.test.js` test 18) — not just documented.
+**Pure logic isolated in `lib-pure.js`** (zero fs/path/process) — mutated by Stryker (99%+, ratchet never lowered, cf `stryker.conf.json`). `legacy-mcp-inject.js`/`ctxroute-reset.js` = the only I/O endpoints, they call `lib-pure.js` without ever duplicating its logic.
+`stdin-json.js` = factored stdin reading (detected as duplicated by `jscpd` between the 2 hooks before extraction — `check:coupling` now keeps it at 0 clones).
+Wiring in settings.json → RESTART the session after a change to activate it.

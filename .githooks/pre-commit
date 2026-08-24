@@ -1,0 +1,63 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════════
+# PRE-COMMIT — the ONLY gate in this repository allowed to BLOCK.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔴 BORN FROM A REAL LEAK (10/08/2026): a client's name and email slept
+#    ~12 h in a TRACKED file. The anti-leak gate existed, and it was right.
+#    It simply had NEVER RUN — nothing triggers it between writing and
+#    pushing, and nobody had run `npm test`.
+#
+# 🛑 WHY THIS ONE BLOCKS WHILE THE DOCTRINE FORBIDS IT ELSEWHERE.
+#    The fleet rule is "gates NEVER block" (husky full-suite = banned,
+#    ~40 s on every commit). That rule targets COST, and it still holds:
+#    this hook does NOT run the suite, it runs ONE test file — 870 ms
+#    measured. Above all, the damage it prevents is the only IRREVERSIBLE
+#    one in the repo: personal data that gets pushed survives in
+#    `git log -p` even after the tree is fixed. A publication cannot be
+#    taken back.
+#
+# 🛑 THIS IS THE ONLY POSSIBLE PLACE FOR THE "NAMES" HALF.
+#    The email is caught by CI (generic pattern, no list needed). A client
+#    NAME cannot be: private terms never travel in a public repository —
+#    CI necessarily runs in generic mode. That net only exists on the
+#    maintainer's machine, and it must fire BEFORE the data enters the
+#    history. Afterwards it is too late.
+#
+# ⚠️ FAIL-CLOSED, BUT NEVER A FAILURE FOR OTHERS: without `node_modules`
+#    (fresh clone, `npm install` not yet run) we LET THE COMMIT PASS while
+#    SAYING SO. A hook that breaks the first commit of whoever clones the
+#    repo is a hook that gets uninstalled — and an uninstalled gate
+#    protects nothing. On a repository WITHOUT a private list the test is
+#    silent by itself: the hook has no visible effect for an external
+#    contributor.
+#
+# ⚠️ BYPASS = `git commit --no-verify`, and it is LEGITIMATE (emergency).
+#    But it must remain a CONSCIOUS act: never automate it, never write it
+#    into a script. A rule bypassed by default is worse than no rule.
+
+set -e
+
+RACINE="$(git rev-parse --show-toplevel)"
+cd "$RACINE"
+
+if [ ! -d node_modules/vitest ]; then
+  echo "ctxroute/pre-commit: node_modules missing — anti-leak gate NOT run."
+  echo "  (run 'npm ci' to enable it; the commit passes so you are not blocked)"
+  exit 0
+fi
+
+echo "ctxroute/pre-commit: anti-leak gate…"
+# ⚠️ NEVER PIPE HERE (`| tail`, `| grep`): in sh the exit code is the LAST
+#    link's, so a vitest failure would read as SUCCESS — the gate would
+#    become decorative. Capture, THEN decide.
+SORTIE="$(mktemp)"
+trap 'rm -f "$SORTIE"' EXIT
+if ! node_modules/.bin/vitest run test/leak-gate.test.js --silent >"$SORTIE" 2>&1; then
+  tail -25 "$SORTIE"
+  echo ""
+  echo "COMMIT REFUSED — personal data would reach a PUBLIC repository."
+  echo "Pushed data cannot be taken back (it survives in 'git log -p')."
+  echo "Fix the content reported above, then commit again."
+  exit 1
+fi

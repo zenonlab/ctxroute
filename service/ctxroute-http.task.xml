@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ⚠️ THE ENCODING DECLARATION IS TRUE, AND THAT MATTERS HERE. This file is stored
+     as UTF-8 and says so. Task Scheduler EXPORTS its XML as UTF-16, so most
+     examples on the web carry an encoding="UTF-16" header; copying that header
+     onto UTF-8 bytes produces a file that `schtasks /Create /XML` rejects with an
+     unhelpful parse error.
+  🔴 AND THE SENTENCE THAT USED TO END THIS BLOCK WAS FALSE — MEASURED
+     2026-08-21 WHILE INSTALLING FOR REAL. It claimed `Register-ScheduledTask`
+     "takes the XML as a string and does not care". It cares: PowerShell hands it
+     a UTF-16 string while this prolog declares UTF-8, and it refuses with
+     `Le code XML de la tache est mal forme. (1,40):: impossible de changer
+     d'encodage` (HRESULT 0x8004131a) — an error that names the ENCODING and
+     points at column 40, i.e. at this very line.
+  ✅ THE FIX IS ONE LINE, and the README carries it: STRIP the prolog before
+     registering (`$xml -replace '(?s)^\s*<\?xml.*?\?>\s*', ''`). The prolog is
+     kept in the file because `schtasks /Create /XML` needs it; only the
+     PowerShell path must drop it.
+-->
+
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  Windows TASK SCHEDULER definition for the ctxroute HTTP injection gate.
+  NOT INSTALLED. Edit the marked values, then register it as the USER
+  (no elevation), see service/README.md for the exact command.
+  ═══════════════════════════════════════════════════════════════════════
+
+  🛑 WHY THIS IS A SCHEDULED TASK AND NOT A WINDOWS SERVICE — settled by the
+     official API contract, do not reopen it. A Windows Service is not "a process
+     the SCM starts": it is a process that must SPEAK to the SCM.
+     StartServiceCtrlDispatcher (winsvc.h, page updated 2025-07-01), verbatim:
+     "When the service control manager starts a service process, it waits for the
+     process to call the StartServiceCtrlDispatcher function. The main thread of a
+     service process should make this call as soon as possible after it starts up
+     (within 30 seconds)." And the error the SCM returns when nobody does:
+     ERROR_FAILED_SERVICE_CONTROLLER_CONNECT — "This error is returned if the
+     program is being run as a console application rather than as a service."
+     ⇒ A bare node.exe performs no handshake, so it can NEVER be a Windows
+     Service. Wrapping it in a third-party service host (nssm, winsw…) is the
+     usual answer and it is REFUSED here: it adds an unversioned supervisor to a
+     framework whose whole point is that the OS supervises. Task Scheduler is the
+     NATIVE path and it is the one taken.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+
+  <!--
+    ═══════════════════════════════════════════════════════════════════════
+    🔴 NO SOCKET ACTIVATION ON WINDOWS — AND IT IS SETTLED TWICE OVER
+    ═══════════════════════════════════════════════════════════════════════
+    On Linux a socket unit lets the OS hold the listening socket, so the daemon
+    can stand down on a code change without any connection being refused. Nothing
+    here can do that:
+    ① Task Scheduler has no notion of a socket. Its action contract is a command
+       line (see the Exec element below) — there is no element that would create,
+       hold or hand over a descriptor.
+    ② Node closes the question even if something did. Official net documentation
+       (Node v22): "Listening on a file descriptor is not supported on Windows."
+       So there is no API on this platform to listen on an inherited handle.
+    ⚠️ The nearest Windows mechanism is WAS / net.tcp activation, and it does NOT
+       apply: it activates MANAGED WCF applications hosted under IIS, never a bare
+       node.exe. Bending it into shape would mean the third-party supervisor this
+       file already refuses further down.
+    ⇒ Windows keeps the eager model: logon trigger + restart on the completion
+       event. The gap is DECLARED, never simulated — the daemon does have a
+       silent window here between an exit 90 and its next start.
+  -->
+
+  <RegistrationInfo>
+    <Description>ctxroute HTTP injection gate (local loopback, user scope)</Description>
+    <URI>\ctxroute-http</URI>
+  </RegistrationInfo>
+
+  <Triggers>
+
+    <!--
+      ⚠️ START AT LOGON, for THIS user only. Edit UserId (DOMAIN\user or
+         MACHINE\user — `whoami` prints the exact string). Leaving it out makes
+         the task fire for every user who logs on, and each of them would read
+         somebody else's documents.
+    -->
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>CHANGE_ME\CHANGE_ME</UserId>
+    </LogonTrigger>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      🔴 THE RESTART-ON-EXIT-CODE TRIGGER — READ THIS BEFORE DELETING IT
+      ═══════════════════════════════════════════════════════════════════
+      🛑 RestartOnFailure (below) DOES NOT SEE THE EXIT CODE. Its Learn page says
+         only "if the task fails for any reason", which reads like it would; the
+         normative text does not. [MS-TSCH] section RestartOnFailure, page updated
+         2024-04-23, verbatim: "If the task fails to run because one of the start
+         conditions is not met […] or because of a failure to start an action, the
+         operation is attempted again."
+         ⇒ It covers FAILING TO START. An action that started, ran, and exited 90
+         is a task that COMPLETED. Windows would leave the daemon dead.
+      ✅ What Windows does expose is the completion EVENT: Task Scheduler writes
+         event 201 ("action completed") to its Operational channel, carrying the
+         action's ResultCode. So the OS still TELLS us — we subscribe, we do not
+         poll, we do not probe, we infer nothing. This is the same doctrine as the
+         `fs.watch` in http-server.js: the kernel already knows, ask it once.
+      ⚠️ THE CHANNEL MUST BE ENABLED OR THIS TRIGGER IS INERT — silently. Enabling
+         it is also where the log ceiling gets declared, one gesture, see README.
+      🔴 UNVERIFIED WITHOUT INSTALLING, and stated as such: that this exact XPath
+         (an EventData filter on ResultCode and TaskName) matches on a live
+         machine has NOT been measured here. Verify it with `wevtutil qe` against
+         a real 201 event BEFORE relying on it, and fix this one line if the
+         data names differ.
+      🔴 MEASURED 2026-08-21 ON THIS MACHINE, AND IT IS A BLOCKER:
+         `wevtutil gl Microsoft-Windows-TaskScheduler/Operational` reports
+         **enabled: false** (maxSize 10485760). The channel is OFF, so no 201
+         event is ever written, so this trigger would be INERT — SILENTLY. A
+         daemon exiting 90 on a code change would simply stay dead, and the only
+         symptom would be agents quietly losing their injection.
+         ⇒ Enabling it is a PREREQUISITE of installing this task, never an
+         option, and it is the same gesture that declares the log CEILING:
+         `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true /rt:false /ms:10485760`
+         ✅ VERIFIED 2026-08-21, once the channel was on: real 201 events on this
+         machine carry EXACTLY `<Data Name='TaskName'>` and `<Data
+         Name='ResultCode'>` inside `<EventData Name='ActionSuccess'>` — the two
+         fields this XPath filters on. What was a hypothesis for a day is now a
+         measurement against live events. ⚠️ It confirms the FIELD NAMES, not that
+         the subscription fires: only a real exit 90 can show that, and it will
+         happen by itself the first time the daemon's own code is edited.
+    -->
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="Microsoft-Windows-TaskScheduler/Operational"&gt;&lt;Select Path="Microsoft-Windows-TaskScheduler/Operational"&gt;*[System[Provider[@Name='Microsoft-Windows-TaskScheduler'] and (EventID=201)]] and *[EventData[Data[@Name='TaskName']='\ctxroute-http']] and *[EventData[Data[@Name='ResultCode']!='0']]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
+    </EventTrigger>
+
+  </Triggers>
+
+  <Principals>
+    <!--
+      ⚠️ InteractiveToken + LeastPrivilege: the task runs AS the logged-in user,
+         unelevated. It reads that user's documents and binds a loopback port —
+         it needs nothing more, and a service that asks for more than it needs is
+         the one nobody dares install.
+    -->
+    <Principal id="Author">
+      <UserId>CHANGE_ME\CHANGE_ME</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+
+  <Settings>
+
+    <!--
+      🛑 THE THREE DEFAULTS BELOW WOULD KILL THIS DAEMON SILENTLY. They are not
+         style, they are corrections of the schema's own defaults (settingsType,
+         page updated 2020-12-11), each verified individually.
+    -->
+
+    <!--
+      ① ExecutionTimeLimit. Omitted, a task is capped (the console default is
+         PT72H) and Windows STOPS it after three days — for a daemon that is an
+         outage on a timer, three days after every reboot, with nothing in sight
+         to explain it. Verbatim from the element's page: "A value of PT0S will
+         enable the task to run indefinitely."
+      🛑 NEVER remove this line and NEVER give it a duration.
+    -->
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+
+    <!--
+      ② and ③ Battery. Both default to TRUE in the schema, which on any laptop
+         means: the gate never starts unplugged, and it DIES the moment the cable
+         is pulled. The daemon costs nothing when idle and its absence costs the
+         agent its knowledge.
+    -->
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+
+    <!--
+      ⚠️ IgnoreNew is already the schema default; it is written DOWN because this
+         file depends on it. Two triggers can fire close together (a logon that
+         follows a failure event) and a second instance must simply not start.
+      🛑 This is NOT how duplicates are prevented — the KERNEL is, with
+         EADDRINUSE on the port. This line only avoids asking it twice. Never
+         replace either one with a "is it already running?" check.
+    -->
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+
+    <!--
+      ⚠️ RestartOnFailure covers exactly what [MS-TSCH] says it covers: the task
+         failing to START (node.exe missing, path wrong, profile not ready at
+         logon). That is a real case and worth retrying — it is simply NOT the
+         exit-code case, which the EventTrigger above handles.
+      ⚠️ Interval is a DECLARED delay with a DECLARED motive: the schema's own
+         minimum is PT1M and nothing shorter can be expressed. Nothing is inferred
+         from it; it is a retry spacing, never a liveness verdict.
+    -->
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+
+    <!--
+      ⚠️ CLEAN STOP. AllowHardTerminate lets the Task Scheduler service terminate
+         the process on `schtasks /End`, on logoff and on shutdown. There is
+         nothing to flush, so being terminated IS the clean stop here.
+    -->
+    <AllowHardTerminate>true</AllowHardTerminate>
+
+    <!--
+      ⚠️ Idle settings OFF. StopOnIdleEnd defaults to stopping the task when the
+         machine stops being idle — for a background daemon that is another
+         silent death. RunOnlyIfIdle stays false for the mirror reason.
+    -->
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+
+    <!--
+      ⚠️ No network condition: the socket is 127.0.0.1. A daemon that waited for
+         "a network" would refuse to start on a machine with none, while the
+         loopback interface has always been there.
+    -->
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+
+    <!--
+      ⚠️ Priority 5 (normal) instead of the schema default 7. The whole reason
+         this daemon exists is latency: every agent action waits on its answer.
+         Leaving it in the background band would spend the win it was built for.
+    -->
+    <Priority>5</Priority>
+
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <WakeToRun>false</WakeToRun>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+  </Settings>
+
+  <Actions Context="Author">
+    <!--
+      ⚠️ ABSOLUTE PATHS, MANDATORY. Edit both. `where node` prints the first;
+         Command must be the .exe itself.
+      🛑 NEVER `cmd.exe /c` here. It is forbidden across this repository's layers
+         and it would also hand the SCM-less process to a shell that then owns the
+         exit code we depend on.
+
+      ⚠️ THE PORT — AND THE ONE ASYMMETRY BETWEEN THE THREE OSES, DECLARED.
+         Task Scheduler XML has NO element to set an environment variable for an
+         action; systemd has Environment= and launchd has EnvironmentVariables,
+         Windows has neither. The action therefore INHERITS the user's
+         environment. Default case: nothing to do — 8787 is the default compiled
+         into http-server.js. To move it, set a USER environment variable
+         (`setx CTXROUTE_HTTP_PORT 9001`) and log out and back in, see README.
+      🔴 NOT MEASURED HERE: whether a task started at logon picks up a
+         `setx` performed during the previous session. Verify before relying on a
+         non-default port.
+    -->
+    <Exec>
+      <Command>C:\Program Files\nodejs\node.exe</Command>
+      <Arguments>C:\CHANGE_ME\ctxroute\src\hooks\http-server.js</Arguments>
+    </Exec>
+  </Actions>
+
+</Task>

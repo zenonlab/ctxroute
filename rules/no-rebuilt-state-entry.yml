@@ -1,0 +1,112 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a state entry REBUILT BY LITERAL. NO POLICY.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ THE CLASS, stated precisely — it is NOT "this field was forgotten":
+#    **REBUILDING A RECORD FIELD BY FIELD SILENTLY DROPS EVERY FIELD ABSENT
+#    FROM THE LIST.** The literal says "here is the whole entry now", so it is
+#    an assertion about fields the author never thought about. Nothing goes
+#    red: the shape stays valid, the tests keep passing, and a capability that
+#    lived in one of the dropped fields is simply gone.
+#
+# 🔴 THIS REPOSITORY HAS PAID IT TWICE, and both times the gap lived under a
+#    complete green:
+#      · `src/sources/skill.js` — `skillRules` rebuilt its rule field by field,
+#        so the `keys` operator was born INERT on 8 fleet entries out of 8,
+#        with its schema, its validator, 959 green tests and 100 % mutation.
+#      · `src/gate.js` — the foreign-action branch rebuilt a smart doc's entry
+#        as `{ seen, sinceLastCall: n + 1 }`, dropping `denied`. That flag IS
+#        the anti-loop ("a block is NEVER followed by a block"), so a refused
+#        gesture was refused a SECOND time. 28 of 1,024 decisions diverged
+#        from the independent model, all in the same direction.
+#
+# ⚠️ WHAT IT LOOKS FOR, and why exactly this shape. An object literal written
+#    into a SLOT OF A KEYED COLLECTION (`store[key] = { … }`) which READS an
+#    existing value, and does NOT SPREAD anything. The three conditions
+#    together are what make it a REBUILD rather than a construction:
+#      · the slot write says a record is being REPLACED, not created;
+#      · reading an existing value says the new record DERIVES from something
+#        that was already there — so something can be lost;
+#      · the absence of a spread says nothing carries the rest across.
+#    A deliberate reset from scratch (`next[doc] = { seen: true,
+#    sinceLastCall: 0, turn: turnCount }`) reads nothing existing and is
+#    therefore NOT matched: the rule targets derivation, never creation.
+#
+# 📐 THE PERIMETER WAS CHOSEN BY MEASUREMENT, NOT BY TASTE (2026-08-23), and
+#    the wider readings were REFUSED with their numbers, on 204 tracked
+#    JavaScript files:
+#      · any literal without a spread that reads a member — **404 hits**. A
+#        projection (`{ label: c.label, m: c.m }`) is legitimate and dominant:
+#        unusable, and a noisy gate gets unplugged, which is worse than none.
+#      · the same, restricted to the right-hand side of ANY assignment —
+#        **3 hits, 3 of them false** (`module.exports = { … }` among them).
+#      · restricted to a SLOT WRITE (this rule) — **0 hits on the repaired
+#        repository, 1 hit and only that one on the defect restored**.
+#    🛑 Do not widen it without re-measuring: the number above is what stands
+#    between this gate and the bin.
+#
+# ⚠️ DECLARED BLIND SPOT, written rather than hidden: the `skillRules` half of
+#    the class (a FRESH `const rule = { pattern, doc }` built out of a source
+#    object, then completed field by field) is NOT reachable this way — it is
+#    syntactically identical to the 404 legitimate projections above. That half
+#    is sealed by a BEHAVIOURAL judge instead, `operator-consumption-gate.test.js`,
+#    which probes every operator on every dimension. Two halves, two judges,
+#    on purpose — never one gate pretending to cover both.
+#
+# 🛑 IT JUDGES NOTHING AND EXEMPTS NOTHING. The policy (which file may hold how
+#    many, under which class, with which justification) lives in ONE place:
+#    `state-entry-rebuild-budget.json` + `test/state-entry-rebuild-gate.test.js`.
+#    Adding a `files:`/`ignores:` here would hide occurrences from the budget —
+#    an exemption nobody would ever read again, since the budget is the only
+#    file people open. Same separation as the quadratic and temporal twins.
+#
+# ⚠️ AST, NEVER REGEX: `store[k] = { a: b.c }` quoted in a comment or inside a
+#    string is a FALSE POSITIVE, and this rule's entire viability rests on its
+#    zero-noise measurement. Proven by a dedicated negative check.
+#
+# ⚠️ EVERY `kind:` BELOW IS AN ATOM, and the gate DERIVES its witness table
+#    from this list: an atom added tomorrow stays RED until someone pairs it
+#    with a real line of code whose detection is REQUIRED.
+id: no-rebuilt-state-entry
+language: JavaScript
+severity: error
+message: >-
+  STATE ENTRY REBUILT BY LITERAL — an object literal that REPLACES a slot of a
+  keyed collection while DERIVING from what was already there drops every field
+  absent from the list, silently. Propagate the existing record
+  (`{ ...entry, field: newValue }`) so the shape stays OPEN, or declare the
+  occurrence in `state-entry-rebuild-budget.json` with its class and its why.
+
+utils:
+  # ⚠️ SINGLE SOURCE of "this literal DERIVES from something that already
+  #    exists". Both forms count and neither may be dropped: `entry.field` is
+  #    the dotted read, `prev[doc]` the subscript read of the very collection
+  #    being written — the second is if anything the more dangerous shape,
+  #    since it names the slot it is about to overwrite.
+  reads-an-existing-value:
+    any:
+      - kind: member_expression      # entry.sinceLastCall
+      - kind: subscript_expression   # prev[doc]
+
+rule:
+  kind: object
+  # ⚠️ `field: left` IS LOAD-BEARING. Without it the enclosing assignment's
+  #    LEFT-hand side counts as "reads an existing value" (`acc.meta[m.doc]`
+  #    is itself a member expression), and a plain fresh write matches — the
+  #    first version did exactly that and produced 2 false positives out of 2.
+  inside:
+    kind: assignment_expression
+    has:
+      field: left
+      kind: subscript_expression
+  has:
+    stopBy: end
+    matches: reads-an-existing-value
+  # ⚠️ THE SPREAD IS THE CURE, so its presence is what clears the occurrence.
+  #    `stopBy: end` on purpose: a spread nested one level down still carries
+  #    the record across, and demanding it at the top level would turn a
+  #    correct piece of code red.
+  not:
+    has:
+      stopBy: end
+      kind: spread_element

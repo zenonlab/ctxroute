@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  launchd USER AGENT for the ctxroute HTTP injection gate. SOCKET-ACTIVATED.
+  Install with `sh service/install-macos.sh install` — never by hand: the
+  three ProgramArguments entries below are placeholders, and the installer is
+  the ONE place the macOS procedure is written.
+  ═══════════════════════════════════════════════════════════════════════
+
+  ⚠️ AGENT, NEVER A DAEMON — and Apple states the difference in exactly the terms
+     that decide it for us. TN2083: "An agent is a process that runs in the
+     background on behalf of a particular user. Agents are useful because they
+     can do things that daemons can't, like reliably access the user's home
+     directory". This service reads the user's documents: it is an agent.
+     "A third party launchd agent should be installed by adding a property list
+     file to the ~/Library/LaunchAgents directory (to be invoked just for this
+     user)". Login is what starts the per-user launchd: "When a user logs in, a
+     per-user launchd is started" (Creating Launch Daemons and Agents).
+
+  🔴 SOURCE STATUS, STATED AND NOT HIDDEN. Apple's web copies of this material
+     are ARCHIVED: "Creating Launch Daemons and Agents" last updated 2016-09-13,
+     and TN2083 carries "This document is no longer being updated", its examples
+     dating from Mac OS X 10.5. Apple's launchd.plist(5) is not published at a
+     current URL; the AUTHORITY for the installed system is `man launchd.plist`
+     ON THE TARGET MAC. Every key below is one Apple documented; none of their
+     DEFAULT values is restated here, precisely because those are what an archived
+     page is least trustworthy about. Read the man page before you install.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<plist version="1.0">
+<dict>
+
+    <key>Label</key>
+    <string>com.ctxroute.http</string>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      THREE ENTRIES, AND THE FIRST ONE IS THE WHOLE macOS STORY
+      ═══════════════════════════════════════════════════════════════════
+      ⚠️ ABSOLUTE PATHS, MANDATORY, ALL THREE SUBSTITUTED BY THE INSTALLER: the
+         shim it compiled, the node binary (on Apple silicon Homebrew installs it
+         under /opt/homebrew/bin, on Intel under /usr/local/bin — the installer
+         asks `command -v`, it does not assume), and the repository location.
+      🔑 WHY A SHIM AT ALL. launchd holds the listening socket declared below and
+         hands it over through `launch_activate_socket`, a C function of the XPC
+         framework — there is NO environment protocol on this platform, so a
+         JavaScript process cannot receive it (MEASURED on Node 22.15.1: the
+         builtin modules expose nothing matching /launch|activate_socket|
+         listen_fds/). `service/launchd-socket-shim.c` is the translation: it
+         takes the descriptor, places it on fd 3, publishes LISTEN_FDS/LISTEN_PID
+         and `execv`s node — which then reads the very protocol it already
+         implements for systemd. ZERO daemon lines were changed for macOS.
+      ⚠️ IT IS NOT A SUPERVISOR: `execv` replaces the program without forking, so
+         launchd supervises ONE process, node, under the pid it started.
+      🛑 NEVER wrap this in `sh -c`. A shell would change the process launchd
+         supervises and this repository forbids shell indirection on every layer.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/CHANGE_ME/launchd-socket-shim</string>
+        <string>/usr/local/bin/node</string>
+        <string>/Users/CHANGE_ME/ctxroute/src/hooks/http-server.js</string>
+    </array>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      🔑 SOCKET ACTIVATION — launchd OWNS THE SOCKET, AND THAT CLOSES THE WINDOW
+      ═══════════════════════════════════════════════════════════════════
+      🔴 THE DEFECT THIS REMOVES IS SELF-INFLICTED. The daemon exits 90 the moment
+         its own code changes on disk — which is exactly what an agent WORKING on
+         this repository causes: a refactor is ten edits in two minutes, hence ten
+         exits. Under the eager model this file used to carry (RunAtLoad +
+         KeepAlive), every window between death and rebirth had NOTHING listening,
+         so every other agent's injection was lost IN SILENCE: the tool simply
+         runs, no error surfaces, the agent never learns it acted without the
+         knowledge it was owed.
+      ✅ WHEN launchd OWNS THE LISTENING SOCKET, THAT WINDOW CANNOT EXIST. The
+         socket is created and held HERE, by launchd, and it stays open across
+         every death of the job. A connection arriving while no instance runs
+         QUEUES in the kernel backlog instead of being refused, and its arrival is
+         what starts the next instance. Stale code becomes impossible by
+         construction: every instance is born after the change.
+      ⚠️ `Listeners` IS A SHARED NAME — it is the first argument of
+         `launch_activate_socket` in the shim. Renaming it on one side only makes
+         every activation fail with "no such socket".
+      🛑 LOOPBACK, AND THE ADDRESS LIVES HERE AND NOWHERE ELSE. `SockNodeName`
+         restricts the bind to 127.0.0.1: there is no authentication and there
+         must never need to be one — the socket IS the boundary, and it returns
+         this fleet's private knowledge to whoever connects. `SockServiceName` is
+         the single place the port is written on macOS, the counterpart of
+         `ListenStream=` on Linux; the harness hook URL on the other side carries
+         the same number. The installer READS it back from here rather than
+         re-typing it, and `CTXROUTE_HTTP_PORT` was REMOVED from this file for
+         that reason: two places for one number diverge in silence.
+    -->
+    <key>Sockets</key>
+    <dict>
+        <key>Listeners</key>
+        <dict>
+            <key>SockNodeName</key>
+            <string>127.0.0.1</string>
+            <key>SockServiceName</key>
+            <string>8787</string>
+            <key>SockType</key>
+            <string>stream</string>
+            <key>SockFamily</key>
+            <string>IPv4</string>
+        </dict>
+    </dict>
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      RunAtLoad AND KeepAlive ARE DELIBERATELY ABSENT — THE SOCKET IS THE TRIGGER
+      ═══════════════════════════════════════════════════════════════════
+      🛑 THIS IS THE MOST LIKELY MISTAKE AGAINST THIS FILE, AND IT LOOKS LIKE AN
+         IMPROVEMENT. Both keys were here until socket activation replaced them,
+         and re-adding either one re-arms exactly the burst they were removed for:
+         a fresh instance is thrown back into the `git pull` that is still
+         rewriting files, so ten edits become ten launches and launchd starts
+         throttling a job nothing was waiting for.
+      ✅ NOTHING NEEDS RESTARTING ANY MORE. launchd holds the socket; the next
+         CONNECTION starts the next instance, on demand, and the connections that
+         arrive meanwhile wait in the backlog. This is the same move Linux made
+         when `Restart=on-failure` became `Restart=no` in its service unit — one
+         thin unit per OS, converging on the same guarantee.
+      ⚠️ CONSEQUENCE TO EXPECT, NOT A DEFECT: after a login nothing runs until the
+         first request arrives, and after an exit 90 the next request pays
+         launchd's respawn throttle before being answered. It is ANSWERED — that
+         is the whole difference between a queued connection and a refused one.
+      🛑 `SuccessfulExit` HAS NO ROLE LEFT HERE. It selected WHICH exit got a
+         respawn (TN2083 documents the positive form, `KeepAlive =
+         { SuccessfulExit = true }` = "Run on demand as long as you exit
+         successfully"); with no KeepAlive there is no respawn to select. The
+         daemon still refuses to stand down with a zero status — read
+         EXIT_STALE_CODE in `src/hooks/http-server.js` — because Linux and Windows
+         still read that code, and because a zero would tell any supervisor "job
+         done".
+    -->
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      CLEAN STOP
+      ═══════════════════════════════════════════════════════════════════
+      ⚠️ Nothing to declare, and that is the point. launchd signals the job to
+         quit: "When the user logs out, it sends a SIGTERM signal to all of the
+         user agents that it started" (Creating Launch Daemons and Agents), and
+         SIGKILL follows if it does not go. The process dies on node's default
+         SIGTERM handling; we install no handler because there is nothing to
+         flush. Stop by hand = `sh service/install-macos.sh uninstall`.
+      ⚠️ ExitTimeOut and ThrottleInterval are DELIBERATELY UNSET: launchd's own
+         defaults apply and this file will not restate numbers it could not read
+         at a current official source.
+
+      ═══════════════════════════════════════════════════════════════════
+      THE LOG IS BOUNDED BY macOS — NEVER BY US
+      ═══════════════════════════════════════════════════════════════════
+      🛑 StandardOutPath / StandardErrorPath ARE DELIBERATELY ABSENT, and adding
+         them is a close second most likely mistake against this file. A plist log
+         path is a plain file that launchd NEVER rotates and NEVER caps: on a
+         machine running for years that is a monotonic writer, i.e. a dated
+         outage, and this project treats an uncapped writer as an architecture
+         bug rather than an operations chore.
+      ✅ Leaving them out is not "losing the logs": TN2083, "If you don't supply
+         these properties […] In Mac OS X 10.5 and later, launchd will capture any
+         output to these streams and redirect it to ASL" — the system log, which
+         macOS caps and rolls over on its own. Read it with `log show`, passing a
+         `predicate` of 'process == "node"' for the daemon and 'process ==
+         "launchd-socket-shim"' for the shim's refusals. The OS already owns this
+         problem; we do not reimplement it.
+      🔴 THAT SENTENCE USED TO SPELL THE OPTION IN FULL, AND IT MADE THIS FILE
+         MALFORMED XML — measured 2026-08-23 by handing the plist to a real parser,
+         which refused it at that exact line. XML forbids a double hyphen ANYWHERE
+         inside a comment, so `log show` with its option written out turned a
+         paragraph of prose into a parse error in a file no local test had ever
+         parsed. Never write a double hyphen inside these comments; a gate now
+         reddens if one comes back.
+    -->
+
+</dict>
+</plist>

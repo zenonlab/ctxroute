@@ -1,0 +1,61 @@
+state/
+# ⚠️ `**` MANDATORY — LEAK HOLE found on 06/08/2026 on a PUBLIC repo.
+#    `docs/mcp/*.md` only covered level 1 (server). Levels 2 and 3 —
+#    `docs/mcp/{server}/{tool}.md`, `{subTool}.md` — were NOT ignored,
+#    yet those are the most SPECIFIC docs, hence the most likely to name a
+#    client, an amount, an identifier. The hole had been dormant since the
+#    3-level granularity was created: nobody had written a level-2 doc yet.
+#    A dormant error class is not an absent one. Sealed by
+#    `gitignore-gate.test.js` (the rule is tested on FICTITIOUS paths, so it
+#    holds on a pristine clone) — reddening proven by real sabotage.
+docs/mcp/**/*.md
+!docs/mcp/**/*.md.example
+docs/session/*.md
+!docs/session/*.md.example
+# ⚠️ NAMED EXCEPTION (14/08/2026): `language.md` describes THE LANGUAGE itself,
+#    not a maintainer's context — zero personal data, useful to ANYONE who
+#    clones. It is the single source of the engine's semantics (the doc fleet
+#    keeps only a pointer to it): leaving it out of the repo means losing it
+#    on a machine change and depriving a pristine clone of the only doc that
+#    says what the language does. ⚠️ NEVER widen this exception to another
+#    `docs/session/*.md` without checking for personal data — that is the
+#    rule this block protects.
+!docs/session/language.md
+node_modules/
+.stryker-tmp/
+reports/
+
+# USER config (skill/project names = personal data) — create it from the .example
+ctxroute-config.json
+
+# Private DEPLOYMENT terms (never published) — cf leak-gate.test.js
+.fuite-perso-local.json
+
+# Internal work journals (maintainer-only, never published)
+SWAP-PLAN.md
+REFACTOR-PLAN.md
+REFACTOR-ARCHIVE.md
+EVAL-SESSIONS.md
+
+# ⚠️ TLA+ TOOLING AND GENERATED MODEL CONFIGS (20/08/2026).
+#    `tla2tools.jar` is a 2.2 MB BINARY downloaded on demand by
+#    `specs/tla/run-tlc.mjs` (release pinned + SHA-256 verified): committing a
+#    third-party binary is both dead weight in the history and a supply-chain
+#    artifact nobody re-checks. `specs/tla/*.cfg` are GENERATED from the run
+#    matrices (`runs.json` for `Transport`, `state-runs.json` for `State`),
+#    each the single source of its own matrix — committing
+#    them would create a second truth that drifts, which is exactly what the
+#    generation exists to prevent.
+specs/tla/tla2tools.jar
+specs/tla/*.cfg
+
+# TLC scratch: regenerated at every run, timestamped per run.
+# 🔴 464 files / 3.9 MB slipped into the history on 2026-08-20 — a disk writer
+#    created with NO declared bound, in the ONE place that never forgets. Growth
+#    would have been ~464 files per `spec:tlc` run, for ever.
+specs/tla/states/
+
+# Scratch files an agent leaves behind. MEASURED 2026-08-22: one was swept into a
+# commit by a `git add -A`, and coverage-gate found it — the exhaustiveness net
+# judges TRACKED files, so a stray artefact becomes a permanent red until removed.
+*.tmp.json

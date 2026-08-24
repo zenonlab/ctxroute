@@ -1,0 +1,74 @@
+name: spec-tlc
+
+# ⚠️ SEPARATE WORKFLOW, STRICT `paths:` — same doctrine as mutation.yml.
+#    TLC is a HEAVY job (a JVM started once per run, 11 runs, ~25 s measured
+#    plus the JDK setup and the jar download). `paths:` applies to the WHOLE
+#    workflow and never to a job, so putting it in test.yml would run it on
+#    every documentation commit.
+# 🛑 THE PATHS ARE THE ANSWER TO "WHEN CAN THE PROOF BECOME FALSE?": the spec
+#    itself, and the four modules it models. A module removed from this list is
+#    a module whose change stops being confronted with the proof — in silence.
+#    `transport-spec-gate.test.js` runs in the FAST lane on every push, so the
+#    drift shield is never gated behind these paths.
+
+on:
+  # ⚠️ MANUAL TRIGGER — added 2026-08-21. The push triggers are branch-bound
+  #    ([main, master]) on purpose: quota. But a work branch then has NO judge at
+  #    all, and the three-OS matrix is the only thing that can see a Linux or
+  #    macOS defect. Dispatch gives that verdict WITHOUT deploying anything.
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'specs/tla/**'
+      - 'src/pretool-core.js'
+      - 'src/emission-core.js'
+      - 'src/session-store.js'
+      - 'src/lock.js'
+      # ⚠️ ADDED 2026-08-23 WITH `State.tla` — these four are the modules THAT
+      #    spec models, and by the rule above a module missing from this list is
+      #    a module whose change stops being confronted with the proof, in
+      #    silence. `state-spec-gate.test.js` runs in the FAST lane on every
+      #    push, so the code anchor is never gated behind these paths.
+      - 'src/store-resolve.js'
+      - 'src/memory-store-pure.js'
+      - 'src/hooks/http-server.js'
+      - 'src/hooks/ctxroute-reset.js'
+      - '.github/workflows/spec-tlc.yml'
+  pull_request:
+    paths:
+      - 'specs/tla/**'
+      - 'src/pretool-core.js'
+      - 'src/emission-core.js'
+      - 'src/session-store.js'
+      - 'src/lock.js'
+      # ⚠️ ADDED 2026-08-23 WITH `State.tla` — these four are the modules THAT
+      #    spec models, and by the rule above a module missing from this list is
+      #    a module whose change stops being confronted with the proof, in
+      #    silence. `state-spec-gate.test.js` runs in the FAST lane on every
+      #    push, so the code anchor is never gated behind these paths.
+      - 'src/store-resolve.js'
+      - 'src/memory-store-pure.js'
+      - 'src/hooks/http-server.js'
+      - 'src/hooks/ctxroute-reset.js'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tlc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # tla2tools.jar targets Java 8+; the LTS is what the toolchain is tested on.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # ⚠️ No `npm ci`: the gate is zero-dependency on purpose (node + java only).
+      #    Adding an install here would make the proof depend on the npm registry.
+      - run: npm run spec:tlc

@@ -1,0 +1,155 @@
+# ═══════════════════════════════════════════════════════════════════════
+# MUTATION — SEPARATE workflow, STRICT paths
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ WHY SEPARATE FROM test.yml: `paths:` applies to the WHOLE workflow,
+#    never to a job. Mutation (235-296 s measured) therefore ran on EVERY
+#    push — including doc or README commits. Doctrine: "HEAVY job (> ~3 min)
+#    AND non-incremental → NEVER per-push under a wide path → SEPARATE
+#    workflow with strict paths". Private repo = 2000 min/month.
+#
+# ⚠️ `paths` MUST remain the EXACT MIRROR of `stryker.conf.json`:
+#      - a `mutate` file missing here  → it is mutated but the job NEVER
+#        triggers for it = SILENT loss of coverage;
+#      - a covering suite missing → a test change that breaks the score
+#        would be seen by nobody.
+#    ⚠️ TWO TRUTHS TO KEEP IN SYNC = the very bug class this repo fights.
+#    Hence the `mutation-workflow-gate.test.js` gate: it reddens on the first
+#    drift. NEVER edit this `paths` block without re-running it.
+# ═══════════════════════════════════════════════════════════════════════
+
+name: mutation
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      # ── mutated modules (mirror of stryker.conf.json `mutate`) ──
+      - 'src/lib-pure.js'
+      - 'src/canary.js'
+      - 'src/leak-pure.js'
+      - 'src/commit-msg-lang.js'
+      - 'src/docfacts.js'
+      - 'src/scope-reach-pure.js'
+      - 'src/derived-observables.js'
+      - 'src/sources/file.js'
+      - 'src/sources/tool.js'
+      - 'src/sources/mcp.js'
+      - 'src/sources/session.js'
+      - 'src/sources/skill.js'
+      - 'src/frontmatter.js'
+      - 'src/loader.js'
+      - 'src/lint.js'
+      - 'src/collisions.js'
+      - 'src/gate.js'
+      - 'src/deps-criticality-pure.js'
+      - 'src/budget.js'
+      - 'src/harness-conformance.js'
+      - 'src/temporal-budget-pure.js'
+      - 'src/disk-writers-pure.js'
+      - 'src/doctor-wiring-pure.js'
+      - 'src/quadratic-budget-pure.js'
+      - 'src/state-entry-rebuild-pure.js'
+      - 'src/foreign-identifier-pure.js'
+      - 'src/model-twin-pure.js'
+      - 'src/declared-paths-pure.js'
+      - 'src/memory-store-pure.js'
+      - 'src/state-crdt-pure.js'
+      - 'src/state-eviction-pure.js'
+      - 'src/kernel-endpoint.js'
+      - 'src/differential-normalize.js'
+      - 'src/wiring-plan.js'
+      - 'src/wiring-dialect.js'
+      - 'src/corpus-cache.js'
+      - 'src/lifecycle-log-pure.js'
+      # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
+      - 'test/harness-conformance.test.js'
+      - 'test/lib-pure.test.js'
+      - 'test/canary.test.js'
+      - 'test/leak-pure.test.js'
+      - 'test/commit-msg-lang.test.js'
+      - 'test/sources-file.test.js'
+      # `keys` operator (19/08/2026): launched by Stryker, so a change to it can move the
+      # score — the workflow must therefore see it. Sealed by mutation-workflow-gate.
+      - 'test/keys-operator.test.js'
+      - 'test/operator-consumption-gate.test.js'
+      - 'test/observable-reach-gate.test.js'
+      - 'test/spec-differential.test.js'
+      - 'src/language-spec.js'
+      - 'src/cadence-spec.js'
+      - 'test/cadence-differential.test.js'
+      - 'test/sources-tool.test.js'
+      - 'test/sources-mcp.test.js'
+      - 'test/sources-session.test.js'
+      - 'test/sources-skill.test.js'
+      - 'test/frontmatter.test.js'
+      - 'test/loader.test.js'
+      - 'test/lint.test.js'
+      - 'test/collisions.test.js'
+      - 'test/gate.test.js'
+      - 'test/deps-criticality-pure.test.js'
+      - 'test/budget.test.js'
+      - 'test/docfacts.test.js'
+      - 'test/scope-reach-pure.test.js'
+      - 'test/derived-observables.test.js'
+      - 'test/temporal-budget-pure.test.js'
+      - 'test/disk-writers-pure.test.js'
+      - 'test/doctor-wiring-pure.test.js'
+      - 'test/quadratic-budget-pure.test.js'
+      - 'test/state-entry-rebuild-pure.test.js'
+      - 'test/foreign-identifier-pure.test.js'
+      - 'test/model-twin-pure.test.js'
+      - 'test/declared-paths-pure.test.js'
+      - 'test/memory-store.test.js'
+      - 'test/state-eviction-pure.test.js'
+      - 'test/state-crdt-pure.test.js'
+      - 'test/kernel-endpoint.test.js'
+      - 'test/differential-normalize.test.js'
+      - 'test/wiring-plan.test.js'
+      - 'test/wiring-plan-splice.test.js'
+      - 'test/wiring-dialect.test.js'
+      - 'test/corpus-cache.test.js'
+      - 'test/lifecycle-log-pure.test.js'
+      # ── the mutation config itself + the deps ──
+      - 'stryker.conf.json'
+      - 'vitest.stryker.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/mutation.yml'
+  pull_request:
+  # ⚠️ Safety net: allows a manual re-run when in doubt (e.g. after a tooling
+  #    change that touches none of the paths above).
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # ⚠️ Node ≥22 required (dependency-cruiser demands it). A mismatch
+          #    with the dev machine IS the most likely bug if this job fails
+          #    in CI but passes locally (already lived through on 15/07/2026).
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:mutation
+      # ⚠️ THE PER-FILE FLOOR MUST RUN **HERE**, never only in the `test` job
+      #    (14/08/2026). `mutation-floor-gate` is SILENT without
+      #    `reports/mutation.json` — INTENDED behavior locally, but the report
+      #    only exists in THIS job: anywhere else the gate was INERT.
+      # 🔴 MEASURED: `docfacts.js` at 81.19% with 15 survivors, GREEN CI, because
+      #    `thresholds.break` is an AVERAGE (99.05 global). That is the exact
+      #    collapse this gate exists to prevent — invisible for a month.
+      # ⚠️ `if: always()`: a Stryker red on the GLOBAL threshold must not mask
+      #    the PER-FILE verdict — both diagnostics, never one instead of the
+      #    other. 🛑 NEVER "fix" a red here by lowering the floor: a survivor
+      #    gets KILLED or ELIMINATED.
+      - name: per-file mutation floor (the report is fresh here)
+        if: always()
+        run: npx vitest run mutation-floor-gate.test.js

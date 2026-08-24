@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a filesystem call. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🛑 STRICT SEPARATION, DO NOT BLUR IT: this file DETECTS, it never exempts.
+#    The policy (which method WRITES, which file may write where, with what
+#    budget and what eviction) lives in `disk-writers.json` +
+#    `test/disk-writers-gate.test.js`. Adding a `files:`/`ignores:` here would
+#    silently hide call sites from the manifest — an exemption nobody would
+#    ever read again.
+#
+# ⚠️ AST, NEVER REGEX, and it is load-bearing HERE more than anywhere else in
+#    this repository: the files this rule scans are FULL of comments and
+#    strings that name write primitives on purpose — `session-store.js` says
+#    "NEVER a direct `writeFileSync`", `memory-store.js` explains its
+#    `tmp + rename`. A regex would count every one of those warnings as a
+#    write, and a gate that accuses its own documentation gets disarmed the
+#    same day.
+#
+# ⚠️ THIS RULE MATCHES READS TOO, AND THAT IS THE WHOLE DESIGN. The gate does
+#    not ask "is this a write?" — it requires EVERY `fs` method it meets to be
+#    CLASSIFIED in the manifest. That is what makes the write set DERIVED
+#    instead of copied: a method used for the first time tomorrow lands in the
+#    table the day it is written, and cannot slip through as a silent reader.
+#    A hand-written list of write primitives would only ever know the past.
+#
+# ⚠️ EVERY `pattern:` BELOW IS AN ATOM, and the gate DERIVES its witness table
+#    from this list: an atom added tomorrow stays RED until someone proves,
+#    with a real line of code, that it detects something. Never add an atom
+#    without adding its witness to `disk-writers.json`.
+#
+# 🛑 THIS FILE IS ONLY HALF THE DETECTION, AND THE HALF THAT WENT BLIND FIRST.
+#    Its atoms are keyed on the RECEIVER (`fs`, `require('fs')`, …), and that
+#    was MEASURED FAIL-OPEN on 2026-08-21: `require("fs").writeFileSync(...)`
+#    and `const fsSab = require('fs'); fsSab.writeFileSync(...)` both left the
+#    gate GREEN. An unmatched form is not "an undeclared writer that goes red",
+#    it is a writer NOBODY SEES — the gate goes SILENT, which is fail-OPEN.
+#    ⇒ The second family is keyed on the METHOD (`M($$$)` and `$X.M($$$)`),
+#    GENERATED at gate time from the `write` entries of `disk-writers.json`, so
+#    it cannot drift from the policy and needs no receiver at all. That is what
+#    closes the alias, double-quote and destructured-import classes.
+# ⚠️ KEEP THIS FILE ANYWAY, it is not redundant: it is the ONLY half that
+#    matches an UNKNOWN method name, which is what forces every `fs` method the
+#    repository meets to be CLASSIFIED. Delete it and the write set stops being
+#    derived — it becomes a hand-written list that only knows the past.
+id: fs-call
+language: JavaScript
+severity: error
+message: >-
+  FILESYSTEM CALL — its method must be CLASSIFIED in `disk-writers.json`, and
+  if it WRITES, its file must be DECLARED there with a path, a class, a budget
+  and an eviction policy. Space declares itself: a writer without a ceiling is
+  an architecture bug, and monotonic growth is a DATED outage.
+rule:
+  any:
+    - pattern: fs.$M($$$)
+    - pattern: require('fs').$M($$$)
+    - pattern: fs.promises.$M($$$)
+    - pattern: fsp.$M($$$)

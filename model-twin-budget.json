@@ -1,0 +1,287 @@
+{
+  "_doc": "MODEL-TWIN BUDGET — every run of code SHARED by an independent model and the component it judges, DECLARED. SINGLE SOURCE, consumed by test/model-twin-gate.test.js. DETECTION is NOT here: it lives in src/model-twin-pure.js (tokenize + sharedRuns), which knows no exemption. Strict separation of powers — the detector detects, this file plus its test carry the POLICY and the RATCHET.",
+  "_doc_why": "This repository owns models whose ONLY reason to exist is to CONTRADICT the engine. On 2026-08-23 cadence-spec.js was found to have copied the SHAPE of gate.js: both wrote { seen: true, sinceLastCall: entry.sinceLastCall + 1 }, the engine dropped the denied flag and the model dropped the same flag, so 11,346 exhaustive cases were GREEN on a production bug from the day they were written. A model that copies its defendant cannot contradict it: it only proves that a copy agrees with itself.",
+  "_doc_derivation": "THE PAIRS ARE DERIVED, NEVER LISTED (a list only knows the past). A MODEL is a src module that is (1) PURE, (2) deliberately OUTSIDE stryker mutate, (3) imported by NO production module — it exists only to be confronted — and (4) confronted by a suite that also imports mutated modules. The JUDGED set of a pair is exactly those mutated modules. Condition (3) is what separates a model from a shared core (pretool-core) or a data table (harness-profile): without it the derivation returned 19 pairs, 12 of them meaningless.",
+  "_doc_min": "THE THRESHOLD IS 12 TOKENS AND IT WAS CHOSEN BY MEASUREMENT ON 2026-08-23. The 2026-08-23 defect is a 13-token statement on ONE line, so any window above 13 is blind to it by construction; 12 leaves one token of margin. NOISE FLOOR, measured on 10 CONTROL pairs of engine files that share a subject but judge nothing: 12 tokens = 3 runs over 10 pairs (harness boilerplate, longest 16), 10 tokens = 4 runs, 14 tokens = 3 runs, 18 tokens = 0. REFUSED READINGS, with their numbers: jscpd at any setting from 5 lines/50 tokens down to 1 line/10 tokens has ZERO sensitivity (identical counts with and without the defect restored) because its window is a LINE window and it emits no file name; 18 tokens is silent on the control but loses the defect run and 15 of the 34 twins measured today.",
+  "_doc_classes": "CLOSED list. CONTRACT = the run is a shared SIGNATURE or vocabulary the differential REQUIRES (same arity, same order): an act of instruction, so a written why of at least 60 characters is REQUIRED. INHERITED_TWIN = the measurement of the day, EXEMPT from justification ON PURPOSE — nobody has instructed these runs one by one, and demanding a sentence per run would produce INVENTED ones, which would then make each case look settled. A false justification is worse than none.",
+  "_doc_ratchet": "THE RATCHET IS AN EQUALITY ON THE RUNS THEMSELVES, never on a count. A count would be blind to the 2026-08-23 defect, which REPLACED one shared statement by another without changing how many there were. An observed run absent from shared = a NEW twin: rewrite the model in its own words, or declare it with its class. A declared run no longer observed = a DORMANT PERMIT and it REDDENS, so an exemption that stops being necessary cannot rot. A pair absent from pairs is held at ZERO.",
+  "_doc_exit": "EXIT CONDITION of the whole file: zero INHERITED_TWIN entry. Leaving a twin means REWRITING the model statement in the model own words — quantifiers, a partition, a table. Never by deleting the model, and never by relaxing the threshold.",
+  "classes": [
+    "CONTRACT",
+    "INHERITED_TWIN"
+  ],
+  "minTokens": 12,
+  "pairs": {
+    "src/cadence-spec.js <-> src/frontmatter.js": {
+      "via": "test/cadence-differential.test.js",
+      "shared": [
+        {
+          "tokens": 21,
+          "aLine": 56,
+          "bLine": 215,
+          "text": "const MODES = [ 'dumb' , 'once' , 'smart' ] ; const DRIFT_UNITS = [ 'tool' , 'turn' ] ; const",
+          "class": "INHERITED_TWIN"
+        }
+      ]
+    },
+    "src/cadence-spec.js <-> src/gate.js": {
+      "via": "test/cadence-differential.test.js",
+      "shared": [
+        {
+          "tokens": 47,
+          "aLine": 181,
+          "bLine": 196,
+          "text": "; } function decide ( config , decls , matched , state , turnCount , owners , toolName ) { const prev = state || { } ; const src = ( doc ) => ( owners ? owners [ doc ] : undefined ) ; const",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 33,
+          "aLine": 208,
+          "bLine": 258,
+          "text": "( config , src ( doc ) , toolName ) ) ; const kept = matched . filter ( ( doc ) => ! filteredOut . includes ( doc ) ) ; const",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 30,
+          "aLine": 239,
+          "bLine": 302,
+          "text": "} const inject = [ ] ; const blocked = [ ] ; for ( const doc of kept ) { const entry = prev [ doc ] ; const",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 23,
+          "aLine": 131,
+          "bLine": 153,
+          "text": "; if ( FILTER_MODES . includes ( cat . filterMode ) ) { return { mode : cat . filterMode , list :",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 23,
+          "aLine": 260,
+          "bLine": 341,
+          "text": ") { next [ doc ] = { seen : true , sinceLastCall : 0 , turn : turnCount } ; if (",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 22,
+          "aLine": 212,
+          "bLine": 262,
+          "text": "; for ( const doc of Object . keys ( prev ) ) { const entry = prev [ doc ] ;",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 18,
+          "aLine": 151,
+          "bLine": 162,
+          "text": "( config , source , toolName ) { const f = filterOf ( config , source ) ;",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 16,
+          "aLine": 296,
+          "bLine": 405,
+          "text": ". length === 0 ? 'none' : 'allow' ; return { decision , inject , injectLockless",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 15,
+          "aLine": 262,
+          "bLine": 349,
+          "text": ") next [ doc ] . denied = blocked . includes ( doc ) ;",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 14,
+          "aLine": 90,
+          "bLine": 111,
+          "text": "( v ) => Number . isInteger ( v ) && v >= 1",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 13,
+          "aLine": 201,
+          "bLine": 252,
+          "text": ") ; const filteredOut = matched . filter ( ( doc ) =>",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 13,
+          "aLine": 210,
+          "bLine": 260,
+          "text": "= new Set ( kept ) ; const next = { } ;",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 225,
+          "bLine": 297,
+          "text": "{ ... entry , sinceLastCall : entry . sinceLastCall + 1 }",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 255,
+          "bLine": 330,
+          "text": "&& ! ( entry && entry . denied === true ) )",
+          "class": "INHERITED_TWIN"
+        }
+      ]
+    },
+    "src/language-spec.js <-> src/frontmatter.js": {
+      "via": "test/spec-differential.test.js",
+      "shared": [
+        {
+          "tokens": 12,
+          "aLine": 245,
+          "bLine": 426,
+          "text": "( ( g ) => Array . isArray ( g ) )",
+          "class": "INHERITED_TWIN"
+        }
+      ]
+    },
+    "src/language-spec.js <-> src/sources/file.js": {
+      "via": "test/spec-differential.test.js",
+      "shared": [
+        {
+          "tokens": 78,
+          "aLine": 196,
+          "bLine": 83,
+          "text": ". patchTools . includes ( toolName ) ) { const patch = toolInput . input || toolInput . patch || toolInput . command || '' ; const re = / \\ * \\ * \\ * ( ? : Update | Add | Delete ) File : \\ s * ( . + ) / g ; let m ; while ( ( m = re . exec ( String ( patch ) ) ) !== null )",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 42,
+          "aLine": 163,
+          "bLine": 106,
+          "text": ", key , out ) { const acc = out || [ ] ; if ( typeof value === 'string' ) { if ( keys . includes ( key ) ) acc . push ( value ) ; } else if (",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 25,
+          "aLine": 166,
+          "bLine": 115,
+          "text": ") { for ( const [ k , v ] of Object . entries ( value ) ) { keyValues ( v , keys ,",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 23,
+          "aLine": 113,
+          "bLine": 316,
+          "text": "= Object ( keysDecl ) === keysDecl && ! Array . isArray ( keysDecl ) ? keysDecl [ axis ] : keysDecl ;",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 23,
+          "aLine": 168,
+          "bLine": 117,
+          "text": "- 1 , Array . isArray ( value ) ? key : k , acc ) ; } } return acc ; }",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 23,
+          "aLine": 245,
+          "bLine": 272,
+          "text": "scope . map ( ( g ) => ( Array . isArray ( g ) ? g : [ g ] ) )",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 19,
+          "aLine": 243,
+          "bLine": 265,
+          "text": ") { if ( ! Array . isArray ( scope ) || scope . length === 0 ) return",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 17,
+          "aLine": 167,
+          "bLine": 198,
+          "text": "for ( const [ k , v ] of Object . entries ( value ) ) {",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 16,
+          "aLine": 246,
+          "bLine": 576,
+          "text": "groups . every ( ( g ) => g . some ( ( s ) =>",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 15,
+          "aLine": 223,
+          "bLine": 688,
+          "text": ". includes ( obs . name ) ) continue ; for ( const command of",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 15,
+          "aLine": 245,
+          "bLine": 271,
+          "text": "scope . some ( ( g ) => Array . isArray ( g ) )",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 14,
+          "aLine": 200,
+          "bLine": 93,
+          "text": ". push ( m [ 1 ] . trim ( ) ) ; }",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 14,
+          "aLine": 224,
+          "bLine": 691,
+          "text": ") { for ( const candidate of obs . derive ( command ) )",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 59,
+          "bLine": 54,
+          "text": ") . replace ( / \\ \\ / g , '/' )",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 141,
+          "bLine": 358,
+          "text": "( key ) => additions . includes ( key ) || (",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 149,
+          "bLine": 496,
+          "text": "additions ; return sourceDefaults . filter ( ( k ) => !",
+          "class": "INHERITED_TWIN"
+        }
+      ]
+    },
+    "src/language-spec.js <-> src/sources/mcp.js": {
+      "via": "test/spec-differential.test.js",
+      "shared": []
+    },
+    "src/language-spec.js <-> src/sources/skill.js": {
+      "via": "test/spec-differential.test.js",
+      "shared": []
+    },
+    "src/language-spec.js <-> src/sources/tool.js": {
+      "via": "test/spec-differential.test.js",
+      "shared": [
+        {
+          "tokens": 17,
+          "aLine": 305,
+          "bLine": 62,
+          "text": "if ( names . includes ( toolName ) ) return true ; return names . includes (",
+          "class": "INHERITED_TWIN"
+        },
+        {
+          "tokens": 12,
+          "aLine": 306,
+          "bLine": 63,
+          "text": ") && typeof toolName === 'string' && toolName !== '' ; }",
+          "class": "INHERITED_TWIN"
+        }
+      ]
+    }
+  }
+}

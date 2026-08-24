@@ -1,0 +1,65 @@
+{
+  "$schema-note": "A FICTIONAL HARNESS. It exists to answer one question and only that one: does a THIRD harness — one nobody designed for — cost ONE MANIFEST and ZERO lines of engine? Everything here is deliberately as far from the two real harnesses as the vocabulary allows: another serialization (TOML), another address shape, another nesting (flat, no blocks), other key names for every single field, other event names, and two of this framework's events MISSING entirely. If making `test/wiring-harness-portability.test.js` pass ever requires editing `src/wiring-plan.js` or `src/wiring-dialect.js`, the design has failed and the generator has gone back to being a tool with one special case per product.",
+  "harness": {
+    "name": "fictional-acme-agent",
+    "format": "toml",
+    "write": {
+      "mode": "fragment",
+      "reason": "an invented harness has no configuration on this machine to splice into, and a fragment is what an adopter pastes"
+    },
+    "events": {
+      "PreToolUse": "before_tool",
+      "UserPromptSubmit": "on_prompt"
+    },
+    "_why_missing_events": "SessionStart, PostToolUse and PreCompact are ABSENT on purpose. Their consumers must be SKIPPED and NAMED by the generator — never bodged onto a neighbouring event, never dropped in silence. A harness lacking an event is the ordinary case, not the exotic one.",
+    "layout": {
+      "container": ["automation", "triggers"],
+      "grouping": "flat",
+      "matcherIn": "entry",
+      "matcherKey": "only_for",
+      "eventKey": "when",
+      "fields": {
+        "type": "kind",
+        "command": "exec",
+        "url": "endpoint",
+        "timeout": "deadline_seconds",
+        "statusMessage": "note"
+      }
+    }
+  },
+  "stateLane": "client",
+  "transport": { "kind": "command" },
+  "bounds": { "gateHookTimeoutSeconds": 7 },
+  "consumers": [
+    {
+      "module": "src/hooks/session-inject.js",
+      "event": "SessionStart",
+      "matcher": null,
+      "timeout": 10
+    },
+    {
+      "module": "src/hooks/doc-inject.js",
+      "event": "PreToolUse",
+      "matcher": "*",
+      "framed": true
+    },
+    {
+      "module": "src/hooks/doc-write-guard.js",
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "timeout": 10
+    },
+    {
+      "module": "src/hooks/turn-count.js",
+      "event": "UserPromptSubmit",
+      "matcher": null,
+      "timeout": 5
+    },
+    {
+      "module": "src/hooks/ctxroute-reset.js",
+      "event": "PreCompact",
+      "matcher": null,
+      "timeout": 5
+    }
+  ]
+}

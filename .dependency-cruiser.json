@@ -1,0 +1,380 @@
+{
+  "forbidden": [
+    {
+      "name": "no-circular",
+      "comment": "No circular dependency — the repo is deliberately flat (legacy-mcp-inject.js/ctxroute-reset.js → lib-pure.js/lock.js, never the reverse).",
+      "severity": "error",
+      "from": {},
+      "to": {
+        "circular": true
+      }
+    },
+    {
+      "name": "lib-pure-must-stay-pure",
+      "comment": "⚠️ lib-pure.js must NEVER import fs/path/child_process — that is the whole point of the module (zero I/O, mutable by Stryker without noise). A dependency here would break the decision/I-O isolation documented in lib-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/lib-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "canary-must-stay-pure",
+      "comment": "⚠️ canary.js must NEVER import fs/path/child_process. It DECIDES (alive/dead/undecidable), it does not measure: measurement lives in canary-check.js. Mixing the two would make the verdict untestable and the mutant equivalent — and this module is the ONLY witness of the channel's death.",
+      "severity": "error",
+      "from": {
+        "path": "^src/canary\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "lock-stays-io-only",
+      "comment": "lock.js is an I/O module (fs.mkdirSync) — it must not depend on any business logic (lib-pure.js), so it stays reusable independently.",
+      "severity": "error",
+      "from": {
+        "path": "^src/lock\\.js$"
+      },
+      "to": {
+        "path": "^src/lib-pure\\.js$"
+      }
+    },
+    {
+      "name": "paths-is-the-only-path-source",
+      "comment": "⚠️ paths.js = SINGLE SOURCE of the config/docs/state paths. It must not depend on any other module of the repo (otherwise a cycle: everyone imports it). Hooks go through it, never through an ad-hoc path.join(__dirname,...) — two copies of one path diverge silently.",
+      "severity": "error",
+      "from": {
+        "path": "^src/paths\\.js$"
+      },
+      "to": {
+        "path": "^(src/lib-pure|src/lock|src/stdin-json|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|tools/doctor)\\.js$"
+      }
+    },
+    {
+      "name": "lib-pure-must-not-know-paths",
+      "comment": "⚠️ lib-pure.js must stay PURE: paths.js reads process.env/path, importing it would break the decision/I-O isolation (and the Stryker mutant would become noisy).",
+      "severity": "error",
+      "from": {
+        "path": "^src/lib-pure\\.js$"
+      },
+      "to": {
+        "path": "^src/paths\\.js$"
+      }
+    },
+    {
+      "name": "sources-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ A SOURCE (payload -> which docs?) is a DECISION, never I/O. Same reason as lib-pure: purity is the CONDITION for Stryker to mutate without equivalent mutants. Mixing fs/path here = losing the mutation signal on the match logic of the 532 rules.",
+      "from": {
+        "path": "^src/sources/"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "sources-must-not-know-the-harness",
+      "severity": "error",
+      "comment": "⚠️ A source knows NO harness: it answers a question, decides nothing and writes nowhere. Importing a hook (which speaks the Claude Code dialect) would break the Codex port — the gate translates, the core never does.",
+      "from": {
+        "path": "^src/sources/"
+      },
+      "to": {
+        "path": "^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|tools/doctor|src/paths|src/deadline)\\.js$"
+      }
+    },
+    {
+      "name": "frontmatter-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ PURE parser: the caller reads the file, never the parser. Mixing I/O here would prevent property-based testing (fast-check) from covering everything on generated input.",
+      "from": {
+        "path": "^src/frontmatter\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "loader-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ The loader (corpus -> ordered rules) is a pure DECISION: the caller reads the .md files. Mixing fs/path here = losing mutation on the piece that replaces protected-paths.json at the switchover.",
+      "from": {
+        "path": "^src/loader\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "deadline-stays-standalone",
+      "severity": "error",
+      "comment": "⚠️ deadline.js must depend on NOTHING (like stdin-json.js): it is copyable as-is into any hook, of any project. That is what allows immunizing the 7 hooks of ~/.claude/hooks/ without importing this framework there.",
+      "from": {
+        "path": "^src/deadline\\.js$"
+      },
+      "to": {
+        "path": "^(src/lib-pure|src/lock|src/stdin-json|src/paths|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|tools/doctor|src/frontmatter)\\.js$"
+      }
+    },
+    {
+      "name": "stdin-json-stays-standalone",
+      "comment": "stdin-json.js is a generic I/O utility (stdin reading) — it must depend on NOTHING else in this repo, so it stays reusable as-is elsewhere.",
+      "severity": "error",
+      "from": {
+        "path": "^src/stdin-json\\.js$"
+      },
+      "to": {
+        "path": "^(src/lib-pure|src/lock|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset)\\.js$"
+      }
+    },
+    {
+      "name": "lint-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ lint.js = PURE CORE of the fleet audit (mutated by Stryker). The caller reads the disk and provides a STATE; this module DECIDES. Mixing fs/path here would produce equivalent mutants on the only gate that detects dead docs.",
+      "from": {
+        "path": "^src/lint\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|os|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "lint-must-not-know-the-harness",
+      "severity": "error",
+      "comment": "⚠️ The lint returns FINDINGS: it prints nothing, never exit()s, formats nothing. The gate takes care of that (same rule as sources/*.js) — which is what makes the Codex port trivial and the core testable without spawning. ⚠️ `lint-corpus` is ITS OWN SHELL: importing it would invert the dependency (the core would know the disk through the back door) and would pull fs/os into the mutated module — the equivalent mutants that `lint-must-stay-pure` already forbids directly.",
+      "from": {
+        "path": "^src/lint\\.js$"
+      },
+      "to": {
+        "path": "^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|tools/doctor|src/paths|src/deadline|tools/lint-corpus)\\.js$"
+      }
+    },
+    {
+      "name": "collisions-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ collisions.js = PURE CORE of the crossing analysis (mutated by Stryker). The check-collisions.js shell reads the corpus; this module SORTS. Same reason as lint.js: fs/path here = equivalent mutants on the only module that ranks the crossings.",
+      "from": {
+        "path": "^src/collisions\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|os|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "gate-must-stay-pure",
+      "severity": "error",
+      "comment": "⚠️ gate.js = THE DECISION of the unified gate (mutated by Stryker). The caller (doc-inject.js) reads corpus/config/state; this module DECIDES. Mixing fs/path here = equivalent mutants on the piece that replaces protect-files' injection at the switchover.",
+      "from": {
+        "path": "^src/gate\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|os|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "gate-must-not-know-the-io",
+      "severity": "error",
+      "comment": "⚠️ gate.js knows neither the disk nor the harness through the back door: importing paths/lock/corpus/hooks would pull I/O into the mutated module. It imports ONLY lib-pure (pure → pure).",
+      "from": {
+        "path": "^src/gate\\.js$"
+      },
+      "to": {
+        "path": "^(src/paths|src/lock|src/corpus|src/stdin-json|src/deadline|tools/doctor|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/hooks/doc-inject)\\.js$"
+      }
+    },
+    {
+      "name": "explain-stays-out-of-the-hot-path",
+      "severity": "error",
+      "comment": "⚠️ explain.js is a DIAGNOSTIC tool (fail-LOUD, read-only, off the critical path). No gate/guard may import it: a hook is spawned on EVERY tool call of EVERY agent, and a screaming tool has no place in a fail-open path. The reverse direction is the rule: explain consumes collect-core, never the other way around.",
+      "from": {
+        "path": "^(src/hooks/doc-inject|src/pretool-core|src/emission-core|src/guard-core|src/hooks/doc-write-guard|src/hooks/session-inject|src/hooks/turn-count|src/hooks/ctxroute-reset|src/hooks/legacy-mcp-inject|src/hooks/codex-doc-inject|src/canary|src/hooks/canary-check)\\.js$"
+      },
+      "to": {
+        "path": "^tools/explain\\.js$"
+      }
+    },
+    {
+      "name": "collect-core-must-not-know-the-harness",
+      "severity": "error",
+      "comment": "⚠️ collect-core.js = SHARED collection gate↔explain. It knows no dialect: importing a shell (doc-inject/codex-*) would invert the dependency and bring a harness into the common piece — exactly what the multi-harness port forbids.",
+      "from": {
+        "path": "^src/collect-core\\.js$"
+      },
+      "to": {
+        "path": "^(src/hooks/doc-inject|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/hooks/doc-write-guard|src/hooks/session-inject|tools/explain)\\.js$"
+      }
+    },
+    {
+      "name": "disk-writers-pure-must-stay-pure",
+      "comment": "⚠️ disk-writers-pure.js must NEVER import fs/path/child_process. It DECIDES whether a disk writer is declared with a ceiling and an eviction policy; it reads NOTHING. The I/O (git ls-files, ast-grep, the manifest) lives in disk-writers-gate.test.js. A dependency here would make the decision non-mutable — and an UNMUTATED rule about disk growth is exactly the false gate that reassures while the disk fills.",
+      "severity": "error",
+      "from": {
+        "path": "^src/disk-writers-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "leak-pure-must-stay-pure",
+      "comment": "⚠️ leak-pure.js must NEVER import fs/path/child_process: it DECIDES whether a text contains personal data, it reads NOTHING. The I/O (git ls-files, private list) lives in leak-gate.test.js. A dependency here would make the decision non-mutable and the gate untestable outside the real repository.",
+      "severity": "error",
+      "from": {
+        "path": "^src/leak-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "state-eviction-pure-must-stay-pure",
+      "comment": "⚠️ state-eviction-pure.js must NEVER import fs/path/child_process. It DECIDES which state files disappear; the readdir, the stat and the unlink live in `state-eviction.js`. A dependency here would make the rule non-mutable — and an UNMUTATED deletion rule is the worst of both worlds: it can silently select NOTHING (the cleaner that matched `*.tar.gz` while the producer wrote `*.sql.gz`: 0 bytes removed since forever) or silently select a DURABLE key and erase the fleet's memory. Same reason as disk-writers-pure.js, one step further: this one does not judge, it deletes.",
+      "severity": "error",
+      "from": {
+        "path": "^src/state-eviction-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "lifecycle-log-pure-must-stay-pure",
+      "comment": "⚠️ lifecycle-log-pure.js must NEVER import fs/path/child_process. It DECIDES when the daemon journal turns over and what a record looks like; the stat, the rename and the append live in `lifecycle-log.js`. A dependency here would make the decision non-mutable — and an UNMUTATED ceiling is the worst kind of false gate: it REASSURES while the file grows without bound, and nobody looks again. Same reason as disk-writers-pure.js and state-eviction-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/lifecycle-log-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "doctor-wiring-pure-must-stay-pure",
+      "comment": "⚠️ doctor-wiring-pure.js must NEVER import fs/path/child_process. It DECIDES whether the harness wiring is alive — split brain, frame coordinates 1..N with no gap and no duplicate, lane coherence, divergent `--frames` — and it reads NOTHING: the settings file, the config, the `src/hooks/` scan and the path resolution live in `tools/doctor.js`. Those ~325 lines used to sit INSIDE that I/O tool, hence outside Stryker's `mutate`, so the judgement of the fleet's DEAD-MAN SWITCH had never been mutated: an inverted comparison or a `some` turned into an `every` would have stayed green for ever, and a false dead-man switch is worse than none — it REASSURES, so nobody looks again. Same reason as disk-writers-pure.js and lifecycle-log-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/doctor-wiring-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "state-entry-rebuild-pure-must-stay-pure",
+      "comment": "⚠️ state-entry-rebuild-pure.js must NEVER import fs/path/child_process. It DECIDES whether every record rebuilt by literal is declared, and it reads NOTHING: the ast-grep scan, the git perimeter and the manifest read live in `test/state-entry-rebuild-gate.test.js`. Purity is what makes it MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a ratchet written inside the suite would stay green on an inverted comparison for ever — and this particular budget is legitimately EMPTY, so a silent verdict is indistinguishable from a healthy one. Same reason as quadratic-budget-pure.js and disk-writers-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/state-entry-rebuild-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "foreign-identifier-pure-must-stay-pure",
+      "comment": "⚠️ foreign-identifier-pure.js must NEVER import fs/path/child_process. It DECIDES whether every foreign identifier is declared AND whether the language reference is still English only, and it reads NOTHING: the ast-grep scan, the cspell run, the git perimeter and the manifest read live in `test/foreign-identifier-gate.test.js`. Purity is what makes it MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a ratchet written inside the suite would stay green on an inverted comparison for ever — and the dictionary seal is the one decision whose failure is INVISIBLE (every count keeps passing while the gate protects nothing). Same reason as quadratic-budget-pure.js and state-entry-rebuild-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/foreign-identifier-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "model-twin-pure-must-stay-pure",
+      "comment": "⚠️ model-twin-pure.js must NEVER import fs/path/child_process. It DETECTS (tokenizer + shared token runs) and DECIDES (every run shared by a model and its defendant is declared), and it reads NOTHING: the git perimeter, the file texts and the manifest read live in `test/model-twin-gate.test.js`. Purity is what makes it MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a rule written inside the suite would stay green on an inverted comparison for ever — and this gate exists precisely because a judge certified a production bug in silence for weeks. Same reason as quadratic-budget-pure.js and state-entry-rebuild-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/model-twin-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "declared-paths-pure-must-stay-pure",
+      "comment": "⚠️ declared-paths-pure.js must NEVER import fs/path/child_process. It DECIDES where the framework's data lives — env override > declared config key > code-derived default, for the state AND for the two doc corpora — and where its CONFIG lives (the `--ctxroute-config` launch argument, and the OS-conventional per-user address), and it reads NOTHING: the config read, the platform path.isAbsolute, process.platform, process.env, os.homedir() and process.argv live in src/paths.js, which INJECTS them — injecting the PLATFORM is also what lets Windows, macOS and Linux be proven from any single host, and returning SEGMENTS instead of a joined path is what keeps the separator `path`'s knowledge rather than ours. Purity is what makes the decision MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a precedence written inside paths.js (an I/O module, never mutated) would stay green for ever on an inverted order — and an inverted order here means every self-isolating suite writes into the REAL state, silently. Purity is ALSO what forbids re-implementing what a platform already knows: absoluteness is answered by path.isAbsolute, passed in, never guessed by a regex of ours. Same reason as doctor-wiring-pure.js and lifecycle-log-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/declared-paths-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "only-store-resolve-opens-a-store",
+      "comment": "🔴 MEASURED IN PRODUCTION 2026-08-21. The injection state has FOUR consumers (the PreToolUse gate, the session gate which shares the `remainder-` queue with it, the turn counter, the PreCompact reset). Wiring ONLY the gate to the daemon moved that one memory into RAM while the others kept the disk: inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered 2 bytes. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate. The root cause was NOT the forgotten reset: it was that ANY shell could open a store itself, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said \"the backend is an ARGUMENT, never ambient\" and it stopped nobody — a rule only prose guards is not a rule. ⇒ `src/store-resolve.js` is the SINGLE resolution point and hands out `{ store, withLock }` TOGETHER; everyone else receives the pair as a parameter. 🛑 The five paths excluded below are INHERITED DEBT, measured on the day the rule was written, NOT a permission: the exit condition is that they take the pair as an argument, and this list then becomes empty. A sixth importer is RED the second it is written, which is the whole point.",
+      "severity": "error",
+      "from": {
+        "path": "^src/",
+        "pathNot": "^(src/store-resolve\\.js|src/emission-core\\.js|src/pretool-core\\.js|src/hooks/http-server\\.js|src/hooks/turn-count\\.js|src/hooks/legacy-mcp-inject\\.js)$"
+      },
+      "to": {
+        "path": "^src/(session-store|memory-store)\\.js$"
+      }
+    }
+  ],
+  "options": {
+    "doNotFollow": {
+      "path": "node_modules"
+    },
+    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/declared-paths-pure|tools/commit-msg-check)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "tsPreCompilationDeps": false
+  }
+}

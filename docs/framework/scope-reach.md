@@ -1,0 +1,19 @@
+---
+match: ["scope-reach.js", "scope-reach.test.js", "scope-reach-pure.js", "scope-reach-pure.test.js"]
+mode: smart
+threshold: 30
+---
+
+# scope-reach.js — the instrument that settles "would widening `scope` cost anything?"
+
+- 🔑 **BORN OF WORK ITEM 59**: the decision lived on a measurement, the measurement lived in a throwaway script, and the backlog promised it was "reproducible in 3 minutes". **A decision whose evidence cannot be replayed is a decision nobody can revisit.**
+- 🛑 **THE TOOL NAMES ARE DERIVED, ANCHORED ON `"type":"tool_use"`.** Two earlier versions were both wrong: a HAND-WRITTEN list (defect ㊽, inside the tool meant to expose it — right answer BY LUCK, which is worse) and a match on every `"name":` field (**343** false collisions against 1 real, because SKILL and AGENT names share the key). Never loosen the anchor.
+- ⚠️ **TRI-STATE EVERYWHERE**: no corpus, or files read with zero tool call extracted, ⇒ **NOT MEASURED**, exit 2. A `0` would read as "nothing collides" — false good news. **Two DISTINCT messages, never merged**: "no corpus at X" sends the reader to a missing directory, "corpus at X yielded no tool call" says the transcript SHAPE changed.
+- ⚠️ **BOTH ROOTS COME FROM `paths.js`, NEITHER IS REBUILT HERE** (21/08/2026): the doc corpus from `paths.fileDocsDir()`, the transcripts from `paths.transcriptsDir()`. Measured against a folder other than the one the harness writes or the engine reads, the measurement answers about nothing — and this tool exists precisely so a decision can be REPLAYED. 🛑 This line named only the doc corpus on 21/08 while the transcript root was STILL assembled here from `os.homedir()`, with no env var at all: the same defect the fleet root had in three scripts, on a different second segment. Judged now by `fleet-hooks-path.test.js` (cell ③ + the spawn cell ⑪, override `CTXROUTE_TRANSCRIPTS_DIR`).
+- 🛑 **AN UNREACHABLE CORPUS IS A NAMED REFUSAL, never a silent fallback to a plausible folder**: the message says WHICH address was resolved and FROM WHERE (`paths.transcriptsDir()`, and the env var that overrides it). Printing that ABSOLUTE path is deliberate and is NOT the leak the fleet root has — an operator's terminal is not a tracked file, not a published document and not an injected context. **NEVER write it into one.**
+- ⚠️ **IT INFORMS, IT NEVER GATES.** Whether a collision is LEGITIMATE (the author meant the tool) or PARASITIC (they meant a path) is a judgement; a gate that judges intent becomes noise, then gets bypassed.
+- 🛑 **THE FILE DIFFERENTIAL IS THE WRONG INSTRUMENT for this question** — it compares the `file` source, where the delta of that widening is exactly ZERO. It would answer "green" having measured nothing. That mistake was written into the 59 protocol.
+- ⚠️ Reads hundreds of MB of transcripts: on demand, never in a gate or on the hot path.
+- ⚠️ **`scope-reach.test.js` REPLAYS BOTH WRONG VERSIONS** (the lucky hand-written list, the over-counting derivation) — a founding case is never deleted: if the behaviour changes, INVERT the expectation, keep the case. What it tests is the ANCHOR, never the answer.
+- 🛑 **THE DECISION LIVES IN `src/scope-reach-pure.js` AND IS MUTATED**; `tools/` is only a shell that walks the disk and prints. The first version mixed the two — so the decision was not mutated, and a SCANNER shipped with deterministic cases only. Caught by `/stack-audit`, inside the very tool built to catch that kind of fault. Bringing the logic back into the shell would take it out of mutation.
+- ⚠️ **The scanner LAWS (fast-check) are EXCLUDED from the Stryker runner** — every law therefore has its deterministic case in the same file, otherwise its mutant survives and the score lies.

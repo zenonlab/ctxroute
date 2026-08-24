@@ -1,0 +1,82 @@
+{
+  "_why": "LAYER MANIFEST — the CAPABILITIES × LAYERS table (06/08/2026). Three defects in three days were three cells of this table: transport orchestrated inside a single emitter (⑯), `process.exit` in two shared cores (⑯bis), `console.log` in guard-core (3rd instance, found by the AST scan and not by eye). Those are not three discoveries: they are three cells that were never filled in. Once the table is written there is no architecture-bug class left to discover — only cells.",
+  "_read_before_modifying": "🛑 WIDENING THIS TABLE IS ALMOST ALWAYS THE WRONG ANSWER. A red gate means the FILE is in the wrong layer, or that it does work that does not belong to it. Adding a capability to silence the red disarms the guardrail silently — and nobody will ever see it. If you truly believe you must widen: the justification is MANDATORY (`justifications`), and the gate's inverse check reddens as soon as it becomes stale.",
+  "_what_this_manifest_does_not_cover": "IMPORTS (fs, path, child_process, harness modules) are NOT here: that is dependency-cruiser's job, already in place (`lib-pure-must-stay-pure`, `sources-must-not-know-the-harness`). NEVER duplicate those rules here — two tools for one invariant diverge. Here: only what a dependency graph CANNOT see, i.e. GLOBALS and syntax.",
+  "capabilities": {
+    "exit": {
+      "pattern": "process.exit($$$)",
+      "label": "kill the process",
+      "why": "The lifecycle belongs to the SHELL — the only layer that knows the harness and its exit contract. A core that dies is untestable and uncallable from another context.",
+      "witness": "process.exit(0);"
+    },
+    "stdout": {
+      "pattern": "console.log($$$)",
+      "label": "write the output",
+      "why": "Serializing the response belongs to the SHELL (web-framework pattern: a handler never serializes). A core RETURNS a verdict.",
+      "witness": "console.log('x');"
+    },
+    "env": {
+      "pattern": "process.env",
+      "label": "read the environment",
+      "why": "A PURE module must return the same result for the same inputs. Reading the environment makes it non-deterministic, hence not cleanly mutable by Stryker.",
+      "witness": "const v = process.env.CTXROUTE_X;"
+    },
+    "argv": {
+      "pattern": "process.argv",
+      "label": "read the arguments",
+      "why": "Arguments are the WIRING, hence caller dialect. A core receives them as parameters, it never reads them.",
+      "witness": "const a = process.argv;"
+    },
+    "guessed-state": {
+      "pattern": "gate.decide($$$A, {}, $$$B)",
+      "label": "GUESS the state instead of reading it",
+      "why": "An empty literal passed as STATE is not 'no side effect': it is the ASSERTION 'nothing has ever been injected'. PROD BUG 07/08/2026: the lock-less fallback of pretool-core.js passed `{}` ⇒ a `once` already delivered was re-emitted, alone, on its frame (ORPHAN chunk, no compaction, empty queue). The lock serializes WRITES; READING never needed it. ⚠️ DELIBERATELY NARROW SCOPE, tailored (07/08/2026): `x || {}` counts 29 occurrences outside tests, ALL legitimate (normalizing an absent parameter) — identical syntax, opposite semantics. What separates the two ('was the data READABLE?') is FLOW, not syntax. 🛑 Do NOT widen to `|| {}`: 29 exemptions = a dead gate. This pattern only closes THE call whose state is the framework's truth.",
+      "witness": "const r = gate.decide(config, acc.decls, acc.matched, {}, 0, acc.owner);"
+    },
+    "shell": {
+      "_why_a_RULE_and_not_a_pattern": "MEASURED 06/08/2026: the `{ shell: true }` pattern only finds the SINGLE-property object. The REAL case — `{ encoding: 'utf8', shell: true, maxBuffer: N }` — was NOT detected, and `$$$` does not catch it. A `kind: pair` rule catches all 3 forms (multi-property, mono-property, assignment) and ignores the STRING 'shell: true'. 🛑 NEVER go back to a pattern here: it would be an INERT rule, green while blind — exactly what this gate exists to make impossible.",
+      "rule": [
+        "kind: pair",
+        "all:",
+        "  - has: { field: key, regex: \"^shell$\" }",
+        "  - has: { field: value, regex: \"^true$\" }"
+      ],
+      "label": "have the command interpreted by a shell",
+      "why": "FORBIDDEN FOR ALL LAYERS, shells included. `shell: true` routes the command through the SYSTEM's interpreter: `cmd` on Windows, `/bin/sh` on Linux and macOS. The same code therefore behaves differently per machine. LIVED on 06/08/2026: `process.exit($$$)` passed to `/bin/sh` = `Syntax error: \"(\" unexpected` — green locally, RED in CI, and above all an EMPTY SCAN, i.e. a blind gate that would have passed green. Remedy: call the binary DIRECTLY (`node_modules/.../ast-grep`), never through a shell nor through `npx`.",
+      "witness": "execFileSync('a', [], { encoding: 'utf8', shell: true, maxBuffer: 1 });"
+    }
+  },
+  "layers": [
+    {
+      "name": "pure-core",
+      "what": "Decides, does nothing. Mutated by Stryker — hence the requirement of total determinism.",
+      "source": "DERIVED from `stryker.conf.json` → `mutate` (single source: that file already declares 'ALL the PURE modules'). Do NOT copy the list here.",
+      "allowed": []
+    },
+    {
+      "name": "shared-core",
+      "what": "Orchestrates, shared by all harnesses. I/O allowed, but no dialect and no lifecycle.",
+      "files": [
+        "*-core.js"
+      ],
+      "allowed": []
+    },
+    {
+      "name": "shell",
+      "what": "Speaks the dialect of ONE harness, or is a command-line tool. This is where — and NOWHERE else — the output and the death of the process live.",
+      "files": [
+        "*"
+      ],
+      "allowed": [
+        "exit",
+        "stdout",
+        "env",
+        "argv"
+      ]
+    }
+  ],
+  "justifications": {
+    "tools/explain.js/guessed-state": "DELIBERATE, and it is the ONLY admitted exemption: `explain.js` is an introspection tool launched OUTSIDE any session — there is no state to read, and its role is to answer 'why would this doc inject?' on a FRESH context. ⚠️ CONSEQUENCE TO KNOW, not a detail: its CADENCE verdict (`once` already consumed, `smart` counter) can therefore differ from reality. It says what would happen in a pristine session, never the state of yours. 🛑 If one day it receives a `session_id`, this justification becomes FALSE and must fall — it will have to read the state like everyone else."
+  },
+  "_doc_witness": "⚠️ `witness` (witness) = ONE REAL LINE OF CODE that the capability MUST detect. The gate writes it into a temporary file and requires it to be found. That is what makes an INERT rule impossible — the most dangerous defect of the repository (a gate green because it sees nothing). Measured 06/08/2026: the `{ shell: true }` pattern did NOT find `{ encoding: 'utf8', shell: true, maxBuffer: N }`, the very form that had caused the red CI. The witness MUST therefore be the REAL form encountered, never a simplified textbook case. 🛑 Any capability ADDED without a witness is refused by the gate."
+}

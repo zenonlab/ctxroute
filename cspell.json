@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "_doc": "ENGLISH-ONLY DICTIONARY FOR THE IDENTIFIERS OF THE CODE. Consumed by `test/foreign-identifier-gate.test.js` through `src/foreign-identifier-pure.js`, and by `npm run check:spelling`. 🛑 IT INVERTS THE BURDEN OF PROOF, and that is the whole reason it exists: a list of FORBIDDEN words is stale the day it is written — it catches only what somebody thought to put in it, and the next word walks through in silence. Here nothing is forbidden; what is KNOWN is declared. Every word that is neither ordinary English nor a term declared below is RED, including a German or a Spanish one nobody anticipated. Fail-closed, never fail-open.",
+  "_doc_language": "`language: en` and `dictionaries: [en_us]` ONLY, with `noSuggestDictionaries` empty and NO other locale: adding `fr` would DISARM the gate completely, since French is exactly what it must refuse. Never add a second natural language here for any reason.",
+  "_doc_words": "`words` = HOUSE and INDUSTRY terms, MEASURED not guessed: the list was produced by running cspell over the declared identifiers of the repository and triaging what it rejected. 🛑 A FRENCH IDENTIFIER IS RENAMED, IT IS NEVER DECLARED HERE — putting one in this list would disarm the gate while looking like configuring it. That is the single way this file can be misused, and it is invisible once done.",
+  "_doc_scope": "The gate judges DECLARED IDENTIFIERS ONLY (variables, parameters, functions, properties that WE write), located by AST — never prose. A French word inside a comment or a string is a FALSE POSITIVE for this gate; the published prose is judged separately by `english-only-gate.test.js` over `docs/framework/`.",
+  "language": "en",
+  "dictionaries": [
+    "en_us"
+  ],
+  "dictionaryDefinitions": [],
+  "ignorePaths": [
+    "node_modules/**",
+    "reports/**",
+    "state/**",
+    "**/*.json",
+    "**/*.md"
+  ],
+  "words": [
+    "cgnat",
+    "cspell",
+    "ctxroute",
+    "docfacts",
+    "eacces",
+    "eaddrinuse",
+    "filedocs",
+    "frontmatter",
+    "odoo",
+    "pretool",
+    "sessiondocs",
+    "stryker",
+    "uncontended",
+    "vitest",
+    "worktree"
+  ],
+  "_doc_words_env": "THE ONLY TWO ENTRIES THAT ARE NOT ORDINARY TERMS, AND THEIR REASON: `filedocs` and `sessiondocs` are the middle of this product PUBLIC environment variables (CTXROUTE_FILEDOCS_DIR, CTXROUTE_SESSIONDOCS_DIR). They are English compounds written without a separator, never a foreign word, and renaming them would break the contract with every adopter who already sets them. They are declared here rather than in the budget because they are a VOCABULARY fact, not an exemption on a file."
+}

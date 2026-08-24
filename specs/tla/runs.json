@@ -1,0 +1,113 @@
+{
+  "_doc": [
+    "SINGLE SOURCE of the TLC run matrix: one entry = one .cfg, its constants, the",
+    "properties it checks, and the verdict the gate REQUIRES. `run-tlc.mjs` GENERATES",
+    "the .cfg files from here and refuses any deviation from `expect`.",
+    "expect.green = TRUE  -> TLC must find no error.",
+    "expect.violated       -> TLC must report EXACTLY that invariant/property violated.",
+    "A run whose verdict flips is a RED gate in BOTH directions: a sabotage that stops",
+    "biting is a spec that stopped meaning anything, and a known defect that goes green",
+    "means the engine was fixed and the check must move into the baseline."
+  ],
+  "constantsDefault": {
+    "OnceDocs": "{1}",
+    "DumbDocs": "{2, 3, 4}",
+    "Frames": "2",
+    "MaxCrashes": "1",
+    "MaxDelivered": "2",
+    "LOCKLESS_EMPTY_STATE": "FALSE",
+    "ATOMIC_WRITE": "TRUE",
+    "FALLBACK_WRITES": "FALSE",
+    "SLOW_LEADER": "FALSE",
+    "FALLBACK_DELIVERS_ONCE": "FALSE"
+  },
+  "shippedInvariants": [
+    "TypeOK",
+    "NeverConsumedWithoutDelivery",
+    "NoWriteWithoutLock",
+    "NeverRedeliverConsumed",
+    "OneSplitPerAction"
+  ],
+  "runs": [
+    {
+      "cfg": "Transport",
+      "why": "DESIGN AS SHIPPED. No loss, no write outside the lock, no re-delivery of a consumed doc, one split per invocation, and a consumed `once` always ends up delivered. SINCE 2026-08-20 it also carries AtMostOnceDelivery: the lock-less path stopped delivering `once` documents it cannot record, so the duplicate found by TLC is gone from the SHIPPED design and the invariant moved here — exactly where the witness cell said it should go.",
+      "constants": {},
+      "invariants": ["#shipped", "AtMostOnceDelivery"],
+      "properties": ["OnceProgress"],
+      "expect": { "green": true }
+    },
+    {
+      "cfg": "TransportKnownDefect",
+      "why": "LEGACY NEGATIVE-CHECK since 2026-08-20 — it no longer models the shipped engine, it models the design we LEFT, and it must stay RED for ever. It re-enables the old behaviour explicitly (FALLBACK_DELIVERS_ONCE) and shows the duplicate coming back: the lock-less fallback delivers a fresh `once` and records nothing, so the next leader re-decides it as fresh and delivers it a SECOND time. 🛑 Its value is anti-vacuity: if this run ever goes GREEN, AtMostOnceDelivery has stopped discriminating and the proof in Transport.cfg is hollow. NEVER delete it and NEVER make it green.",
+      "constants": { "FALLBACK_DELIVERS_ONCE": "TRUE" },
+      "invariants": ["#shipped", "AtMostOnceDelivery"],
+      "expect": { "violated": "AtMostOnceDelivery" }
+    },
+    {
+      "cfg": "TransportCandidateFix",
+      "why": "PROOF THAT A FIX EXISTS AND IS SUFFICIENT: if the lock-less path stops delivering unrecorded `once` documents, AtMostOnceDelivery holds WITHOUT costing NoWriteWithoutLock or liveness. It is a spec, not an engine change — the decision belongs to the maintainer.",
+      "constants": { "FALLBACK_DELIVERS_ONCE": "FALSE" },
+      "invariants": ["#shipped", "AtMostOnceDelivery"],
+      "properties": ["OnceProgress"],
+      "expect": { "green": true }
+    },
+    {
+      "cfg": "TransportLocklessEmpty",
+      "why": "SABOTAGE 1 — the 2026-08-07 production bug verbatim: the lock-less fallback decides with an EMPTY state instead of reading it. ⚠️ IT ALSO RE-ENABLES `FALLBACK_DELIVERS_ONCE` SINCE 2026-08-20, AND THE REASON MATTERS: once the fallback stopped delivering `once` documents at all, this sabotage went GREEN — not because reading the state stopped mattering, but because a SECOND barrier now hides it. A negative-check that passes for a reason other than the one it tests has stopped testing anything. Re-enabling the old delivery restores exactly one barrier, so this run keeps measuring what it was written to measure: that the state is READ, never guessed. 🛑 Do not drop this constant to 'simplify' — the run would go green and prove nothing.",
+      "constants": { "LOCKLESS_EMPTY_STATE": "TRUE", "FALLBACK_DELIVERS_ONCE": "TRUE" },
+      "invariants": ["#shipped"],
+      "expect": { "violated": "NeverRedeliverConsumed" }
+    },
+    {
+      "cfg": "TransportNoAtomic",
+      "why": "SABOTAGE 2 — session-store writes without tmp+rename: the destination is truncated, a crash in that window leaves it EMPTY forever and everything already delivered is re-delivered. Run on the candidate-fix baseline so the red is attributable to the write alone.",
+      "constants": { "ATOMIC_WRITE": "FALSE", "FALLBACK_DELIVERS_ONCE": "FALSE" },
+      "invariants": ["#shipped", "AtMostOnceDelivery"],
+      "expect": { "violated": "AtMostOnceDelivery" }
+    },
+    {
+      "cfg": "TransportFallbackWrites",
+      "why": "SABOTAGE 3 — the lock-less fallback WRITES the state and the queue. The lock serializes the writes; the read never needed it. NoWriteWithoutLock is listed FIRST on purpose: this sabotage ALSO destroys the queue (it overwrites it with its own fresh-only split, so queued segments vanish while being marked consumed) and would otherwise redden NeverConsumedWithoutDelivery first, hiding the structural cause behind one of its symptoms.",
+      "constants": { "FALLBACK_WRITES": "TRUE" },
+      "invariants": ["NoWriteWithoutLock", "TypeOK", "NeverConsumedWithoutDelivery", "NeverRedeliverConsumed", "OneSplitPerAction"],
+      "expect": { "violated": "NoWriteWithoutLock" }
+    },
+    {
+      "cfg": "TransportSlowLeader",
+      "why": "SABOTAGE 4 — a leader outliving the 2 s lock timeout. Two DIFFERENT splits of one invocation then coexist and the frames no longer reassemble. Names the residual window and its exact precondition.",
+      "constants": { "SLOW_LEADER": "TRUE" },
+      "invariants": ["#shipped"],
+      "expect": { "violated": "OneSplitPerAction" }
+    },
+    {
+      "cfg": "TransportVacuityDeliver",
+      "why": "ANTI-VACUITY 1 — the model really delivers something.",
+      "constants": {},
+      "invariants": ["NeverDelivers"],
+      "expect": { "violated": "NeverDelivers" }
+    },
+    {
+      "cfg": "TransportVacuityFallback",
+      "why": "ANTI-VACUITY 2 — the lock-less path is really reachable. Without this, every invariant about the fallback would pass by vacuity.",
+      "constants": {},
+      "invariants": ["NeverFallback"],
+      "expect": { "violated": "NeverFallback" }
+    },
+    {
+      "cfg": "TransportVacuityQueue",
+      "why": "ANTI-VACUITY 3 — the queue really carries a deferred segment. Without this, crash-recovery of the queue would be proven over an always-empty queue.",
+      "constants": {},
+      "invariants": ["NeverQueued"],
+      "expect": { "violated": "NeverQueued" }
+    },
+    {
+      "cfg": "TransportRotation",
+      "why": "ROTATION IS NOT STARVATION. With a `dumb` corpus durably above capacity the queue NEVER stays empty — that is CORRECT (`dumb` = re-inject at every action) and must not be `fixed`. The required RED on QueueEventuallyEmpty is the proof that indefinite rotation is a real behaviour of the model, and it coexists with a GREEN OnceProgress in Transport.cfg: rotation is permitted, starvation is not.",
+      "constants": {},
+      "invariants": ["#shipped"],
+      "properties": ["QueueEventuallyEmpty"],
+      "expect": { "violated": "QueueEventuallyEmpty" }
+    }
+  ]
+}
