@@ -57,6 +57,20 @@
 //                          such exits in one day with no way to tell which file.
 //                          🛑 FIELDS, NOT A NEW EVENT: the list below stays
 //                          closed and the frequency stays untouched.
+//    · `code-unchanged`  — the kernel raised a notification and the comparison
+//                          found NOTHING different (2026-08-24). It is the
+//                          NORMAL case: libuv subscribes ReadDirectoryChangesW
+//                          to `FILE_NOTIFY_CHANGE_LAST_ACCESS` among others, so
+//                          merely READING a file raises one — measured, 258
+//                          deaths in a day on a copy nothing had written to.
+//                          🛑 IT IS A KERNEL EVENT, NEVER A REQUEST: it fires on
+//                          filesystem activity under our own directories, so the
+//                          journal stays bounded by what the disk does, not by
+//                          what the fleet asks. A guard nobody can see deciding
+//                          is a guard nobody can trust — hence the line.
+//    · `watch-lost`      — a watcher raised `'error'` (the kernels' "events were
+//                          LOST" signal) and could not be re-armed. Once per
+//                          directory, at most once per process life.
 //    · `signal-exit`     — a supervisor asked us to stop (SIGTERM/SIGINT).
 //    · `lane-degraded`   — ONE transport could not be taken; the other keeps
 //                          serving. Announced rather than suffered in silence.
@@ -65,6 +79,8 @@
 const EVENTS = Object.freeze([
   'start',
   'stale-code-exit',
+  'code-unchanged',
+  'watch-lost',
   'signal-exit',
   'lane-degraded',
   'bind-refused',

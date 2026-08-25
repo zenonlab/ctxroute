@@ -39,10 +39,15 @@ test('the ceiling is 256 KB per file, 2 files, 512 KB for life', () => {
 // THE CLOSED VOCABULARY — this is what keeps the writer bounded.
 // ═══════════════════════════════════════════════════════════════════════
 
-test('the event vocabulary is exactly the five lifecycle facts, and it is frozen', () => {
+test('the event vocabulary is exactly the seven lifecycle facts, and it is frozen', () => {
   assert.deepEqual(EVENTS, [
     'start',
     'stale-code-exit',
+    // ⚠️ 2026-08-24: a kernel notification can now end in EITHER outcome, so the
+    //    quiet one has a name. It is a KERNEL event, never a request — the
+    //    per-request refusal below is untouched.
+    'code-unchanged',
+    'watch-lost',
     'signal-exit',
     'lane-degraded',
     'bind-refused',
@@ -57,6 +62,8 @@ test('EVERY declared event actually renders (an inert vocabulary entry is a lie)
   assert.deepEqual(rendered, [
     '2026-08-22T00:00:00.000Z event=start',
     '2026-08-22T00:00:00.000Z event=stale-code-exit',
+    '2026-08-22T00:00:00.000Z event=code-unchanged',
+    '2026-08-22T00:00:00.000Z event=watch-lost',
     '2026-08-22T00:00:00.000Z event=signal-exit',
     '2026-08-22T00:00:00.000Z event=lane-degraded',
     '2026-08-22T00:00:00.000Z event=bind-refused',

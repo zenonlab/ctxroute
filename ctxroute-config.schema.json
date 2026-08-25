@@ -202,6 +202,30 @@
         "/var/lib/ctxroute/docs/session"
       ]
     },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The interface the daemon BINDS and the wiring POSTs to. Default 127.0.0.1. ⚠️ LOOPBACK IS THE DEFAULT FOR A REASON: this endpoint returns the fleet's private knowledge and has NO authentication - the socket IS the boundary. Moving it off the loopback exposes that knowledge to the local network, and there is no supervisor variable able to do it by accident (there is deliberately no CTXROUTE_HTTP_HOST: environment variables are INHERITED)."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "The port the daemon BINDS and the wiring POSTs to. Default 8787, in the IANA dynamic range. ⚠️ `CTXROUTE_HTTP_PORT` STILL WINS over this half - unlike the `CTXROUTE_*_DIR` variables it is NOT test-reserved (service/ctxroute-http.service declares it, install-windows.ps1 reads it back), and both consumers resolve through the same single point, so the escape cannot move one of them alone."
+        }
+      },
+      "description": "THE ADDRESS THE DAEMON BINDS AND THE WIRING POSTS TO — ONE fact, ONE key, ONE place (2026-08-25). Default 127.0.0.1:8787. OPTIONAL: with the key (or either half) ABSENT the address stays 127.0.0.1:8787, byte for byte the historical behaviour. ⚠️ IT USED TO BE FOUR PLACES, TWO PER FIELD: `HOST` and `DEFAULT_PORT` constants in src/hooks/http-server.js (what the daemon binds) facing `transport.host` and `transport.port` in wiring.json (what the harness POSTs to). Each pair agreed by luck and nothing compared them — the same class as the 2026-08-22 split brain, where one truth held in nineteen hand-edited copies failed in silence. A wiring pointing where nobody listens gets ECONNREFUSED instantly, and the http lane has NO fallback: every frame of every action would be lost, with no error and no badge. 🛑 IT IS ONE GROUPED KEY AND NOT TWO SIBLINGS (`httpHost` beside `httpPort`): a listening address is ONE fact, and two settings for one fact is the same disease one level up, in the vocabulary. Both consumers read it WHOLE, in one call (`paths.httpEndpoint()`). 🛑 An invalid value is a NAMED REFUSAL naming the key and the value, never a quiet fallback: an operator who declared an address asked for that address. ⚠️ Under SOCKET ACTIVATION the OS owns the listening socket and the daemon IGNORES this key: the address is then the unit's (`ListenStream=`, `SockNodeName`/`SockServiceName`), and this key still tells the WIRING where to knock.",
+      "examples": [
+        {
+          "host": "127.0.0.1",
+          "port": 8787
+        }
+      ]
+    },
     "frames": {
       "type": "integer",
       "minimum": 1,

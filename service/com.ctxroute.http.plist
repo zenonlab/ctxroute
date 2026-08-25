@@ -60,7 +60,7 @@
     <array>
         <string>/CHANGE_ME/launchd-socket-shim</string>
         <string>/usr/local/bin/node</string>
-        <string>/Users/CHANGE_ME/ctxroute/src/hooks/http-server.js</string>
+        <string>/Users/CHANGE_ME/ctxroute/src/hooks/http-daemon.js</string>
     </array>
 
     <!--

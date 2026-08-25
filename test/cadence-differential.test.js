@@ -174,7 +174,24 @@ const MEMORIES = () => [
   { a: { seen: true, sinceLastCall: 0, turn: 0, denied: false } },
   { b: { seen: true, sinceLastCall: 1, turn: 0 } },
   { a: { seen: true, sinceLastCall: 1, turn: 0 }, b: { seen: true, sinceLastCall: 3, turn: 0 } },
+  // 🔴 THE ANTIPHASE — added 2026-08-24 after a PRODUCTION defect this domain could
+  //    not express. Two enforcing documents whose refusal flags are OPPOSITE block on
+  //    alternating actions, and since an action is refused as soon as ONE of them
+  //    blocks, the gesture is refused FOR EVER while each document, read alone, obeys
+  //    "never twice in a row". Measured live: three consecutive refusals of the same
+  //    gesture. 🛑 Without BOTH of these memories AND an enforcing `b`, the case is
+  //    unreachable and this differential stays green on a permanent denial of service —
+  //    it did, for the whole life of the file.
+  { a: { seen: true, sinceLastCall: 0, turn: 0, denied: true }, b: { seen: true, sinceLastCall: 0, turn: 0, denied: false } },
+  { a: { seen: true, sinceLastCall: 0, turn: 0, denied: false }, b: { seen: true, sinceLastCall: 0, turn: 0, denied: true } },
 ];
+// ⚠️ matched × « can `b` refuse too? », FLATTENED INTO ONE DIMENSION on purpose
+//    (2026-08-24). The domain owed a case with TWO enforcing docs — without it the
+//    alternation could only ever be exercised as a property of a DOCUMENT, never of
+//    the ACTION, which is exactly how a permanent denial of service stayed green.
+//    🛑 Written as a product rather than a second `for`: the quadratic ratchet only
+//    goes DOWN, and a new axis of a domain owes no new nesting level.
+const MATCHED_X_ENFORCE_B = [['a'], ['a', 'b'], []].flatMap((m) => [[m, false], [m, true]]);
 const FILTERS = () => [
   {},
   { filterMode: 'blacklist', filterList: ['Bash'] },
@@ -194,14 +211,14 @@ test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { 
           for (const filter of FILTERS()) {
             for (const surCategorie of [false, true]) {
               for (const toolName of ['Bash', 'mcp__stripe__pay']) {
-                for (const matched of [['a'], ['a', 'b'], []]) {
+                for (const [matched, enforceB] of MATCHED_X_ENFORCE_B) {
                   // The filter pair is placed at the GLOBAL stage or at the
                   // CATEGORY stage — the two must not be mixable, and the only
                   // way to prove it is to enumerate both.
                   const config = surCategorie ? { defaults: { file: { ...filter } } } : { ...filter };
                   const decls = {
                     a: { mode, threshold: 2, driftUnit: unite, enforce },
-                    b: { mode: 'smart', threshold: 2, driftUnit: 'tool' },
+                    b: { mode: 'smart', threshold: 2, driftUnit: 'tool', enforce: enforceB },
                   };
                   const owners = { a: 'file', b: 'file' };
                   const args = [config, decls, matched, memoire, 3, owners, toolName];
@@ -209,7 +226,7 @@ test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { 
                   const s = spec.decide(...args);
                   cas++;
                   if (JSON.stringify(m) !== JSON.stringify(s)) {
-                    divergences.push(`mode=${mode} enforce=${enforce} unit=${unite} tool=${toolName} matched=${JSON.stringify(matched)} filtre=${JSON.stringify(filter)}@${surCategorie ? 'defaults' : 'global'} memoire=${JSON.stringify(memoire)}\n    engine=${JSON.stringify(m)}\n    spec  =${JSON.stringify(s)}`);
+                    divergences.push(`mode=${mode} enforce=${enforce} enforceB=${enforceB} unit=${unite} tool=${toolName} matched=${JSON.stringify(matched)} filtre=${JSON.stringify(filter)}@${surCategorie ? 'defaults' : 'global'} memoire=${JSON.stringify(memoire)}\n    engine=${JSON.stringify(m)}\n    spec  =${JSON.stringify(s)}`);
                   }
                 }
               }

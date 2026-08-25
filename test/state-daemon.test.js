@@ -157,7 +157,15 @@ function knock(address, frame, frames) {
   });
 }
 
-const testAddress = (itemName) => endpoint({ root: path.join(TMP, itemName), stateDir: TMP });
+// ⚠️ THE ADDRESS IS NAMED BY THE DATA SERVED, so one item = one state
+//    directory. It is CREATED here because on macOS the rendezvous is a real
+//    file in that directory, and a bind into a directory that does not exist
+//    fails for a reason that has nothing to do with what the cell measures.
+const testAddress = (itemName) => {
+  const served = path.join(TMP, itemName, 'state');
+  fs.mkdirSync(served, { recursive: true });
+  return endpoint({ stateDir: served });
+};
 
 // ── ① THE PROOF: 16 CONCURRENT PROCESSES, EXACTLY ONE DELIVERY ──────────
 test('16 frame processes, ONE `once` document: delivered exactly once, with no lock and no file',
@@ -310,7 +318,7 @@ test('A RESTART DOES NOT RE-DELIVER: the state survives the death of the daemon'
 test('THE KERNEL SAYS WHO IS ALIVE — an address answers, or it is dead', { timeout: 30000 }, async () => {
   const address = testAddress('vivant');
 
-  const mort = await new Promise((r) => occupied(endpoint({ root: path.join(TMP, 'jamais-ne') }), r));
+  const mort = await new Promise((r) => occupied(endpoint({ stateDir: path.join(TMP, 'never-listened') }), r));
   assert.equal(mort, false, 'an address nobody ever listened on must read as DEAD — otherwise a stale entry is never cleared');
 
   const daemon = await startDaemon(address);

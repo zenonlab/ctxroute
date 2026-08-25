@@ -49,6 +49,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { plan, splice } = require('../src/wiring-plan');
+// The daemon's listening ADDRESS has ONE resolution point, shared with the daemon itself.
+const paths = require('../src/paths');
+// The route names of our own wire protocol, from their single owner.
+const { routes: protocolRoutes } = require('../src/protocol-routes-pure');
 const { dialect, render, serialize, spliceObstacle } = require('../src/wiring-dialect');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -217,10 +221,37 @@ function main() {
   try { ({ LANE_FLAG: laneFlag } = require('../src/client-core')); } catch { /* refused below */ }
   if (typeof laneFlag !== 'string' || laneFlag.length === 0) refuse('LANE_FLAG is unreadable from src/client-core.js — the lane is an ARGUMENT and its spelling has ONE owner; re-typing it here is how four shells drift apart');
 
+  // ── THE DAEMON'S ADDRESS, READ WHERE THE DAEMON READS IT ───────
+  // 🛑 `paths.httpEndpoint()` AND NOTHING ELSE. `src/hooks/http-server.js`
+  //    binds what that function returns; this tool writes what that function
+  //    returns into the URL the harness POSTs to. Until 2026-08-25 the two held
+  //    their own copies of BOTH halves — `HOST` and `DEFAULT_PORT` constants
+  //    there, `transport.host` and `transport.port` in the manifest here —
+  //    agreeing by luck, with nothing comparing them. Reading either from
+  //    anywhere else, the manifest included, rebuilds that divergence.
+  // 🛑 ONE call for the WHOLE address: fetching the host apart from its port
+  //    is two settings for one fact, which is the same defect one level up.
+  // ⚠️ A config that DECLARES nonsense refuses here, loudly, exactly as it does
+  //    in the daemon: this tool is a generator, never a hook, so it screams.
+  const { host, port } = paths.httpEndpoint();
+
+  // ── THE GATE'S ROUTE, READ WHERE THE DAEMON SERVES IT ──────────
+  // 🛑 `src/protocol-routes-pure.js` AND NOTHING ELSE. The daemon dispatches
+  //    on what that module returns; this tool writes what that module returns
+  //    into the URL the harness POSTs to. Until 2026-08-25 the route was
+  //    `transport.path` in the manifest facing `/pretool` hand-written in
+  //    `src/hooks/state-client.js` — and this divergence is the QUIETEST of
+  //    the family: a wrong host or port fails at the socket, while a wrong
+  //    route SUCCEEDS and is served by the gate, so nothing anywhere errors.
+  const routePath = protocolRoutes().gate;
+
   const root = (flag('root') || posix(ROOT)).replace(/\/+$/, '');
   const declarations = plan(manifest, {
     root,
     frames,
+    host,
+    port,
+    routePath,
     laneFlag,
     stateConsumers: deriveStateConsumers(ROOT),
     settingsPath: settings,

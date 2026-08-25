@@ -418,6 +418,38 @@ test('🛑 ALTERNATION: a block is NEVER followed by a block — the 3 modes', (
   }
 });
 
+test('🛑 ALTERNATION IS A PROPERTY OF THE ACTION, NOT OF A DOCUMENT', () => {
+  // 🔴 REAL PRODUCTION DEFECT, measured 2026-08-24: THREE consecutive refusals of the
+  //    same gesture, with every document individually respecting "never twice in a row".
+  //    Two `enforce` documents whose `denied` flags are in ANTIPHASE block on alternating
+  //    actions, and the action refuses as soon as ONE of them blocks ⇒ it is refused FOR
+  //    EVER. The phase offset is created by a single gesture that matched only one of them.
+  // 🛑 The anti-loop guarantee that matters to a user is about the GESTURE THEY REDO, never
+  //    about the bookkeeping of one document. The per-document test above was true and
+  //    insufficient, and `cadence-spec.js` modelled the same wrong object, so 11,346
+  //    exhaustive cases stayed green on a permanent denial of service.
+  const decls = { 'd/a': { mode: 'dumb', enforce: true }, 'd/b': { mode: 'dumb', enforce: true } };
+  const own = { 'd/a': 'file', 'd/b': 'file' };
+
+  // The phase offset: a first gesture inside the perimeter of ONE document only.
+  let state = decide({}, decls, ['d/a'], {}, 0, own).state;
+
+  const decisions = [];
+  for (let i = 0; i < 6; i += 1) {
+    const r = decide({}, decls, ['d/a', 'd/b'], state, 0, own);
+    decisions.push(r.decision);
+    state = r.state;
+  }
+  for (let i = 1; i < decisions.length; i += 1) {
+    assert.ok(
+      !(decisions[i - 1] === 'deny' && decisions[i] === 'deny'),
+      `two consecutive refusals of the same gesture at index ${i}: ${decisions.join(', ')}`,
+    );
+  }
+  // ⚠️ ANTI-VACUITY: the cell would pass by accident if nothing ever blocked.
+  assert.ok(decisions.includes('deny'), 'the guardrail must still refuse at least once');
+});
+
 test('enforce + dumb: block / pass / block… in REGULAR alternation', () => {
   // ⚠️ `dumb` remains usable (maintainer decision 05/08/2026): it re-injects
   //    on every call, but only the REFUSAL alternates. A first version

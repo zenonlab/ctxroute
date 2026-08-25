@@ -224,17 +224,30 @@ function gateTransport(manifest) {
   const declared = t.statusMessage === undefined ? {} : { statusMessage: t.statusMessage };
   if (t.kind === 'command') return { kind: t.kind, ...declared };
 
-  // The endpoint is the OPERATOR's to choose (their machine, their port), so it
-  // is read from the manifest and never guessed — a fabricated host would wire
-  // sixteen declarations at an address nobody listens on, and a refused
-  // connection is instant and silent on this lane, which has NO fallback.
-  if (typeof t.host !== 'string' || t.host.length === 0) fail('`transport.host` is a non-empty string — the endpoint is the operator\'s to declare, never a plausible default wired at their expense');
-  if (!Number.isInteger(t.port) || t.port < 1 || t.port > 65535) fail(`\`transport.port\` must be an integer in 1..65535, got ${JSON.stringify(t.port)}`);
-  if (typeof t.path !== 'string' || !t.path.startsWith('/')) fail(`\`transport.path\` must start with \`/\`, got ${JSON.stringify(t.path)}`);
-  // The query is OURS: it carries the frame coordinates. A path bringing its
-  // own would produce two `?` in one URL, i.e. coordinates nobody can read.
-  if (/[?#]/.test(t.path)) fail(`\`transport.path\` must carry no query and no fragment, got ${JSON.stringify(t.path)} — the query is where the frame coordinates travel`);
-  return { kind: t.kind, host: t.host, port: t.port, path: t.path, ...declared };
+  // 🛑 NEITHER THE ENDPOINT NOR THE ROUTE IS DECLARED HERE, AND THAT ABSENCE IS
+  //    THE POINT (host and port 2026-08-25 morning, the ROUTE the same day).
+  //    They used to be `transport.host`, `transport.port` and `transport.path`,
+  //    while the daemon that BINDS and SERVES them held a `HOST`, a
+  //    `DEFAULT_PORT` and its route constants of its own: ONE truth, TWO
+  //    places, four times over, agreeing by luck with nothing comparing them.
+  //    A wiring one number — or one NAME — away from the listener loses every
+  //    frame of every action, and the route is the WORST of the four, because
+  //    a misspelt one does not even 404: the daemon serves the GATE route for
+  //    anything it does not recognise, so the frames would be answered by a
+  //    route nobody meant, in silence.
+  // 🛑 THE ROUTE NOW REACHES `plan()` AS A MACHINE FACT, read from the single
+  //    owner (`src/protocol-routes-pure.js`) by the shell — exactly like the
+  //    address, which comes from `paths.httpEndpoint()`. A `transport.path`
+  //    RE-ADDED here would rebuild the divergence inside the very file that
+  //    exists to remove it, so an unknown key of the transport is refused
+  //    below rather than ignored.
+  // ⚠️ WHAT STAYS IN THE MANIFEST IS WHAT BELONGS TO THE WIRING AND TO NOTHING
+  //    ELSE: which transport carries the frames.
+  const unknown = Object.keys(t).filter((k) => k !== 'kind' && k !== 'statusMessage');
+  if (unknown.length > 0) {
+    fail(`\`transport\` declares ${JSON.stringify(unknown)} — the ADDRESS and the ROUTE are not the wiring's to name: they are read from their single owners (\`paths.httpEndpoint()\` and \`src/protocol-routes-pure.js\`) and reach the plan as machine facts, so re-declaring one here is the very divergence this manifest removes`);
+  }
+  return { kind: t.kind, ...declared };
 }
 
 /**
@@ -345,9 +358,13 @@ function checkModule(spec) {
  * Builds the ordered declaration list the harness must execute.
  *
  * @param {any} manifest - the parsed `wiring.json`.
- * @param {{root: string, frames: number, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
+ * @param {{root: string, frames: number, host?: string, port?: number, routePath?: string, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
  *   - `root`: absolute repo root, POSIX-separated, no trailing slash.
  *   - `frames`: the bandwidth of one action (`frames` in ctxroute-config.json).
+ *   - `host`/`port`: the daemon's listening address (`http` in ctxroute-config.json,
+ *      read WHOLE through `paths.httpEndpoint()`) — the http transport ONLY.
+ *   - `routePath`: the GATE route the daemon serves, read from its single owner
+ *      `src/protocol-routes-pure.js` — the http transport ONLY.
  *   - `laneFlag`: the lane ARGUMENT, read from `src/client-core.js` — never re-spelled here.
  *   - `stateConsumers`: basenames of the shells that consume the shared injection
  *      state, DERIVED from the source, never a list typed by hand.
@@ -356,7 +373,7 @@ function checkModule(spec) {
  */
 function plan(manifest, machine) {
   if (!manifest || typeof manifest !== 'object') fail('unreadable manifest');
-  const { root, frames, laneFlag, stateConsumers, settingsPath } = machine || {};
+  const { root, frames, host, port, routePath, laneFlag, stateConsumers, settingsPath } = machine || {};
 
   if (typeof root !== 'string' || root.length === 0) fail('no repository root supplied');
   if (!Number.isInteger(frames) || frames < 1) fail(`\`frames\` must be an integer >= 1, got ${JSON.stringify(frames)}`);
@@ -393,6 +410,38 @@ function plan(manifest, machine) {
   //    read, `once` documents never come back, and nothing anywhere is red.
   //    A shared state migrates for ALL its consumers or for NONE, so the pair
   //    is a NAMED REFUSAL rather than a wiring that runs and lies.
+  // 🛑 THE ADDRESS IS A MACHINE FACT, VALIDATED WHERE IT IS USED — and only
+  //    the http transport has an endpoint at all, so demanding one of a
+  //    `command` manifest would refuse a wiring that names no address. An
+  //    unusable half is a NAMED REFUSAL, never a plausible default: the engine
+  //    never trusts its input, and a wiring one number — or one name — away
+  //    from the listener loses every frame of every action, in silence.
+  // ⚠️ BOTH halves are checked, because both were re-typed in the manifest
+  //    until 2026-08-25 and a host is exactly as capable of pointing nowhere.
+  if (transport.kind === 'http' && (typeof host !== 'string' || host.length === 0)) {
+    fail(`the daemon's host must be a non-empty string, got ${JSON.stringify(host)} — it is DECLARED ONCE (`
+      + '`http.host` in ctxroute-config.json) and read by BOTH the daemon that binds it and this generator, '
+      + 'so no manifest ever re-types it');
+  }
+  if (transport.kind === 'http' && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    fail(`the daemon's port must be an integer in 1..65535, got ${JSON.stringify(port)} — it is DECLARED ONCE (`
+      + '`http.port` in ctxroute-config.json) and read by BOTH the daemon that binds it and this generator, '
+      + 'so no manifest ever re-types it');
+  }
+  // 🛑 THE ROUTE IS A MACHINE FACT TOO, AND ITS REFUSAL IS THE LOUDEST OF THE
+  //    THREE ON PURPOSE. A wrong host or port fails at the socket; a wrong
+  //    ROUTE succeeds and is answered by the GATE, so nothing anywhere errors.
+  //    It is validated where it is USED, and only the http transport has one.
+  if (transport.kind === 'http' && (typeof routePath !== 'string' || !routePath.startsWith('/'))) {
+    fail(`the gate's route must start with \`/\`, got ${JSON.stringify(routePath)} — it is DECLARED ONCE (`
+      + '`src/protocol-routes-pure.js`) and read by BOTH the daemon that serves it and this generator, '
+      + 'so no manifest ever re-types it');
+  }
+  // The query is OURS: it carries the frame coordinates. A route bringing its
+  // own would produce two `?` in one URL, i.e. coordinates nobody can read.
+  if (transport.kind === 'http' && /[?#]/.test(String(routePath))) {
+    fail(`the gate's route must carry no query and no fragment, got ${JSON.stringify(routePath)} — the query is where the frame coordinates travel`);
+  }
   if (transport.kind === 'http' && !onClientLane) {
     fail(`\`transport.kind: "http"\` with \`stateLane: ${JSON.stringify(manifest.stateLane)}\` is a SPLIT BRAIN: the frames would record their deliveries in the daemon's memory while their peers read and erase the state files — two memories, no error and nothing red, which is the 2026-08-22 production defect generated on purpose`);
   }
@@ -476,7 +525,7 @@ function plan(manifest, machine) {
           event: spec.event,
           matcher,
           type: transport.kind,
-          url: `${transport.kind}://${transport.host}:${transport.port}${transport.path}?${asQuery(coords)}`,
+          url: `${transport.kind}://${host}:${port}${routePath}?${asQuery(coords)}`,
           timeout: bound,
           // Declared wins; the derivation is the written default.
           statusMessage: transport.statusMessage === undefined ? tokenOf(root) : transport.statusMessage,

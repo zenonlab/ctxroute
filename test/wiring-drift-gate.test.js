@@ -348,7 +348,7 @@ test.skipIf(!hasConfig)('the generator REFUSES the http transport paired with th
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-split-'));
   const broken = path.join(dir, 'wiring.json');
   const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
-  manifest.transport = { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  manifest.transport = { kind: 'http' };
   manifest.stateLane = 'files';
   fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
   try {
@@ -521,7 +521,7 @@ test.skipIf(!hasConfig)('the generator REFUSES an unknown transport instead of f
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-transport-'));
   const broken = path.join(dir, 'wiring.json');
   const manifest = JSON.parse(fs.readFileSync(path.join(REPO, 'wiring.json'), 'utf8'));
-  manifest.transport = { kind: 'grpc', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  manifest.transport = { kind: 'grpc' };
   fs.writeFileSync(broken, JSON.stringify(manifest, null, 2));
   try {
     let failed = null;

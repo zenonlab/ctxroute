@@ -74,6 +74,10 @@ const { resolveStore, docLockDir } = require('../store-resolve');
 //    of a shared state, or none.**
 const client = require('../client-core');
 const { request } = require('./state-client');
+// Same single owner as every other route of our protocol: a hand-written '/emit'
+// facing the daemon's constant would fall through to the GATE route and the
+// session queue would be answered by the wrong route, in silence.
+const { routes: protocolRoutes } = require('../protocol-routes-pure');
 
 readStdinJson(
   (data) => {
@@ -141,7 +145,7 @@ readStdinJson(
       const lane = client.clientLane(process.argv);
       if (lane) {
         request(
-          '/emit',
+          protocolRoutes().emit,
           {
             fresh,
             budgetMax: Number.isFinite(budgetMax) ? budgetMax : null,

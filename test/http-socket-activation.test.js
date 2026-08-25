@@ -39,7 +39,15 @@ import { createRequire } from 'node:module';
 
 const require_ = createRequire(import.meta.url);
 const SERVER = path.join(import.meta.dirname, '..', 'src', 'hooks', 'http-server.js');
-const { inheritedFd, listenOn, SD_LISTEN_FDS_START, HOST, DEFAULT_PORT } = require_(SERVER);
+const { inheritedFd, listenOn, SD_LISTEN_FDS_START } = require_(SERVER);
+// ⚠️ AN ADDRESS THIS SUITE CHOOSES, never one read back from the module under
+//    test. `listenOn` takes BOTH halves as ARGUMENTS, so what is proven here is
+//    the wiring of the descriptor, not which address the daemon resolved; and
+//    since 2026-08-25 that address has ONE resolution point
+//    (`paths.httpEndpoint()`), read by the daemon and by the wiring generator
+//    alike, never a constant on either side.
+const HOST = '127.0.0.1';
+const PORT = 8787;
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-sockact-'));
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -123,7 +131,7 @@ test('the server LISTENS on the inherited descriptor, and on the port otherwise'
   const appels = [];
   const faux = /** @type {any} */ ({ listen: (...args) => appels.push(args) });
 
-  const fd = listenOn(faux, { LISTEN_PID: '99', LISTEN_FDS: '1' }, 99, 8787);
+  const fd = listenOn(faux, { LISTEN_PID: '99', LISTEN_FDS: '1' }, 99, PORT, HOST);
   assert.strictEqual(fd, SD_LISTEN_FDS_START);
   assert.deepStrictEqual(appels, [[{ fd: SD_LISTEN_FDS_START }]],
     'the inherited descriptor was not the thing listened on');
@@ -131,13 +139,13 @@ test('the server LISTENS on the inherited descriptor, and on the port otherwise'
   // ⚠️ PARITY: with nothing passed, the call must be the one that was there
   //    before this feature existed — same two arguments, same order.
   appels.length = 0;
-  assert.strictEqual(listenOn(faux, {}, 99, 8787), null);
-  assert.deepStrictEqual(appels, [[8787, HOST]], 'the default path changed shape');
+  assert.strictEqual(listenOn(faux, {}, 99, PORT, HOST), null);
+  assert.deepStrictEqual(appels, [[PORT, HOST]], 'the default path changed shape');
 
   // A foreign pid must take the SAME path as "no protocol at all".
   appels.length = 0;
-  assert.strictEqual(listenOn(faux, { LISTEN_PID: '98', LISTEN_FDS: '1' }, 99, DEFAULT_PORT), null);
-  assert.deepStrictEqual(appels, [[DEFAULT_PORT, HOST]], 'a foreign descriptor was not ignored');
+  assert.strictEqual(listenOn(faux, { LISTEN_PID: '98', LISTEN_FDS: '1' }, 99, PORT, HOST), null);
+  assert.deepStrictEqual(appels, [[PORT, HOST]], 'a foreign descriptor was not ignored');
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -163,7 +171,7 @@ function driver() {
     //    negative case.
     if (process.env.CTXROUTE_TEST_SELF_PID === '1') process.env.LISTEN_PID = String(process.pid);
     const srv = createServer();
-    const fd = listenOn(srv, process.env, process.pid, Number(process.env.CTXROUTE_HTTP_PORT));
+    const fd = listenOn(srv, process.env, process.pid, Number(process.env.CTXROUTE_HTTP_PORT), process.env.CTXROUTE_TEST_HOST);
     srv.on('listening', () => console.log(JSON.stringify({ fd, port: srv.address().port })));
   `);
   return file;
@@ -204,6 +212,9 @@ function withInheritedSocket(opts) {
           LISTEN_PID: String(process.pid),
           CTXROUTE_TEST_SELF_PID: opts.selfPid ? '1' : '0',
           CTXROUTE_HTTP_PORT: String(opts.port),
+          // ⚠️ The host is an ARGUMENT of `listenOn` since 2026-08-25, so the
+          //    child is TOLD it — there is no constant left to read.
+          CTXROUTE_TEST_HOST: HOST,
           // 🛑 NEVER the real fleet: this child runs the REAL engine.
           CTXROUTE_STATE_DIR: path.join(TMP, 'state'),
           CTXROUTE_FILEDOCS_DIR: path.join(TMP, 'docs'),

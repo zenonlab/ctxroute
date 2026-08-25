@@ -48,6 +48,11 @@
 
 const http = require('http');
 const { endpoint, kernelAddress } = require('../kernel-endpoint');
+// The GATE route, from the single owner of every route of our protocol. It was
+// spelled here AND as `transport.path` in `wiring.json` until 2026-08-25: two
+// writings of one route, on a lane whose mismatch is INVISIBLE (the daemon
+// serves the gate route for any path it does not recognise).
+const { routes: protocolRoutes } = require('../protocol-routes-pure');
 
 /**
  * ONE request to the authority, whatever the route.
@@ -112,7 +117,7 @@ function request(route, payload, options, done) {
  */
 function ask(payload, options, done) {
   const o = options || {};
-  request(`/pretool?frame=${o.frame || 1}&frames=${o.frames || 1}`, payload, o, done);
+  request(`${protocolRoutes().gate}?frame=${o.frame || 1}&frames=${o.frames || 1}`, payload, o, done);
 }
 
 module.exports = { ask, request };

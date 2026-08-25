@@ -35,6 +35,13 @@ const { readStdinJson } = require('../stdin-json');
 //    **A shared state is migrated for ALL its consumers or for none.**
 const client = require('../client-core');
 const { request } = require('./state-client');
+// The route name has ONE owner (`src/protocol-routes-pure.js`) and this shell is
+// a CLIENT of it. It used to write '/purge' by hand, facing the daemon's own
+// constant: a mismatch does NOT 404 — the daemon serves the gate route for any
+// path it does not recognise, so the compaction would purge NOTHING, in silence.
+// 🛑 Read it from the pure module, NEVER from the daemon shell: that would pull a
+//    long-lived server's module graph into a hook spawned at every compaction.
+const { routes: protocolRoutes } = require('../protocol-routes-pure');
 
 // ⚠️ stateDir comes from paths.js — SINGLE SOURCE shared with legacy-mcp-inject.js.
 // It was hardcoded here AND over there: two copies of one and the same truth, which diverge
@@ -174,7 +181,7 @@ readStdinJson(
     let lane = null;
     try { lane = client.clientLane(process.argv); } catch { /* fail-open */ }
     if (lane && keys.length > 0) {
-      request('/purge', { keys: keys }, { socketPath: lane.socketPath }, () => process.exit(0));
+      request(protocolRoutes().purge, { keys: keys }, { socketPath: lane.socketPath }, () => process.exit(0));
       return;
     }
     process.exit(0);

@@ -62,7 +62,7 @@ Type=exec
 # 🛑 NEVER route this through a shell, `env` or `npx`. This repository forbids
 #    `shell: true` on every layer (cmd vs /bin/sh behave differently per machine),
 #    and the same reason applies to a unit file.
-ExecStart=/usr/bin/node %h/ctxroute/src/hooks/http-server.js
+ExecStart=/usr/bin/node %h/ctxroute/src/hooks/http-daemon.js
 
 # ⚠️ THE PORT IS IGNORED WHEN THE SOCKET IS PASSED, and it is kept anyway. Under
 #    socket activation the address is written ONCE, in `ctxroute-http.socket`;

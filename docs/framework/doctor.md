@@ -2,6 +2,7 @@
 match: [doctor.js, doctor.test.js, doctor-wiring-pure.js, doctor-wiring-pure.test.js]
 scope: [ctxroute]
 mode: smart
+threshold: 30
 rank: 356
 ---
 # doctor.js / doctor-wiring-pure.js / doctor.test.js — dead-man switch

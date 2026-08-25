@@ -98,6 +98,8 @@
 'use strict';
 
 const http = require('http');
+// The four route names of our own wire protocol, from their single owner.
+const { routes: protocolRoutes } = require('../protocol-routes-pure');
 const { run } = require('../pretool-core');
 // ⚠️ THE OTHER THREE CONSUMERS OF THE ONE STATE (2026-08-21). The gate was wired
 //    to the daemon and the three others were left on the disk — MEASURED: after a
@@ -144,16 +146,39 @@ const { bind } = require('../kernel-bind');
 // ⚠️ Bounded for life at 256 KB × 2 files, declared in `disk-writers.json`, and
 //    FAIL-OPEN everywhere: nothing below may cost this daemon its life.
 const lifecycle = require('../lifecycle-log');
+// 🔴 FRESHNESS IS AN OBSERVATION SINCE 2026-08-24, IT WAS AN INFERENCE BEFORE.
+//    The daemon exited on ANY kernel notification, concluding "my code changed".
+//    MEASURED that day on the FROZEN copy: 258 deaths, and the event that killed
+//    it carried an UNCHANGED `mtime`/`ctime` — only `atime` had moved. Reading a
+//    file was enough. `stale-code.js` holds the bytes this process compiled;
+//    `stale-code-pure.js` compares them. Never go back to trusting the event.
+// ⚠️ THE NAMESPACE IS KEPT, NEVER DESTRUCTURED: `staleCode.check` must stay
+//    replaceable in memory, because the SEEN RED of this guard is a driver that
+//    sabotages the comparison so it always answers "identical".
+const staleCode = require('../stale-code');
+const staleCodePure = require('../stale-code-pure');
 
-// ⚠️ LOOPBACK, hardcoded — read the header. This is NOT a setting: an adopter
-//    who needs to move it has a problem this framework must not solve.
-const HOST = '127.0.0.1';
-
-// ⚠️ The port IS a setting (a machine may already use any given number), read
-//    from the environment because that is what the WIRING can express — a hook
-//    URL and a service unit both carry it. Default chosen in the IANA dynamic
-//    range, and it stays fixed: it is written in the wiring on the other side.
-const DEFAULT_PORT = 8787;
+// 🔴 THE LISTENING ADDRESS IS NOT A CONSTANT OF THIS FILE ANY MORE (2026-08-25).
+//    BOTH HALVES WERE — `HOST = '127.0.0.1'` and `DEFAULT_PORT = 8787`, right
+//    here — while `wiring.json` declared `transport.host` and `transport.port`
+//    on the other side: ONE truth, TWO places, twice over, agreeing by luck with
+//    nothing comparing them. That is the class of the 2026-08-22 split brain,
+//    and here the failure would be total and silent: the http lane has NO
+//    fallback, so a wiring one number — or one name — away from this listener
+//    loses EVERY frame of EVERY action, instantly, with no error and no badge.
+// ⇒ It is now ONE declared key of `ctxroute-config.json` (`http: { host, port }`,
+//    grouped because an address is ONE fact), resolved at the SINGLE point
+//    `paths.httpEndpoint()` — the same one `tools/wiring-generate.js` reads to
+//    write the URL the harness POSTs to. There is no second place to write.
+//    `CTXROUTE_HTTP_PORT` still wins over the port, and an undeclared machine
+//    still gets 127.0.0.1:8787, byte for byte.
+// 🛑 THE LOOPBACK DOCTRINE DID NOT MOVE, it changed OWNER — read the header of
+//    this file: there is no authentication and there must never need to be one,
+//    the socket IS the boundary. What used to be impossible by construction is
+//    now the DEFAULT plus the operator's written declaration, and the supervisors
+//    that own the socket keep saying it themselves (`ListenStream=127.0.0.1:`,
+//    `SockNodeName`). Do NOT re-introduce a constant here to “make sure”: a
+//    second opinion about one address is exactly the defect above.
 
 // ═══════════════════════════════════════════════════════════════════════
 // SOCKET ACTIVATION — the OS owns the listening socket, we inherit it.
@@ -331,9 +356,19 @@ function frameFromUrl(url, parse) {
 //    what it does with no daemon at all — there is no third state to invent.
 // ═══════════════════════════════════════════════════════════════════════
 
-const ROUTE_PURGE = '/purge';
-const ROUTE_TURN = '/turn';
-const ROUTE_EMIT = '/emit';
+// 🛑 THE ROUTE NAMES ARE READ, NEVER DECIDED HERE (2026-08-25). They used to be
+//    three literals in this file AND three hand-written strings in the client
+//    shells — one truth, two places, three times over, and a misspelling on
+//    either side does not 404: the dispatcher below serves the GATE route for
+//    any path it does not recognise, so the purge would purge nothing, in
+//    silence. The owner is a module that knows NOTHING (`protocol-routes-pure`),
+//    precisely so a spawned client can read it WITHOUT importing this
+//    long-lived server's module graph. NEVER write one of these strings again.
+// 🛑 NO LOCAL ALIAS PER ROUTE, DELIBERATELY. `const ROUTE_PURGE = ROUTES.purge`
+//    reads well and is exactly the shape `rendezvous-address-gate` hunts for: a
+//    name that LOOKS like the owner of an address. The table is read where it is
+//    used, so there is one name for one truth and nothing to keep in step.
+const ROUTES = protocolRoutes();
 
 /** The path, without the query string. Anything unknown is the GATE's route,
  *  which keeps every existing client byte-identical. */
@@ -507,6 +542,13 @@ function emitRoute(data, store) {
  *   kernel refuses the address. Absent ⇒ NOTHING happens here: a builder must
  *   not decide whether its caller lives or dies. `main` throws; `kernel-bind`
  *   inspects a possibly dead entry instead.
+ * @property {(() => {stale: boolean, checked: number, reasons: string[]})|null} freshness
+ *   asked ONCE per request, before anything else. Absent ⇒ no verification at
+ *   all, i.e. the behaviour that shipped before 2026-08-24, byte for byte.
+ * @property {((freshness: {stale: boolean, checked: number, reasons: string[]}) => void)|null} onStaleCode
+ *   what the SHELL does when the code on disk no longer matches. Absent ⇒
+ *   NOTHING happens here beyond refusing to answer: a builder must not decide
+ *   whether its caller lives.
  * @property {{loadState: Function, saveState: Function}|null} store the state
  *   backend. Absent/null ⇒ the historical disk store, byte-identical. A daemon
  *   passes its MEMORY store and, with it, an empty lock: the kernel already
@@ -557,10 +599,10 @@ function handle(body, url, deps) {
   // ⚠️ FAIL-OPEN LIKE EVERYTHING ELSE: a route that throws answers "nothing",
   //    never an error that would take the service down for every agent at once.
   const route = routeOf(url);
-  if (route === ROUTE_PURGE || route === ROUTE_TURN || route === ROUTE_EMIT) {
+  if (route === ROUTES.purge || route === ROUTES.turn || route === ROUTES.emit) {
     try {
-      if (route === ROUTE_PURGE) return purgeRoute(data, store);
-      if (route === ROUTE_TURN) return turnRoute(data, store);
+      if (route === ROUTES.purge) return purgeRoute(data, store);
+      if (route === ROUTES.turn) return turnRoute(data, store);
       return emitRoute(data, store);
     } catch {
       return NO_OUTPUT;
@@ -629,8 +671,41 @@ function createServer(deps = {}) {
     store: deps.store || null,
     onAddressInUse: deps.onAddressInUse || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
+    // ⚠️ NO DEFAULT, EXACTLY LIKE `store`, AND FOR THE SAME REASON. Absent ⇒ the
+    //    previous behaviour BYTE FOR BYTE, so every differential and every test
+    //    driving `createServer` directly is untouched. Verifying its own
+    //    freshness is a DECISION of whoever starts the daemon (`main` below),
+    //    never a silent default a test inherits.
+    freshness: deps.freshness || null,
+    onStaleCode: deps.onStaleCode || null,
   };
   const server = http.createServer((req, res) => {
+    // ═══════════════════════════════════════════════════════════════════
+    // 🛑 THE GUARANTEE, AND IT LIVES HERE — AT THE POINT OF USE (2026-08-24).
+    // ═══════════════════════════════════════════════════════════════════
+    // The daemon must NEVER serve code that differs from what is on disk. That
+    // used to rest on a kernel NOTIFICATION arriving, which is two bets at once:
+    // that an event we get means a change (FALSE — an access time is enough to
+    // raise one) and that a change always raises an event (FALSE — every one of
+    // the three kernels documents event LOSS and prescribes a rescan). Comparing
+    // the recorded bytes against the disk right before answering removes both:
+    // a spurious event can no longer kill us, and a lost one can no longer make
+    // us lie.
+    // ⚠️ BEFORE THE BODY IS EVEN READ: there is nothing to gain by parsing a
+    //    request we have already decided not to answer.
+    // 🛑 A BUILDER DOES NOT DECIDE WHETHER ITS CALLER LIVES — the house rule
+    //    `createServer` broke once, in August, by throwing on `EADDRINUSE` and
+    //    killing the process before `kernel-bind` could look. So this reports and
+    //    RETURNS; the shell's `onStaleCode` is what exits. The request is never
+    //    answered either way: a socket left unanswered is a loud, fast failure,
+    //    and a wrong answer is a silent one.
+    if (wired.freshness) {
+      const freshness = wired.freshness();
+      if (freshness.stale) {
+        if (typeof wired.onStaleCode === 'function') wired.onStaleCode(freshness);
+        return;
+      }
+    }
     readBody(req).then((body) => {
       const answer = body === null ? NO_OUTPUT : handle(body, req.url, wired);
       const payload = JSON.stringify(answer);
@@ -709,11 +784,23 @@ const EXIT_STALE_CODE = 90;
  *    OLD logic, while looking perfectly healthy. That is precisely the failure
  *    this project fears most — not a crash, a GREEN THAT LIES.
  *
- * ✅ ZERO INFERENCE, and no polling: the kernel already knows when a file
- *    changes (inotify · ReadDirectoryChangesW · FSEvents) and `fs.watch` is the
- *    interface to it. We do not compare timestamps, we do not hash, we do not
- *    ask "is my code still current?" — we are TOLD. On the first event we exit
- *    and the OS starts a fresh process. Nothing is killed, nothing is guessed.
+ * 🔴 THE WATCH IS AN OPTIMISATION SINCE 2026-08-24, NOT THE GUARANTEE — and it
+ *    used to be both, which is what broke. This function's callback exited the
+ *    process on ANY notification, concluding "my code changed". That conclusion
+ *    was an INFERENCE and it was FALSE: measured on the FROZEN copy, 258 deaths
+ *    with `mtime` and `ctime` UNCHANGED and only `atime` moving — libuv
+ *    subscribes ReadDirectoryChangesW to `FILE_NOTIFY_CHANGE_LAST_ACCESS` among
+ *    others and delivers all of them as a bare `'change'`, and NTFS may defer
+ *    that access-time write by up to an hour (`fsutil behavior`). Reading a file
+ *    killed the service, an hour later, for ever.
+ * ✅ WHAT THE CALLBACK MUST DO NOW: run the SAME comparison the request path
+ *    runs, and exit only if the content really differs. A notification that
+ *    changed nothing costs one journal line — the noise stays OBSERVABLE, never
+ *    silent, because a guard nobody can see firing is a guard nobody can trust.
+ * 🛑 AND THE WATCH IS NO LONGER LOAD-BEARING, WHICH IS THE POINT: the guarantee
+ *    is the verification AT THE POINT OF USE, so a LOST event — which all three
+ *    kernels document and all three answer with "rescan" — can no longer let
+ *    stale code be served. The kernel's non-determinism stops mattering.
  *
  * ⚠️ THE WATCHED SET IS DERIVED, NEVER A LIST. `require.cache` holds exactly the
  *    modules this process actually loaded — a file added tomorrow is watched by
@@ -745,12 +832,12 @@ const EXIT_STALE_CODE = 90;
  * @returns {{close: () => void}[]} the live watchers
  */
 function watchOwnCode(watch, cache, onChange) {
-  const dirs = new Set();
-  for (const file of Object.keys(cache)) {
-    if (file.includes('node_modules')) continue;
-    const cut = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
-    if (cut > 0) dirs.add(file.slice(0, cut));
-  }
+  // ⚠️ THE DERIVATION HAS ONE OWNER SINCE 2026-08-24 (`stale-code-pure`): the
+  //    watcher and the verifier must agree on what "our code" is, and two
+  //    spellings of one rule are two rules. Same scope, same directories-not-
+  //    files answer — what changed is only that this file no longer holds a
+  //    second copy of it.
+  const dirs = staleCodePure.watchedDirs(Object.keys(cache));
   const watchers = [];
   for (const dir of dirs) {
     // ⚠️ FAIL-OPEN, per directory: a platform that refuses one watch must not
@@ -765,6 +852,47 @@ function watchOwnCode(watch, cache, onChange) {
     } catch { /* one blind directory, not a dead daemon */ }
   }
   return watchers;
+}
+
+/**
+ * Arms ONE directory watch AND gives its `'error'` event a home.
+ *
+ * 🔴 UNTIL 2026-08-24 THAT EVENT HAD NO HANDLER AT ALL, and it is the one the
+ *    kernels raise when they have LOST notifications: ReadDirectoryChangesW
+ *    overflows its buffer and answers `ERROR_NOTIFY_ENUM_DIR` — *"you should
+ *    compute the changes by enumerating"*; inotify raises `IN_Q_OVERFLOW` and
+ *    the manual says to *"rebuild part or all of the application cache"*;
+ *    FSEvents raises `MustScanSubDirs`/`KernelDropped`/`UserDropped`. Three
+ *    vendors, one prescription: RESCAN. On top of that, an unhandled `'error'`
+ *    on an `EventEmitter` is thrown, so the daemon could die of the very
+ *    mechanism meant to protect it, with no journal line.
+ * ✅ WHAT WE DO, in that order: VERIFY at once (the lost events may have hidden
+ *    a real change), then RE-ARM. If re-arming fails we refuse to keep serving
+ *    code we can no longer be told about — a degraded watch is acceptable, a
+ *    SILENT one never was.
+ * ⚠️ RECURSIVE BY DESIGN and bounded by the kernel, not by us: each re-arm
+ *    installs the same handler, so a second loss is handled like the first. It
+ *    is not a retry loop — nothing here waits, nothing counts attempts.
+ *
+ * @param {(dir: string, cb: (eventType: string, filename: string|null) => void) => {close: () => void, on?: Function}} watch
+ * @param {() => void} verify run the real comparison, right now
+ * @param {(dir: string, err: Error) => void} onCannotRearm the shell's decision
+ * @returns {(dir: string, cb: (eventType: string, filename: string|null) => void) => {close: () => void, on?: Function}}
+ */
+function watcherFactory(watch, verify, onCannotRearm) {
+  const arm = (dir, cb) => {
+    const watcher = watch(dir, cb);
+    // ⚠️ FAIL-OPEN on the wiring itself: a watcher object that does not emit
+    //    (a stub, a future platform) must not cost the daemon its life.
+    if (watcher && typeof watcher.on === 'function') {
+      watcher.on('error', (err) => {
+        verify();
+        try { arm(dir, cb); } catch (again) { onCannotRearm(dir, /** @type {Error} */ (again || err)); }
+      });
+    }
+    return watcher;
+  };
+  return arm;
 }
 
 // ⚠️ WHAT THE JOURNAL PRINTS WHEN THE KERNEL NAMED NOTHING. Node documents that
@@ -799,12 +927,26 @@ const KERNEL_NAMED_NOTHING = '<unnamed>';
  * @returns {Record<string, unknown>} fields for `lifecycle.record`
  */
 function staleCodeFields(change, pid, uptimeMs) {
+  return { pid, code: EXIT_STALE_CODE, uptimeMs, ...kernelFields(change) };
+}
+
+/**
+ * WHAT THE KERNEL SAID, and nothing else — the three fields shared by the death
+ * record and by the "nothing changed" record.
+ *
+ * 🛑 EXTRACTED SO THERE IS ONE SPELLING, not two. Since 2026-08-24 a
+ *    notification can end in either outcome; writing the sentinel twice would be
+ *    a twin that drifts, and the second copy is always the one that rots.
+ * ⚠️ `staleCodeFields` may NOT be reused for the quiet outcome: it stamps
+ *    `code: 90`, i.e. "we died", onto a line whose whole point is that we did not.
+ *
+ * @param {{dir?: unknown, eventType?: unknown, filename?: unknown}|undefined} change
+ * @returns {{kernelEvent: string, file: string, dir: string}}
+ */
+function kernelFields(change) {
   const c = change || {};
   const text = (v) => (typeof v === 'string' && v.length > 0 ? v : KERNEL_NAMED_NOTHING);
-  return {
-    pid, code: EXIT_STALE_CODE, uptimeMs,
-    kernelEvent: text(c.eventType), file: text(c.filename), dir: text(c.dir),
-  };
+  return { kernelEvent: text(c.eventType), file: text(c.filename), dir: text(c.dir) };
 }
 
 /**
@@ -853,10 +995,13 @@ function inheritedFd(env, pid) {
  * @param {number} port used ONLY when nothing was inherited
  * @returns {number|null} the descriptor listened on, or null when the port was
  */
-function listenOn(server, env, pid, port) {
+function listenOn(server, env, pid, port, host) {
   const fd = inheritedFd(env, pid);
   if (fd === null) {
-    server.listen(port, HOST);
+    // ⚠️ BOTH halves come from the CALLER, which read them from the single
+    //    resolution point. This function chooses NEITHER: it decides only
+    //    WHETHER we bind at all.
+    server.listen(port, host);
     return null;
   }
   // ⚠️ `server.listen(handle)` with an object carrying an `fd` member is the
@@ -868,11 +1013,13 @@ function listenOn(server, env, pid, port) {
 }
 
 module.exports = {
-  createServer, handle, frameFromUrl, watchOwnCode, staleCodeFields, inheritedFd, listenOn,
+  main,
+  createServer, handle, frameFromUrl, watchOwnCode, watcherFactory, staleCodeFields, kernelFields,
+  inheritedFd, listenOn,
   routeOf, purgeRoute, turnRoute, emitRoute,
-  HOST, DEFAULT_PORT, NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE, SD_LISTEN_FDS_START,
+  NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE, SD_LISTEN_FDS_START,
   KERNEL_NAMED_NOTHING,
-  ROUTE_PURGE, ROUTE_TURN, ROUTE_EMIT,
+  ROUTES,
 };
 
 // ⚠️ The service's LIFECYCLE belongs to the OS — a systemd user unit, a Windows
@@ -882,12 +1029,25 @@ module.exports = {
 //    taken, the kernel says so with EADDRINUSE, immediately and exactly — we
 //    let that error surface and die, because a second instance would be the
 //    real defect and the OS is the authority that prevents it.
-if (require.main === module) {
-  const port = Number(process.env.CTXROUTE_HTTP_PORT) || DEFAULT_PORT;
-  // ⚠️ The port is read even when a descriptor is inherited, and it is then
+//
+// 🔴 IT IS A FUNCTION SINCE 2026-08-24, AND IT IS NOT CALLED FROM HERE. The
+//    daemon is started by `http-daemon.js`, a bootstrap whose ONLY job is to arm
+//    the module-source recorder BEFORE the first daemon module is compiled — the
+//    baseline has to be the bytes Node actually compiled, never a re-read, or
+//    the guard compares itself clean while running yesterday's logic. Read the
+//    header of `stale-code.js` before moving this.
+// 🛑 RUNNING THIS FILE DIRECTLY IS A NAMED REFUSAL, never a silent degradation:
+//    with no recorder armed, `staleCode.check()` reports zero verified modules,
+//    the fail-closed verdict says STALE, and the first request is refused rather
+//    than answered by a daemon that cannot vouch for its own code.
+function main() {
+  const { host, port } = paths.httpEndpoint();
+  // ⚠️ The address is read even when a descriptor is inherited, and it is then
   //    IGNORED — the supervisor's unit is the single place the address lives.
   //    Reading it unconditionally keeps this line free of any branch about which
   //    world we are in; `listenOn` is the one place that decides.
+  // 🛑 ONE call for the WHOLE address: a host fetched apart from its port is
+  //    two settings for one fact, and two settings drift.
   // 🔑 THE DAEMON OWNS ITS STATE, IN MEMORY — the kernel serialises its callers,
   //    so nothing needs a lock, a tmp+rename or a retry to take turns.
   // 🛑 RESTORE BEFORE LISTEN, AND THE ORDER IS THE WHOLE GUARANTEE. At this
@@ -914,19 +1074,60 @@ if (require.main === module) {
     durableStore: require('../session-store'),
   });
   state.restore();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔑 FRESHNESS — ONE pair, shared by BOTH transports and by the watchers.
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🛑 ONE `freshness`, ONE `dieOnStaleCode`, exactly as there is ONE `store`:
+  //    two verifiers would be two answers to one question, and the day they
+  //    disagreed the daemon would serve on one transport what it refused on the
+  //    other. Same reason two stores are forbidden here.
+  // ⚠️ `staleCode.check` is reached THROUGH the namespace, deliberately: the
+  //    SEEN RED of this guard is a driver that replaces the comparison in memory
+  //    with one that always answers "identical", and a destructured binding
+  //    would make that sabotage impossible — hence the guard unprovable.
+  const freshness = () => staleCode.check();
+  /**
+   * @param {{stale: boolean, checked: number, reasons: string[]}} verdict
+   * @param {{dir?: unknown, eventType?: unknown, filename?: unknown}} [change]
+   */
+  const dieOnStaleCode = (verdict, change) => {
+    // 🛑 THE RECORD COMES FIRST, AND IT IS FAIL-OPEN. This is the daemon's most
+    //    frequent death; refusing to die because the journal threw would mean
+    //    serving stale logic, the green that lies. `process.exit` sits OUTSIDE
+    //    the `try`, where nothing can reach it.
+    try {
+      lifecycle.record('stale-code-exit', {
+        ...staleCodeFields(change, process.pid, Math.round(process.uptime() * 1000)),
+        // ⚠️ THE CAUSE, NAMED. 169 exits in one day said WHICH file only after
+        //    somebody went looking. The count is the ANTI-VACUITY witness: a
+        //    death reporting `checked=0` is a daemon that verified nothing, and
+        //    that must read differently from one that verified everything.
+        checked: verdict.checked,
+        reason: verdict.reasons[0] || 'unknown',
+        more: verdict.reasons.length > 1 ? verdict.reasons.length - 1 : null,
+      });
+    } catch { /* a lost line costs a diagnosis; a survived exit costs stale logic */ }
+    process.exit(EXIT_STALE_CODE);
+  };
+  /** The request path's half: report, then die. */
+  const onStaleCode = (verdict) => dieOnStaleCode(verdict);
+
   // 🛑 THE LIFECYCLE LIVES HERE, in the executable shell — not in the builder.
   //    A second instance must NOT start: the kernel already refused the address,
   //    and it is the authority on duplicates (never a PID file, never a probe).
   const laneFd = listenOn(createServer({
     store: state,
+    freshness,
+    onStaleCode,
     onAddressInUse: (err) => {
       // ⚠️ The kernel refused the address: a second instance. Say WHICH lane and
       //    WHY before dying, otherwise the supervisor's restart loop is the only
       //    symptom and it names nothing.
-      lifecycle.record('bind-refused', { lane: 'port', port, pid: process.pid });
+      lifecycle.record('bind-refused', { lane: 'port', host, port, pid: process.pid });
       throw err;
     },
-  }), process.env, process.pid, port);
+  }), process.env, process.pid, port, host);
   // ⚠️ Recorded HERE, right after the listen call, and it says "we began serving"
   //    — not "the bind succeeded": `listen` reports its failure asynchronously,
   //    on the error path just above. Two records, two facts, never one guess.
@@ -938,6 +1139,11 @@ if (require.main === module) {
     lane: laneFd === null ? 'port' : 'inherited-fd',
     port: laneFd === null ? port : null,
     fd: laneFd,
+    // ⚠️ ANTI-VACUITY, IN THE JOURNAL AND NOT ONLY IN A TEST. A guard that
+    //    verifies ZERO modules is indistinguishable from one that verifies them
+    //    all and finds them clean — this repository's worst defect, printed here
+    //    once per process life so it costs nothing and hides nowhere.
+    verifiedModules: staleCode.count(),
   });
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -979,7 +1185,7 @@ if (require.main === module) {
   try { require('fs').mkdirSync(paths.stateDir(), { recursive: true }); } catch { /* the bind below will say it */ }
 
   bind(
-    createServer({ store: state, onAddressInUse: (err) => { throw err; } }),
+    createServer({ store: state, freshness, onStaleCode, onAddressInUse: (err) => { throw err; } }),
     endpoint(),
     () => {},
     (err) => {
@@ -1017,26 +1223,55 @@ if (require.main === module) {
   //    itself pulled in. Watching before would miss the modules loaded lazily
   //    on the first require — the exact half most likely to be edited.
   const fs = require('fs');
+  // 🔴 THE WATCH IS AN OPTIMISATION SINCE 2026-08-24 — READ THIS BEFORE EDITING.
+  //    It used to be the guarantee, and it exited on ANY notification. MEASURED
+  //    the same day on the FROZEN copy: 258 deaths, `mtime` and `ctime` both
+  //    UNCHANGED, only `atime` moving — libuv subscribes ReadDirectoryChangesW
+  //    to `FILE_NOTIFY_CHANGE_LAST_ACCESS` and delivers it as a plain `'change'`,
+  //    and NTFS may defer that write by up to an hour. **Reading a file killed
+  //    the service.** Now a notification runs the SAME comparison the request
+  //    path runs and exits only if the content really differs.
+  // 🛑 NO TIMER, NO DEBOUNCE, NO POLLING — and there is no admissible motive for
+  //    one here: the comparison is synchronous and local, so the kernel and the
+  //    disk already KNOW. `temporal-budget.json` would refuse a delay anyway.
+  const verifyNow = (change) => {
+    const verdict = freshness();
+    if (verdict.stale) dieOnStaleCode(verdict, change);
+    // ⚠️ THE NOISE STAYS OBSERVABLE. A notification that changed nothing is the
+    //    NORMAL case now — it was 258 deaths a day before — and a guard nobody
+    //    can see deciding is a guard nobody can trust. One line, fail-open, and
+    //    the journal's ceiling (2 × 256 KB, for life) is unaffected: this fires
+    //    on kernel events, never on requests.
+    // ⚠️ ITS OWN FIELDS, NEVER `staleCodeFields`: that helper stamps
+    //    `code: 90`, i.e. "we died", onto a line whose whole meaning is that we
+    //    did NOT. `checked` is the anti-vacuity witness — a notification ignored
+    //    after verifying ZERO modules is a different fact from one ignored after
+    //    verifying all of them, and the journal must be able to tell them apart.
+    else lifecycle.record('code-unchanged', { pid: process.pid, ...kernelFields(change), checked: verdict.checked });
+  };
   watchOwnCode(
-    (dir, cb) => fs.watch(dir, { persistent: false }, cb),
+    watcherFactory(
+      (dir, cb) => fs.watch(dir, { persistent: false }, cb),
+      // ⚠️ A LOST-EVENTS ERROR VERIFIES IMMEDIATELY — the loss may have hidden a
+      //    real change, and all three kernels prescribe exactly that rescan.
+      () => verifyNow({ eventType: 'watch-error', filename: null, dir: null }),
+      (dir, err) => {
+        // 🛑 RE-ARMING FAILED ⇒ WE STOP SERVING. A directory we can no longer be
+        //    told about is a directory whose changes we would learn only at the
+        //    next request; the point-of-use check would still catch them, but a
+        //    watcher that cannot be rebuilt is a symptom nobody should sleep on,
+        //    and dying costs one restart on a lane the OS brings back.
+        try {
+          lifecycle.record('watch-lost', {
+            pid: process.pid, dir, code: /** @type {NodeJS.ErrnoException} */ (err).code,
+            message: err && err.message,
+          });
+        } catch { /* a lost line costs a diagnosis, never the decision */ }
+        process.exit(EXIT_STALE_CODE);
+      },
+    ),
     require.cache,
-    (change) => {
-      // 🛑 THE RECORD COMES FIRST, AND IT IS THE WHOLE POINT OF THIS WORK ITEM.
-      //    This is the daemon's most frequent death — measured 169 times in ONE
-      //    DAY, median lifetime 224 s — and until 2026-08-22 it left nothing at
-      //    all. It is FAIL-OPEN: if the journal cannot be written we still exit,
-      //    because refusing to die here would mean serving stale logic, the
-      //    green that lies.
-      // 🛑 THE `try` IS NOT DECORATION, IT IS THE FAIL-OPEN ITSELF. The line now
-      //    carries data this process did not author (a kernel event type, a file
-      //    name); the day one of them makes the journal throw, the daemon must
-      //    STILL DIE. `process.exit` sits OUTSIDE, where nothing can reach it.
-      try {
-        lifecycle.record('stale-code-exit',
-          staleCodeFields(change, process.pid, Math.round(process.uptime() * 1000)));
-      } catch { /* a lost line costs a diagnosis; a survived exit costs stale logic */ }
-      process.exit(EXIT_STALE_CODE);
-    }
+    verifyNow,
   );
 
   // ── A SUPERVISOR'S STOP IS A CLEAN DEATH, AND IT MUST BE TREATED AS ONE ──
@@ -1097,4 +1332,23 @@ if (require.main === module) {
   //    residency, the same kernel invalidation and the same ceilings. There is
   //    nothing else to enable, and there must never be a second switch.
   require('../corpus').enableCache((dir, cb) => fs.watch(dir, { persistent: false }, cb));
+}
+
+// ⚠️ EXIT CODE OF A WRONG ENTRY POINT — `EX_CONFIG` (sysexits), and DELIBERATELY
+//    NOT 90: ninety means "my code moved, restart me", which a supervisor obeys
+//    for ever. This one means "you started the wrong file", and no amount of
+//    restarting will fix that.
+const EXIT_WRONG_ENTRY = 78;
+
+// 🛑 A NAMED REFUSAL, NEVER A SILENT NO-OP. Since 2026-08-24 the daemon is
+//    started by `http-daemon.js`, which arms the freshness recorder BEFORE any
+//    module of this file is compiled. Run directly, nothing would be recorded,
+//    the fail-closed verdict would answer STALE and every request would be
+//    refused — a service that looks up and answers nothing. Saying so out loud
+//    costs one line; discovering it costs a fleet-wide outage.
+if (require.main === module) {
+  process.stderr.write('ctxroute: http-server.js is NOT the entry point. Start src/hooks/http-daemon.js — '
+    + 'it records the exact bytes Node compiles before this file is loaded, which is what makes the '
+    + 'freshness check an observation instead of an inference (see docs stale-code.md).\n');
+  process.exit(EXIT_WRONG_ENTRY);
 }

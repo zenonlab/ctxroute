@@ -49,6 +49,9 @@ on:
     paths:
       - 'service/**'
       - 'src/hooks/http-server.js'
+      - 'src/hooks/http-daemon.js'
+      - 'src/stale-code.js'
+      - 'src/stale-code-pure.js'
       - '.github/workflows/service-units.yml'
 
 concurrency:
@@ -176,7 +179,7 @@ jobs:
           log show --last 10m --style compact \
             --predicate 'process == "launchd-socket-shim" OR process == "node"' 2>&1 | tail -60 || true
           echo "--- the daemon, in the foreground, stderr captured ---"
-          node src/hooks/http-server.js > fg.log 2>&1 &
+          node src/hooks/http-daemon.js > fg.log 2>&1 &
           pid=$!
           for i in $(seq 1 20); do
             curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${CTXROUTE_PORT:-8787}/" && break

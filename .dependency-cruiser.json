@@ -302,6 +302,20 @@
       }
     },
     {
+      "name": "rendezvous-budget-pure-must-stay-pure",
+      "comment": "⚠️ rendezvous-budget-pure.js must NEVER import fs/path/child_process. It DECIDES whether every literal by which one component REACHES another is declared, whether a declaration still matches anything, and whether all the sites of one rendezvous AGREE — and it reads NOTHING: the two git perimeters, the ast-grep scan, the comment stripping, the structural walk of wiring.json and the manifest read all live in `test/rendezvous-address-gate.test.js`. Purity is what makes it MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so the verdict written inside that suite would have stayed green for ever on an inverted comparison — its own author wrote that weakness down. An address is the one value whose divergence says NOTHING, so a false judge on this class is indistinguishable from a healthy repository. Same reason as quadratic-budget-pure.js and doctor-wiring-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/rendezvous-budget-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "state-entry-rebuild-pure-must-stay-pure",
       "comment": "⚠️ state-entry-rebuild-pure.js must NEVER import fs/path/child_process. It DECIDES whether every record rebuilt by literal is declared, and it reads NOTHING: the ast-grep scan, the git perimeter and the manifest read live in `test/state-entry-rebuild-gate.test.js`. Purity is what makes it MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a ratchet written inside the suite would stay green on an inverted comparison for ever — and this particular budget is legitimately EMPTY, so a silent verdict is indistinguishable from a healthy one. Same reason as quadratic-budget-pure.js and disk-writers-pure.js.",
       "severity": "error",
@@ -374,7 +388,7 @@
     "doNotFollow": {
       "path": "node_modules"
     },
-    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/declared-paths-pure|tools/commit-msg-check)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/rendezvous-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/hooks/http-daemon|src/stale-code|src/stale-code-pure|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/declared-paths-pure|src/protocol-routes-pure|tools/commit-msg-check)\\.js$|^(fs|path|child_process|os|crypto)$)",
     "tsPreCompilationDeps": false
   }
 }

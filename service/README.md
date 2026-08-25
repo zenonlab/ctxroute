@@ -1,6 +1,10 @@
 # `service/` — the three OS units for the HTTP lane
 
-**Nothing here is installed, wired, or running.** These are three files. `src/hooks/http-server.js`
+**Nothing here is installed, wired, or running.** These are three files. The daemon's entry point is
+`src/hooks/http-daemon.js` — a bootstrap with no semantics whose only job is to record the exact
+bytes Node compiles, before `http-server.js` is loaded; every unit here points THERE, never at
+`http-server.js` (running that one directly is a named refusal, because nothing would be recorded and
+the fail-closed verdict refuses to serve code it cannot vouch for). `src/hooks/http-server.js`
 is itself deliberately inert (no `settings.json` entry points at it), and putting it under a
 supervisor is a separate, explicit decision of the maintainer, taken at a moment when no agent is
 running. This directory only makes that decision *possible* without re-doing the research.

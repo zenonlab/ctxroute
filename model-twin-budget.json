@@ -42,10 +42,10 @@
           "class": "INHERITED_TWIN"
         },
         {
-          "tokens": 30,
-          "aLine": 239,
-          "bLine": 302,
-          "text": "} const inject = [ ] ; const blocked = [ ] ; for ( const doc of kept ) { const entry = prev [ doc ] ; const",
+          "tokens": 29,
+          "aLine": 257,
+          "bLine": 324,
+          "text": "const inject = [ ] ; const blocked = [ ] ; for ( const doc of kept ) { const entry = prev [ doc ] ; const",
           "class": "INHERITED_TWIN"
         },
         {
@@ -116,13 +116,6 @@
           "aLine": 225,
           "bLine": 297,
           "text": "{ ... entry , sinceLastCall : entry . sinceLastCall + 1 }",
-          "class": "INHERITED_TWIN"
-        },
-        {
-          "tokens": 12,
-          "aLine": 255,
-          "bLine": 330,
-          "text": "&& ! ( entry && entry . denied === true ) )",
           "class": "INHERITED_TWIN"
         }
       ]

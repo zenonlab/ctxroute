@@ -215,7 +215,7 @@ test('ownership on the http lane is decided by the COORDINATES, never by a name'
   //    separates them is the port, and the port is the operator's. So the
   //    owned entry below sits on ANOTHER port and is still ours: the test
   //    exercises the limit, it does not pretend to close it.
-  const declarations = plan(manifest({ transport: { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' } }), machine());
+  const declarations = plan(manifest({ transport: { kind: 'http' } }), machine({ host: '127.0.0.1', port: 8787, routePath: '/pretool' }));
   const before = {
     hooks: {
       PreToolUse: [{

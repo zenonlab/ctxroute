@@ -63,9 +63,9 @@
       "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised, because the nesting that arrived that day is the PreCompact sweep taking the cross-process lock. Three levels, and only the innermost grows: the outer walks the DISTINCT lock addresses of the five stores (two today, and the classes are a closed table in store-resolve.js), the middle walks the five declared store prefixes, and only the last walks the state directory. Both outer collections are constants of this framework, so the cost is LINEAR in the number of state files and can never become a pairwise comparison of two growing sets."
     },
     "src/hooks/http-server.js": {
-      "max": 2,
+      "max": 1,
       "class": "O(N)",
-      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised. The purge route walks the DISTINCT lock addresses of the keys one compaction names (two today, a closed table in store-resolve.js) and, inside each, the keys of that class alone (five stores in total) — constant by constant, and the two loops exist precisely so no lock is ever taken inside another. The stale-code watcher walks require.cache, i.e. the modules THIS repository loaded, with constant work per entry; a client site adds pages, never a module here. Neither side is fed by client volume."
+      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised. The purge route walks the DISTINCT lock addresses of the keys one compaction names (two today, a closed table in store-resolve.js) and, inside each, the keys of that class alone (five stores in total) — constant by constant, and the two loops exist precisely so no lock is ever taken inside another. The stale-code watcher walks require.cache, i.e. the modules THIS repository loaded, with constant work per entry; a client site adds pages, never a module here. Neither side is fed by client volume. ⚠️ LOWERED from 2 to 1 on 2026-08-24: `watchOwnCode` no longer derives the watched directories itself — that traversal moved to `stale-code-pure.watchedDirs`, which the watcher and the freshness check now share, because two spellings of one rule are two rules. The ratchet only ever goes DOWN."
     },
     "src/language-spec.js": {
       "max": 9,
@@ -344,6 +344,16 @@
       "class": "O(N)",
       "why": "Every crossing pairs the hook shells of src/hooks (five today) or the tracked sources of src/ with the CLOSED decision vocabulary — three words, none/allow/deny, which is the very thing this gate exists to keep closed — or with the paths ONE shell's output() can take. The vocabulary cannot grow without the gate reddening, and a port adds a shell one at a time; no client volume reaches this file."
     },
+    "src/rendezvous-budget-pure.js": {
+      "max": 4,
+      "class": "O(N)",
+      "why": "A PARTITION and never a cross product: the outer walk is over the FILES that hold a declared address and the inner one over the SITES of that one file, so the total work is exactly the number of sites — about twenty-five today, and it grows only when a maintainer writes a new address into this repository. It can never grow with a client site, a page or a fleet member. A flat rewrite would mean joining the file and the site into one string key, which makes the separator part of the contract and splits a site whose text happens to contain it."
+    },
+    "test/rendezvous-address-gate.test.js": {
+      "max": 7,
+      "class": "O(N)",
+      "why": "Five distinct linear walks, each over a collection bounded by this repository and never by a fleet: the tracked-file list trimmed then filtered (one pass per element, chained rather than nested in intent), the declarative OS units crossed with the LINES of one unit (six files of a few dozen lines), the recursive walk of the wiring manifest over its own nodes, and the witness table crossed with the lines of a single witness — the atoms are a closed list of the gate itself. Nowhere is an element compared with another element, so nothing here can reach a quadratic shape as the repository grows."
+    },
     "test/quadratic-gate.test.js": {
       "max": 1,
       "class": "O(N)",
@@ -488,6 +498,11 @@
     "vitest-projects.mjs": {
       "max": 1,
       "class": "INHERITED_DEBT"
+    },
+    "test/stale-code-guard.test.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "Two POLL loops, not two data traversals. The outer `for(;;)` re-asks the kernel a question about ANOTHER process (is the port bound, has the journal line appeared) and is bounded by the suite timeout, never by a collection. The inner traversal walks the LINES of a journal a single daemon has just written - a handful, bounded by what one process emits during one cell. Neither side grows with client volume: a fleet adds sites, it never adds lines to this journal, so the work is the journal walked once per poll, never a pair of elements compared."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

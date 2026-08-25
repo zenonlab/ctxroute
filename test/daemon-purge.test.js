@@ -130,7 +130,7 @@ function compacter(address) {
 
 test('a compaction makes a `once` COME BACK — the REAL reset shell reaches the daemon',
   { timeout: 30000 }, async () => {
-    const address = endpoint({ root: path.join(TMP, 'purge'), stateDir: TMP });
+    const address = endpoint({ stateDir: TMP });
     const daemon = await startDaemon(address);
     try {
       const premier = await knock(address, 'inv-1');

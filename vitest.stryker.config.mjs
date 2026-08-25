@@ -23,8 +23,26 @@ export default defineConfig({
       'test/lib-pure.test.js',
       'test/canary.test.js',
       'test/leak-pure.test.js',
+      // ⚠️ The stale-code verdict (2026-08-24): deterministic, hermetic, and the
+      //    ONLY suite covering `src/stale-code-pure.js`. Absent here its mutants sit
+      //    at NoCoverage while the module looks mutated.
+      'test/stale-code-pure.test.js',
       // ⚠️ English-only COMMIT gate: deterministic suite covering src/commit-msg-lang.js.
       'test/commit-msg-lang.test.js',
+      // ⚠️ English-only IDENTIFIER gate. `foreign-identifier-gate.test.js` spawns `git`
+      //    and `ast-grep`, so it never enters this runner: only the PURE verdict is
+      //    mutated, and this is the suite that kills its mutants. It was MISSING from
+      //    this list while `src/foreign-identifier-pure.js` sat in `mutate` and in
+      //    `mutation.yml` — measured 2026-08-25: the module was mutated and measured by
+      //    NOTHING, the exact "misleading massacre" the header above warns about, and
+      //    no gate could see it because the two mirror checks only compared
+      //    stryker.conf.json and mutation.yml to each other.
+      'test/foreign-identifier-pure.test.js',
+      // The four route names of our own wire protocol (2026-08-25): the ONLY
+      // suite covering `src/protocol-routes-pure.js`. Absent here its mutants
+      // would sit at NoCoverage while the module looks measured — the exact hole
+      // `foreign-identifier-pure.js` fell into the day before.
+      'test/protocol-routes-pure.test.js',
       'test/sources-file.test.js',
       // ⚠️ `keys` operator (19/08/2026): DETERMINISTIC suite covering sources/file.js.
       //    Absent from this list its cases exist but Stryker never runs them ⇒ the
@@ -75,6 +93,13 @@ export default defineConfig({
       //    its mutants. Absent from this list, `quadratic-budget-pure.js` would
       //    be mutated and measured by NOTHING — a misleading massacre.
       'test/quadratic-budget-pure.test.js',
+      // ⚠️ The DETERMINISTIC half of the rendezvous gate (2026-08-25).
+      //    `rendezvous-address-gate.test.js` spawns `git` and `ast-grep`, so it
+      //    never enters this runner: only the PURE verdict is mutated, and this
+      //    is the suite that kills its mutants. Absent from this list,
+      //    `rendezvous-budget-pure.js` would be mutated and measured by NOTHING —
+      //    the exact hollow green `mutation-workflow-gate` was extended to catch.
+      'test/rendezvous-budget-pure.test.js',
       // ⚠️ The DETERMINISTIC half of the state-entry-rebuild gate.
       //    `state-entry-rebuild-gate.test.js` itself spawns `git` and
       //    `ast-grep`, so it never enters this runner: only the PURE verdict is

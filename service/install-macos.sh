@@ -124,7 +124,7 @@ cc -Wall -Wextra -O2 -o "$SHIM_BIN" "$SHIM_SRC"
 #    limitation of `sed`, stated rather than pretended away.
 sed -e "s|<string>[^<]*launchd-socket-shim</string>|<string>$SHIM_BIN</string>|" \
     -e "s|<string>[^<]*node</string>|<string>$NODE</string>|" \
-    -e "s|<string>[^<]*http-server\.js</string>|<string>$REPO/src/hooks/http-server.js</string>|" \
+    -e "s|<string>[^<]*http-daemon\.js</string>|<string>$REPO/src/hooks/http-daemon.js</string>|" \
     "$HERE/com.ctxroute.http.plist" > "$PLIST"
 
 # ⚠️ ANTI-VACUITY ON THE SUBSTITUTION ITSELF. A `sed` that matched nothing exits

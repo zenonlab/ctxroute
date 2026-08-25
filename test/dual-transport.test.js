@@ -70,11 +70,21 @@ function poster(target, corps = PAYLOAD) {
   });
 }
 
+// ⚠️ THE RENDEZVOUS IS NAMED BY THE DATA SERVED, so a cell that needs an address
+//    of its own needs a STATE DIRECTORY of its own. It is CREATED, because on
+//    macOS the rendezvous is a real file inside that directory and a bind into
+//    a directory that does not exist fails for a reason unrelated to the cell.
+function ownStateDir(name) {
+  const served = path.join(os.tmpdir(), `ctxroute-${name}-${process.pid}`);
+  fs.mkdirSync(served, { recursive: true });
+  return served;
+}
+
 test('THE SAME DAEMON answers on the port AND on the kernel rendezvous, identically', async () => {
   // ⚠️ A store that knows nothing and writes nothing: what is under test is the
   //    TRANSPORT, and a disk store would drag the state question in with it.
   const state = { loadState: () => ({}), saveState: () => {} };
-  const address = endpoint({ stateDir: os.tmpdir(), root: path.join(os.tmpdir(), 'dual-' + process.pid) });
+  const address = endpoint({ stateDir: ownStateDir('dual') });
 
   const surPort = createServer({ store: state, onAddressInUse: (e) => { throw e; } });
   const surPipe = createServer({ store: state, onAddressInUse: (e) => { throw e; } });
@@ -105,7 +115,7 @@ test('the rendezvous is REACHABLE only once someone listens there', async () => 
   // 🛑 THE CELL THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT. Before today the
   //    daemon bound the port and nothing else, so this is exactly what a client
   //    met: an immediate kernel refusal, never a timeout.
-  const orphan = endpoint({ stateDir: os.tmpdir(), root: path.join(os.tmpdir(), 'personne-' + process.pid) });
+  const orphan = endpoint({ stateDir: ownStateDir('nobody') });
   await assert.rejects(
     () => poster({ socketPath: kernelAddress(orphan) }),
     (err) => ['ENOENT', 'ECONNREFUSED'].includes(err.code),
@@ -120,8 +130,11 @@ test('the rendezvous is REACHABLE only once someone listens there', async () => 
 // 🛑 WHY THE COST OF A REAL SPAWN IS THE RIGHT ONE. What follows is not about
 //    the handler (proven above, in process) but about the STARTUP POLICY: which
 //    failure degrades ONE lane and which one kills the daemon. That policy lives
-//    in the `require.main` block of `http-server.js`, is exported by nothing,
-//    and is reachable by no `require`. Rebuilding it in a test file would prove
+//    in `http-server.main()`, and the file that CALLS it is `http-daemon.js` —
+//    the bootstrap that arms the freshness recorder before a single daemon
+//    module is compiled (2026-08-24, see `stale-code.md`). Forking anything else
+//    would fork a daemon that cannot vouch for its own code, and the fail-closed
+//    verdict would refuse every request. Rebuilding it in a test file would prove
 //    a TWIN — the exact reason the missing second listener survived a green
 //    three-OS CI. **A green on a twin is not a green on the thing.**
 //
@@ -150,7 +163,10 @@ test('the rendezvous is REACHABLE only once someone listens there', async () => 
 //    agents' sessions with it.
 // ═══════════════════════════════════════════════════════════════════════
 
-const COQUILLE = path.join(import.meta.dirname, '..', 'src', 'hooks', 'http-server.js');
+// 🛑 THE PRODUCTION ENTRY POINT, WHICH IS THE BOOTSTRAP — never `http-server.js`.
+//    Since 2026-08-24 that file refuses to run as a main module BY NAME (status 78),
+//    because nothing would have recorded the bytes it was compiled from.
+const COQUILLE = path.join(import.meta.dirname, '..', 'src', 'hooks', 'http-daemon.js');
 const MODULE_RENDEZVOUS = path.join(import.meta.dirname, '..', 'src', 'kernel-endpoint.js');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-coquille-'));
@@ -178,8 +194,7 @@ const net = require('net');
 const cible = require.resolve(${JSON.stringify(MODULE_RENDEZVOUS.replace(/\\/g, '/'))});
 const reel = require(cible);
 require.cache[cible].exports = Object.assign({}, reel, {
-  endpoint: (options) => (process.env.CTXROUTE_TEST_ENDPOINT
-    || reel.endpoint(Object.assign({}, options, { root: process.env.CTXROUTE_TEST_ROOT }))),
+  endpoint: (options) => (process.env.CTXROUTE_TEST_ENDPOINT || reel.endpoint(options)),
 });
 // ② Readiness comes from the kernel's own event, forwarded to the test.
 const listenReel = net.Server.prototype.listen;
@@ -233,7 +248,6 @@ function lancer(itemName, port, extra) {
       CTXROUTE_FILEDOCS_DIR: DOCS,
       CTXROUTE_CONFIG_PATH: CONFIG,
       CTXROUTE_STATE_DIR: path.join(TMP, itemName, 'state'),
-      CTXROUTE_TEST_ROOT: path.join(TMP, itemName, 'clone'),
       ...(extra || {}),
     },
   });
@@ -356,7 +370,7 @@ test('A REFUSED RENDEZVOUS DEGRADES ONE LANE: the port still ANSWERS, and the lo
 test('EADDRINUSE ON THE RENDEZVOUS KILLS: the kernel refuses a SECOND instance and the shell obeys',
   async () => {
     const port = await portLibre();
-    const address = endpoint({ root: path.join(TMP, 'occupee', 'clone'), stateDir: TMP });
+    const address = endpoint({ stateDir: path.join(TMP, 'occupee', 'state') });
     const occupant = net.createServer(() => {});
     await new Promise((r) => occupant.listen(kernelAddress(address), r));
     try {
@@ -402,13 +416,12 @@ test('A TREE WITH NO `state/`: the directory is created BEFORE the bind, and the
     const port = await portLibre();
     const itemName = 'arbre-neuf';
     const state = path.join(TMP, itemName, 'state');
-    const racine = path.join(TMP, itemName, 'clone');
     assert.equal(fs.existsSync(state), false,
       'the state directory already exists — this cell can only prove anything on a tree without one');
 
     const extra = process.platform === 'win32'
       ? {}
-      : { CTXROUTE_TEST_ENDPOINT: endpoint({ platform: 'darwin', root: racine, stateDir: state }) };
+      : { CTXROUTE_TEST_ENDPOINT: endpoint({ platform: 'darwin', stateDir: state }) };
     const tracked = lancer(itemName, port, extra);
     // 🛑 RACED AGAINST THE DAEMON'S OWN COMPLAINT. Without the `mkdirSync` the
     //    rendezvous simply never opens and the daemon keeps serving the port —

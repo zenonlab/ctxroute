@@ -29,11 +29,18 @@
 //    rather than worked around. Never emulate it with a lock file: that would
 //    reintroduce, by hand, exactly what this module exists to remove.
 //
-// ⚠️ THE NAME CARRIES THE REPOSITORY, and that is not decoration: two clones
-//    (a fork, an old copy kept for rollback) must NEVER meet on one daemon —
-//    they have different corpora, so one would answer for the other's
-//    documents. Derived from the resolved root, never from a `cwd` the caller
-//    could have moved.
+// ⚠️ THE NAME CARRIES AN IDENTITY, and that is not decoration: two
+//    INSTALLATIONS must NEVER meet on one daemon — they have different corpora,
+//    so one would answer for the other's documents. 🛑 THAT IDENTITY IS THE
+//    DATA SERVED, NEVER THE FOLDER THE CODE LIVES IN — corrected 2026-08-24,
+//    after the defect it caused in production. Since the daemon runs from a
+//    FROZEN copy while the spawned client hooks run from the working
+//    repository, hashing the code folder gave ONE installation TWO addresses:
+//    the daemon listened on one, the clients knocked on the other, nobody
+//    errored, and the client lane fell back to disk in silence. Two code
+//    folders serving one `stateDir` are ONE installation; two state directories
+//    are TWO. Derived from the RESOLVED state directory, never from a `cwd` the
+//    caller could have moved.
 // ⚠️ HASHED, not the raw path: a pipe name has a bounded length and forbids
 //    separators, and a real path carries a user name (this repository is
 //    public — a home directory must not end up in an address).
@@ -50,8 +57,8 @@ const paths = require('./paths');
 // of clones on one machine, and short enough to stay under every path limit.
 const FINGERPRINT = 12;
 
-/** @param {string} racine @returns {string} */
-function fingerprint(racine) {
+/** @param {string} directory @returns {string} */
+function fingerprint(directory) {
   // ⚠️ NORMALISED before hashing: on Windows the same directory can be spelled
   //    with either separator and in either case. Two spellings of one clone
   //    must hash to ONE address, or the client would knock on a door the daemon
@@ -63,21 +70,26 @@ function fingerprint(racine) {
   //    freezing an arbitrary decision as if it were a contract. The property
   //    itself IS tested — "ONE DIRECTORY = ONE ADDRESS, whatever the spelling".
   // Stryker disable next-line MethodExpression
-  const normalized = path.resolve(racine).replace(/\\/g, '/').toLowerCase();
+  const normalized = path.resolve(directory).replace(/\\/g, '/').toLowerCase();
   return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, FINGERPRINT);
 }
 
 /**
- * The rendezvous address for THIS repository, on THIS kernel.
+ * The rendezvous address for THIS installation, on THIS kernel.
  *
- * @param {{ platform?: string, root?: string, stateDir?: string }} [options]
+ * 🛑 `stateDir` IS THE IDENTITY, and it is the ONLY input besides the platform.
+ *    It names the DATA served, so a daemon and its clients meet whatever folder
+ *    each one's code was loaded from — which is the production case since the
+ *    daemon runs from a frozen copy. NEVER reintroduce the code path here.
+ *
+ * @param {{ platform?: string, stateDir?: string }} [options]
  * @returns {string}
  */
 function endpoint(options) {
   const o = options || {};
   const platform = o.platform || process.platform;
-  const root = o.root || paths.ROOT;
-  const print = fingerprint(root);
+  const served = o.stateDir || paths.stateDir() || os.tmpdir();
+  const print = fingerprint(served);
 
   // 🛑 THE PREFIX IS IMPOSED BY THE KERNEL, not chosen by us: on Windows a
   //    server that listens anywhere else is refused (EACCES) — measured while
@@ -92,7 +104,7 @@ function endpoint(options) {
 
   // macOS (and any other POSIX): a real socket file. Kept in the state
   // directory — the place already reserved for what this framework writes.
-  return path.join(o.stateDir || paths.stateDir() || os.tmpdir(), `ctxroute-${print}.sock`);
+  return path.join(served, `ctxroute-${print}.sock`);
 }
 
 /**

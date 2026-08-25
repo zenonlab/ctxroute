@@ -202,6 +202,13 @@ function modelDocSeen(config, decls, script) {
     turn += step.turns || 0;
     const inject = [];
     const blocked = [];
+    // ⚠️ THE ALTERNATION IS ABOUT THE ACTION (2026-08-24): a gesture is refused as soon
+    //    as ONE document refuses, so "a refusal is never followed by a refusal" can only
+    //    be asked over the whole set biting this gesture. Asked per document, two
+    //    enforcing docs in ANTIPHASE refuse every action for ever while each of them,
+    //    read alone, obeys the rule — measured in production that day.
+    const previouslyDenied = step.matched.some((doc) => gate.enforceForDoc(config, decls[doc], undefined)
+      && crdt.isDenied(s, doc));
     for (const doc of step.matched) {
       const mode = gate.modeForDoc(config, decls[doc], undefined);
       const unit = gate.driftUnitForDoc(config, decls[doc], undefined);
@@ -209,7 +216,7 @@ function modelDocSeen(config, decls, script) {
       const since = unit === 'turn' ? crdt.driftTurns(s, doc, turn) : crdt.drift(s, doc);
       const injects = lib.shouldInjectFor(mode, crdt.isSeen(s, doc), since, threshold);
       if (injects) inject.push(doc);
-      if (injects && gate.enforceForDoc(config, decls[doc], undefined) && !crdt.isDenied(s, doc)) blocked.push(doc);
+      if (injects && gate.enforceForDoc(config, decls[doc], undefined) && !previouslyDenied) blocked.push(doc);
     }
     trace.push({
       inject: [...inject].sort(),

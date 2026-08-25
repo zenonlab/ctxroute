@@ -9,7 +9,7 @@ invariants live in `service-units.md` and `http-lane.md`; here is the full measu
 
 ## THE QUESTION
 
-On Windows the daemon (`src/hooks/http-server.js`) is supervised by a scheduled task
+On Windows the daemon (`src/hooks/http-daemon.js`, the bootstrap that arms the freshness recorder before `http-server.js` is even compiled — see `stale-code.md`) is supervised by a scheduled task
 (`LogonType: Interactive`, `RunLevel: Limited`, LogonTrigger + EventTrigger restarting it on a
 non-zero result). It exits often BY DESIGN — `watchOwnCode` makes it leave the moment the repo's
 code changes, so it can never serve stale logic. On Linux systemd socket activation makes that free
@@ -212,7 +212,7 @@ Code's `type:"http"` handler takes a `url`, and a pipe is not an `http://` URL (
 | Settings | `ExecutionTimeLimit PT0S` · `DisallowStartIfOnBatteries False` · `StopIfGoingOnBatteries False` · `MultipleInstances IgnoreNew` |
 | Triggers | LogonTrigger + EventTrigger (Operational, `EventID=201` ∧ `TaskName='\ctxroute-http'` ∧ `ResultCode != '0'`) |
 | `LastTaskResult` | `267009` = `0x00041301` = `SCHED_S_TASK_RUNNING` (the task is up, not a failure code) |
-| Daemon process | one `node.exe` running `<repo>\src\hooks\http-server.js`, **SessionId 1** |
+| Daemon process | one `node.exe` running `<repo>\src\hooks\http-daemon.js`, **SessionId 1** |
 | Transports, both answering | `\\.\pipe\ctxroute-<12 hex>` → CONNECT OK · `127.0.0.1:8787` → LISTENING, CONNECT OK |
 | Restart churn | 38 start/complete pairs in 12 h 56, every result `0x8007005A` = exit 90 |
 | Node | `v22.15.1`; `os.homedir()` = the real interactive home, `USERPROFILE` identical |

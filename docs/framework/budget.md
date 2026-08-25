@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"budget.js","scope":["ctxroute"]},{"pattern":"budget.test.js","scope":["ctxroute"]},{"pattern":"budget.property.test.js","scope":["ctxroute"]}]
 mode: smart
+threshold: 30
 ---
 # budget.js — DELIVER EVERYTHING, never judge size (NO undeliverability left)
 ⚠️ **THREE PATHS.** It fits in the frame ⇒ emit as-is (zero envelope, zero loop). It overflows ⇒ **split into chunks** spread over N frames. It overflows AGAIN ⇒ **QUEUE** (`emission-core.js`, prefix `remainder-`) for the next action. ⚠️ The queue and the splitting no longer live in `pretool-core.js` (moved 2026-08-05, ⑯): this PURE module is called by the EMISSION LAYER, which every emitter goes through — `orderSegments`/`baseId` (RFC 6455 order + per-document dedup) are here, the I/O is over there. Undeliverability is therefore impossible **without reservation** since 2026-08-05: any size gets through, over several actions if needed. `--frames N` is no longer a ceiling, only a **THROUGHPUT**. NEVER reintroduce a size ceiling nor a "too big" — that would make a doc's author carry a TRANSPORT defect.

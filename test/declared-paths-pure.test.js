@@ -30,13 +30,23 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-// ⚠️ DIRECT import of the mutated module — never through a re-export: the
-//    perTest coverage mapping misses tests reached through one, and the
-//    mutants would be credited to somebody else's suite.
-const declared = require('../src/declared-paths-pure.js');
+// ⚠️ DIRECT **STATIC ESM** import of the mutated module — never through a
+//    re-export, and 🛑 NEVER through `createRequire`. Two distinct reasons,
+//    both silent when violated:
+//      ① a re-export breaks the perTest coverage mapping, and the mutants get
+//         credited to somebody else's suite;
+//      ② a `createRequire(...)` edge does not exist in the ESM module graph,
+//         which is the ONLY graph `vitest --related` walks. The Stryker vitest
+//         runner narrows the run to the suites RELATED to the mutated files,
+//         so a module reached that way has NO related suite at all: measured
+//         2026-08-25, `stryker run --mutate src/declared-paths-pure.js` died
+//         on `DryRunExecutor No tests were found` / `ConfigError: No tests
+//         were executed`, with 198 mutants instrumented and ZERO tests run,
+//         while the very same config run under plain vitest listed 1,280
+//         green tests. The module shipped WITHOUT its mutation proof and
+//         nothing was red. `src/declared-paths-pure.js` is CommonJS, so the
+//         default export IS its `module.exports`.
+import declared from '../src/declared-paths-pure.js';
 
 // ⚠️ A THUNK, evaluated INSIDE each test: a fixture built at module level is a
 //    STATIC mutant, covered by no test, hence a false survivor (42 measured on
@@ -537,4 +547,128 @@ test('the platform decides absoluteness HERE TOO — the injected predicate is r
     declared.conventionalConfigParts(conventional({ env: { XDG_CONFIG_HOME: 'C:\\cfg' }, isAbsolute: () => true })),
     ['C:\\cfg', 'ctxroute', 'ctxroute-config.json']
   );
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// THE DAEMON'S LISTENING ADDRESS — ONE fact, resolved WHOLE (2026-08-25)
+// ════════════════════════════════════════════════════════════════════════
+//
+// 🔑 The same four facts as the directories above, on the address the daemon
+//    BINDS and the wiring POSTs to — and each one fails SILENTLY, on a lane that
+//    has NO fallback, so the loss is EVERY frame of EVERY action.
+// 🛑 PLUS ONE THIS SUITE EXISTS TO KEEP: the two halves are resolved in ONE
+//    call. A host fetched apart from its port is two settings for one fact, and
+//    that is exactly the divergence the grouped key removes.
+
+/** The declaration under test, with an INJECTED reader — never a file. */
+const endpoint = (o = {}) => declared.resolveDeclaredHttp({
+  envPort: o.envPort,
+  readConfiguredHttp: () => o.declared,
+});
+
+test('nothing declared resolves the historical address, byte for byte', () => {
+  // ⚠️ A default that moved would send the daemon and the wiring somewhere
+  //    else on upgrade, with nothing red — zero default change is the acceptance
+  //    criterion, not a preference. Written out, never read back from the module.
+  assert.deepEqual(endpoint(), { host: '127.0.0.1', port: 8787 });
+  assert.deepEqual(endpoint({ declared: null }), { host: '127.0.0.1', port: 8787 });
+  assert.deepEqual(endpoint({ declared: {} }), { host: '127.0.0.1', port: 8787 });
+  assert.deepEqual(endpoint({ envPort: '' }), { host: '127.0.0.1', port: 8787 },
+    'An EMPTY variable is an ABSENT variable: a shell exporting CTXROUTE_HTTP_PORT= set nothing.');
+  // The exported defaults are the SAME fact, and a consumer reads them.
+  assert.equal(declared.DEFAULT_HTTP_HOST, '127.0.0.1');
+  assert.equal(declared.DEFAULT_HTTP_PORT, 8787);
+});
+
+test('a declared address is HONOURED — both halves, and each one alone', () => {
+  // ⚠️ "Accepted and inert" is this repository's oldest defect class: a key the
+  //    schema takes and the engine ignores.
+  assert.deepEqual(endpoint({ declared: { host: 'declared.invalid', port: 41999 } }),
+    { host: 'declared.invalid', port: 41999 });
+  // 🛑 EACH HALF IS OPTIONAL ON ITS OWN, and this is what proves the halves are
+  //    not cross-wired: declaring one must leave the OTHER historical.
+  assert.deepEqual(endpoint({ declared: { host: 'declared.invalid' } }),
+    { host: 'declared.invalid', port: 8787 });
+  assert.deepEqual(endpoint({ declared: { port: 41999 } }),
+    { host: '127.0.0.1', port: 41999 });
+  assert.deepEqual(endpoint({ declared: { host: null, port: null } }),
+    { host: '127.0.0.1', port: 8787 });
+});
+
+test('the environment variable BEATS the declared port, and touches the host NOT AT ALL', () => {
+  // 🛑 IT MUST KEEP WINNING: the systemd unit declares it, the Windows installer
+  //    reads it back, and every suite that forks a daemon on a free port sets it.
+  assert.deepEqual(endpoint({ envPort: '41999', declared: { host: 'declared.invalid', port: 8787 } }),
+    { host: 'declared.invalid', port: 41999 });
+  // ⚠️ ANTI-VACUITY: the config reader is really CONSULTED even when the
+  //    variable wins — the host has no environment escape, so the config is the
+  //    only place it can come from and skipping that read would silence it.
+  assert.deepEqual(endpoint({ envPort: '41999', declared: { host: 'declared.invalid' } }),
+    { host: 'declared.invalid', port: 41999 });
+});
+
+test('an unusable half is a NAMED REFUSAL naming the key and the value, never a quiet fallback', () => {
+  // 🛑 A quiet fallback IS the defect: an operator who declared an address
+  //    ASKED for that address, and a daemon listening elsewhere while the wiring
+  //    knocks at the declared one is the two-places divergence this key removes.
+  assert.throws(() => endpoint({ declared: { port: 0 } }), /"http\.port"[\s\S]*received 0/);
+  assert.throws(() => endpoint({ declared: { port: 65536 } }), /"http\.port"[\s\S]*received 65536/);
+  assert.throws(() => endpoint({ declared: { port: 87.5 } }), /"http\.port"[\s\S]*received 87\.5/);
+  assert.throws(() => endpoint({ declared: { port: '8787' } }), /"http\.port"[\s\S]*received "8787"/);
+  assert.throws(() => endpoint({ declared: { host: '' } }), /"http\.host"[\s\S]*received ""/);
+  assert.throws(() => endpoint({ declared: { host: 8787 } }), /"http\.host"[\s\S]*received 8787/);
+  assert.throws(() => endpoint({ envPort: 'eight' }), /"CTXROUTE_HTTP_PORT"[\s\S]*received "eight"/);
+  assert.throws(() => endpoint({ envPort: '0' }), /"CTXROUTE_HTTP_PORT"[\s\S]*received "0"/);
+  // ⚠️ THE KEY ITSELF must be an object: a scalar or an array declares no
+  //    address at all, and reading `.host` off it would silently resolve the
+  //    historical default while the operator believes they moved the daemon.
+  assert.throws(() => endpoint({ declared: 8787 }), /"http"[\s\S]*received 8787/);
+  assert.throws(() => endpoint({ declared: '127.0.0.1:8787' }), /"http"[\s\S]*received "127\.0\.0\.1:8787"/);
+  assert.throws(() => endpoint({ declared: ['127.0.0.1', 8787] }), /"http"[\s\S]*received \["127\.0\.0\.1",8787\]/);
+  // ⚠️ THE RANGE ADMITS ITS OWN EXTREMITIES — refusing 1 or 65535 would refuse
+  //    a healthy endpoint the operator is entitled to choose.
+  assert.equal(endpoint({ declared: { port: 1 } }).port, 1);
+  assert.equal(endpoint({ declared: { port: 65535 } }).port, 65535);
+});
+
+test('EVERY endpoint refusal SAYS WHAT A USABLE VALUE IS — the requirement is contract, never decoration', () => {
+  // 🛑 `refuseEndpoint` takes the requirement as an ARGUMENT, so a caller that
+  //    passed an EMPTY one would still produce a perfectly well-formed refusal:
+  //    it would name the source and the value, and leave the operator with no
+  //    way to know what to write instead. The whole-message cell below pins ONE
+  //    of the four call sites; these three pin the others, each asserted IN
+  //    PLACE (right after the value, right before the consequence) so a
+  //    requirement that merely EXISTS somewhere in the sentence does not pass.
+  // ⚠️ COPIED from the source, never reconstructed from memory and never read
+  //    back out of the module (that would demonstrate `x === x`).
+  const around = (fn, expected) => {
+    try {
+      fn();
+      assert.fail('an unusable listening address must be refused');
+    } catch (e) {
+      assert.ok(e.message.includes(expected), `missing requirement: ${e.message}`);
+    }
+  };
+  around(() => endpoint({ declared: { host: '' } }),
+    'received "". It must be a non-empty string. Nothing is resolved at all:');
+  around(() => endpoint({ envPort: 'eight' }),
+    'received "eight". It must be an integer in 1..65535. Nothing is resolved at all:');
+  around(() => endpoint({ declared: 8787 }),
+    'received 8787. It must be an object carrying `host` and `port`. Nothing is resolved at all:');
+});
+
+test('the endpoint refusal, asserted WHOLE and HARDCODED (a refusal detail is contract)', () => {
+  // ⚠️ COPIED from the source, never reconstructed from memory and never read
+  //    back out of the module (that would demonstrate `x === x`).
+  const expected = 'ctxroute REFUSED: "http.port" does not declare a usable listening address — received 0. '
+    + 'It must be an integer in 1..65535. Nothing is resolved at all: the daemon BINDS this address and '
+    + 'the harness wiring POSTs to it, so guessing here would wire the fleet where nobody listens — a '
+    + 'refused connection is instant and SILENT on that lane, which has NO fallback. Fix "http.port", or '
+    + 'remove it to keep the default address.';
+  try {
+    endpoint({ declared: { port: 0 } });
+    assert.fail('an unusable port must be refused');
+  } catch (e) {
+    assert.equal(e.message, expected);
+  }
 });

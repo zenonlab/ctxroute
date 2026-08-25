@@ -155,7 +155,7 @@ process.on('message', (m) => { if (m === 'stop') { srv.close(); process.exit(0);
 test('CLIENT LANE: a REFUSED connection is SAID once per session — and TOTAL silence when the authority answers',
   { timeout: 30000 }, async () => {
     const { env, tmp, stateDir } = makeEnv();
-    const address = endpoint({ root: path.join(tmp, 'refus'), stateDir: tmp });
+    const address = endpoint({ stateDir: tmp });
     try {
       // ── ① NOBODY OWNS THE ADDRESS: the kernel refuses, the hook says so. ──
       const r1 = run(env, { hook_event_name: 'UserPromptSubmit', session_id: 'sess-refus', prompt: 'x' },

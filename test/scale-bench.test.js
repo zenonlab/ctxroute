@@ -69,7 +69,11 @@
 //      it says nothing about behaviour AT or ABOVE eviction;
 //    ④ it measures the handler and the store, i.e. the part whose cost can
 //      depend on how much state is held. The socket adds a constant (measured
-//      elsewhere at 0.17 ms/request) and constants do not change a slope;
+//      elsewhere at 0.17 ms/request) and constants do not change a slope; SINCE
+//      2026-08-25 the cross-process LOCK is treated the same way and for the same
+//      reason — it is 99.9 % of a request, it is flat in the held state, and it is
+//      measured SEPARATELY by axis D. The real path still takes it on every timed
+//      call; only the clock starts inside the critical section;
 //    ⑤ a superlinear path SMALL ENOUGH to hide under the constant cost of one
 //      request would pass. The `/turn` track exists precisely to shrink that
 //      constant — it is where this bench has teeth. Cell ② is what says how
@@ -213,13 +217,78 @@ const vrai = createMemoryStore({ snapshotPath: null });
 // textbook shape of a cost that grows with the fleet instead of with the work.
 const miroir = new Map();
 let puits = 0;
-const store = !sabotage ? vrai : {
+const raw = !sabotage ? vrai : {
   loadState: (p, s) => vrai.loadState(p, s),
   saveState: (p, s, v) => { miroir.set(p + s, v); puits += JSON.stringify([...miroir]).length; return vrai.saveState(p, s, v); },
   purge: (k) => vrai.purge(k),
   size: () => vrai.size(),
   scopes: () => vrai.scopes(),
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE LOCK IS PRICED **OUTSIDE** THE TIMED REGION — 2026-08-25, and it is
+// "SHRINK THE CONSTANT", never "MOVE THE BAR". Read this before touching it.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 THE MEASUREMENT THAT FORCED IT, taken on this machine on 2026-08-25 with the
+//    three quantities isolated on the SAME store and the SAME address:
+//      · one whole \`handle('/turn')\`            **1,267,266 ns**
+//      · \`withLock\` alone, EMPTY critical section  **1,413,648 ns**
+//      · \`turnCore.bump\` alone, no lock                 **1,254 ns**
+//    ⇒ the cross-process lock is **99.9 %** of what this cell used to time, and
+//    the work whose cost CAN depend on the held state is **0.1 %** of it. A
+//    defect would have to multiply the store's work by ~1,000 before the WALL
+//    ratio moved at all — which is exactly what the run of 2026-08-25 printed:
+//    a store serialising its ENTIRE state on every write scored **1.15x** against
+//    the 1.67 bar, and cell ② reddened "certifying, not measuring". It was RIGHT.
+// 📐 AND WIDENING THE RANGE CANNOT SAVE IT, ARITHMETICALLY — the same fit the
+//    file already uses. Sabotaged readings 1,411,535 → 1,830,995 ns over
+//    384 → 3072 scopes give a ≈ 156 ns per scope against C ≈ 1.35 ms, i.e. the
+//    constant is worth **~8,600 scopes**. Solving (C + 4aH)/(C + aH) ≥ 1.67 needs
+//    a head mean of ~1,030 scopes, hence a top level of ~5,500 — **above the
+//    4096 durable ceiling**, where the LRU runs and the axis stops measuring held
+//    state. There is no legitimate range left; the only lever is the CONSTANT.
+// ✅ SO THE CONSTANT IS PRICED OUT, EXACTLY THE WAY THE SOCKET ALREADY IS. The
+//    header already states the doctrine for the socket: "the socket adds a
+//    constant (measured elsewhere at 0.17 ms/request) and constants do not change
+//    a slope" — it is measured SEPARATELY (the HTTP track), never inside the
+//    reading. The lock is the same kind of quantity, one floor down, and it too
+//    is measured separately: **axis D exists for nothing else**.
+// 🛑 WHAT IS **NOT** DONE HERE, AND IT IS THE WHOLE POINT: the real path is still
+//    executed, in full. Every timed call still goes through \`hs.handle\`, still
+//    takes the REAL cross-process lock at the REAL address, still writes through
+//    the real store. The lock is not removed, not stubbed, not shortened — the
+//    CLOCK simply starts inside the critical section instead of outside it.
+// 🛑 THE DECLARED BLIND SPOT, stated rather than discovered later: what is timed
+//    is every call into the STORE. A cost that grew with the held state WITHOUT
+//    touching the store would be invisible here. That is bounded by an invariant
+//    this repository already enforces elsewhere (\`only-store-resolve-opens-a-store\`
+//    — the state is reachable ONLY through a store), and \`scopes()\`/\`size()\` are
+//    wrapped too, so a handler that walked the state through them WOULD be seen.
+// ⚠️ THE WRAPPER IS THE OUTERMOST LAYER, so the sabotage's own work is INSIDE the
+//    timed region. Wrapping the other way round would time the healthy store and
+//    let the defect run for free — a criterion that cannot see its own sabotage.
+// ⚠️ IT IS APPLIED TO BOTH MODES IDENTICALLY. An instrument installed only on the
+//    sabotaged side would compare two different measurements and prove nothing.
+let storeNs = 0;
+const store = {
+  loadState: (p, s) => { const t = process.hrtime.bigint(); try { return raw.loadState(p, s); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  saveState: (p, s, v) => { const t = process.hrtime.bigint(); try { return raw.saveState(p, s, v); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  purge: (k) => { const t = process.hrtime.bigint(); try { return raw.purge(k); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  size: () => { const t = process.hrtime.bigint(); try { return raw.size(); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  scopes: () => { const t = process.hrtime.bigint(); try { return raw.scopes(); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+};
+
+// 🛑 THE INSTRUMENT'S OWN COST IS MEASURED, NOT ASSUMED — it is what says whether
+//    a reading is RESOLVABLE. Two \`hrtime.bigint\` calls bracket every store call,
+//    so a reading of the same order as this number would be measuring the clock.
+//    The cells assert a floor DERIVED from it; nothing is typed.
+function clockCost() {
+  const M = 20000;
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < M; i += 1) { const a = process.hrtime.bigint(); const b = process.hrtime.bigint(); if (b < a) throw new Error('the monotonic clock went backwards'); }
+  return Number(process.hrtime.bigint() - t0) / M;
+}
+const clockNs = clockCost();
 
 // ⚠️ The collaborators are exactly \`createServer\`'s defaults. They are named
 //    here because \`handle\` takes them as an argument — the shell injects them so
@@ -258,16 +327,28 @@ function pretoolCall(i, n) {
 //    sub-batch therefore starts from the same state instead of inheriting the
 //    garbage of the previous one. That is a fact obtained from the runtime, not
 //    a delay waited out.
+// ⚠️ TWO QUANTITIES PER SUB-BATCH SINCE 2026-08-25, and only ONE of them gates.
+//    · \`store\` — the nanoseconds spent INSIDE the store, i.e. the work whose cost
+//      can depend on the held state. **This is the verdict.**
+//    · \`wall\` — the whole \`handle()\` call, lock included. It gates NOTHING; it is
+//      PRINTED so an operator still sees what a request really costs, and so the
+//      ratio between the two (the price of the lock) stays visible on green runs
+//      instead of being rediscovered the day a cell stops discriminating.
 function mediane(appel, parLot) {
-  const lots = [];
+  const lotsStore = [];
+  const lotsMur = [];
   for (let s = 0; s < SOUS_LOTS; s += 1) {
     global.gc();
+    const a0 = storeNs;
     const t0 = process.hrtime.bigint();
     for (let i = 0; i < parLot; i += 1) appel(s * parLot + i);
-    lots.push(Number(process.hrtime.bigint() - t0) / parLot);
+    lotsMur.push(Number(process.hrtime.bigint() - t0) / parLot);
+    lotsStore.push((storeNs - a0) / parLot);
   }
-  lots.sort((a, b) => a - b);
-  return lots[(SOUS_LOTS - 1) / 2];
+  lotsStore.sort((a, b) => a - b);
+  lotsMur.sort((a, b) => a - b);
+  const m = (SOUS_LOTS - 1) / 2;
+  return { store: lotsStore[m], wall: lotsMur[m] };
 }
 
 // Warm-up on its own scopes, so the first LEVEL is measured on a hot runtime.
@@ -284,8 +365,8 @@ for (const cible of LEVELS) {
   // POPULATE: one call per NEW scope, so the store really holds \`cible\` of them.
   while (created < cible) { turnCall(created); created += 1; }
 
-  const turnNs = mediane((i) => turnCall(i % created), TURN_PAR_LOT);
-  const pretoolNs = mediane((i) => pretoolCall(i % created, i), PRETOOL_PAR_LOT);
+  const turn = mediane((i) => turnCall(i % created), TURN_PAR_LOT);
+  const pretool = mediane((i) => pretoolCall(i % created, i), PRETOOL_PAR_LOT);
 
   global.gc(); global.gc();
   const heap = process.memoryUsage().heapUsed;
@@ -293,7 +374,17 @@ for (const cible of LEVELS) {
   //    observable that can say whether the ceiling was actually crossed at this
   //    level, or whether the bench merely believes it was.
   const durablesIci = store.scopes().filter((k) => !k.startsWith('plan-')).length;
-  readings.push({ scopes: created, durables: durablesIci, turnNs, pretoolNs, retenu: heap - heapAvant });
+  readings.push({
+    scopes: created,
+    durables: durablesIci,
+    // THE VERDICT: store work per request, the lock priced outside.
+    turnNs: turn.store,
+    pretoolNs: pretool.store,
+    // PRINTED ONLY: the whole call, lock included. Asserted on by NOTHING.
+    turnWallNs: turn.wall,
+    pretoolWallNs: pretool.wall,
+    retenu: heap - heapAvant,
+  });
   heapAvant = heap;
 }
 
@@ -323,7 +414,7 @@ srv.listen(0, '127.0.0.1', async () => {
     if (t.includes('CORPS-BENCH')) livres += 1;
   }
   const durables = store.scopes().filter((k) => !k.startsWith('plan-')).length;
-  console.log(JSON.stringify({ readings, calls, delivered, servis, livres, durables, plafond: PLAFOND, taille: store.size(), puits }));
+  console.log(JSON.stringify({ readings, calls, delivered, servis, livres, durables, plafond: PLAFOND, taille: store.size(), puits, clockNs }));
   srv.close();
   process.exit(0);
 });
@@ -379,46 +470,54 @@ srv.listen(0, '127.0.0.1', async () => {
 //    `BAR_CONC` block; the bar itself was never touched.
 const CONC_LEVELS = [64, 128, 256, 512, 1024];
 const CONC_SCOPES = 128;      // FROZEN across levels: axis A must not leak in
-const CONC_WARMUP = 2000;
+const CONC_WARMUP = 512;
 const CONC_HTTP = 32;         // real round trips, ALL IN FLIGHT AT ONCE
 
 // ═══════════════════════════════════════════════════════════════════════
-// THE SUB-BATCH IS SIZED IN **TIME**, NOT IN CALLS — and it is a FIX.
+// THE SUB-BATCH — WHY IT IS A FIXED NUMBER OF CALLS AGAIN (2026-08-25).
 // ═══════════════════════════════════════════════════════════════════════
-// 🔴 MEASURED 2026-08-21: with 5 fixed sub-batches of 160 calls, the noise figure
-//    read **1.71 on one run and 3.35 on the next**, same code, same machine. That
-//    is not a machine changing character between two runs — it is a READING that
-//    a single scheduler event can dominate. A batch of 160 `/turn` calls lasts
-//    well under a millisecond, while the Windows scheduler quantum is ~15.6 ms:
-//    **one preemption did not perturb such a batch, it WAS the batch.** The cell
-//    was therefore flipping between "decides" and "cannot decide" on what else the
-//    workstation happened to be doing, and a cell that flips is a cell people stop
-//    reading and then disarm.
-// ✅ THE FIX MAKES THE ARTEFACT IMPOSSIBLE BY CONSTRUCTION, RATHER THAN RARER.
-//    ① Every timed sub-batch is sized so it lasts at least `PLANCHER_MS`, which is
-//       comfortably longer than one quantum ⇒ a single preemption is a BOUNDED
-//       fraction of the reading instead of all of it.
-//    ② The size is CALIBRATED AT RUNTIME, never typed: a pilot measures what one
-//       call actually costs HERE — on this machine, at this level, with or without
-//       the sabotage — and the batch is derived from it. Nothing about the cost of
-//       `handle()` is assumed, which is the whole doctrine: ask what KNOWS.
-//    ③ The pilot takes the **MINIMUM** of three passes. A preemption can only ADD
-//       time, never remove it, so the minimum is the least contaminated estimate.
-//       A mean would let the very noise we are sizing against shrink the batch.
-// 🔑 AND IT BOUNDS THE BENCH'S WALL COST BY DESIGN. A batch sized in CALLS gets
-//    ~20x more expensive at 1024 connections under sabotage; a batch sized in TIME
-//    costs `SOUS_LOTS × PLANCHER_MS` per level whatever the per-call price. The
-//    whole axis is therefore ~1 s per driver, and it cannot drift into the 30 s
-//    lane timeout when someone makes a level heavier.
-// ⚠️ `LOT_MAX` is a WALL, never a working value: it exists only so a pathologically
-//    cheap call cannot ask for an unbounded batch. If it ever binds, the sub-batch
-//    is shorter than the floor and cell ③ SAYS SO by name instead of quietly
-//    measuring scheduling again.
+// 🔴 IT WAS SIZED IN TIME FROM 2026-08-21, AND THAT WAS RIGHT FOR THE QUANTITY IT
+//    TIMED. Back then the reading was the WALL time of a batch of `handle()`
+//    calls: at 160 calls a batch lasted well under a millisecond against a
+//    ~15.6 ms Windows scheduler quantum, so ONE preemption was not a perturbation
+//    of the reading, it WAS the reading — the noise figure read 1.71 on one run
+//    and 3.35 on the next, same code, same machine. Sizing each batch to last at
+//    least 20 ms, with the size calibrated at runtime by a pilot, made that
+//    artefact impossible instead of rarer.
+// 🔑 THAT PREMISE NO LONGER HOLDS, AND THE FIX FOLLOWS THE PREMISE. Since
+//    2026-08-25 the verdict is taken on the STORE work, with the cross-process
+//    lock priced OUTSIDE the timed region (the reason, and the three measurements
+//    behind it, are in the axis A driver above). The timed window is therefore
+//    ~4 µs inside a ~1.3 ms call: **0.3 % of the wall time**. A scheduler event is
+//    now overwhelmingly likely to land in the 99.7 % that is NOT timed — and more
+//    so than that, because the untimed part is where the `mkdir`/`rmdir` syscalls
+//    are, i.e. where the thread actually yields. **Making the batch LONGER no
+//    longer buys protection; it only buys wall-clock cost.**
+// 📐 AND THE WALL-CLOCK COST IS WHY IT HAD TO CHANGE, NOT A PREFERENCE. With a
+//    call costing 1.3 ms of lock, `LOT_MIN = 200` forced every sub-batch to
+//    270 ms — thirteen times the floor it was meant to reach — and the pilot added
+//    1,500 more calls per level. **MEASURED: both axis B cells hit the 30 s lane
+//    timeout**, i.e. the axis stopped answering at all. Cost per level was
+//    9 × 270 ms + 2.0 s of pilot ≈ 4.4 s, times five levels, plus a 2,000-call
+//    warm-up: ~26 s before a single socket or round trip.
+// ✅ WHAT PROTECTS THE READING NOW, and it is three mechanisms, none of them a
+//    longer batch: ① the timed window is a tiny fraction of the wall time, so a
+//    preemption almost never lands inside it ② the reading is the MEDIAN of nine
+//    sub-batches, so a contaminated one is discarded, not averaged in ③ `nu`, the
+//    inter-quartile ratio of those nine, must stay under the bar or the run
+//    REFUSES BY NAME rather than deciding — unchanged, and it is what makes a
+//    saturated machine loud instead of wrong.
+// 🛑 THE ANTI-VACUITY MOVED WITH THE QUANTITY. "Is the batch longer than a
+//    quantum" was the right question for a wall reading and is meaningless for
+//    this one; the right question is "does the reading stand above the CLOCK that
+//    took it", and the floor is DERIVED from the instrument's own measured cost
+//    (`PLANCHER_RESOLUTION` × `clockNs`), never typed.
+// ⚠️ THE WARM-UP FELL WITH IT, FOR THE SAME REASON AND NO OTHER: 2,000 calls cost
+//    2.6 s of lock to warm a runtime that is hot after a few hundred. 512 is four
+//    full passes over the FROZEN scope pool, so the first level is still measured
+//    on a hot runtime and on a store that already holds its scopes.
 const CONC_SOUS_LOTS = 9;
-const CONC_FLOOR_MS = 20;  // > one Windows scheduler quantum (~15.6 ms)
-const CONC_PILOT_BATCH = 500;
-const CONC_LOT_MIN = 200;
-const CONC_LOT_MAX = 100000;
+const CONC_LOT = 128;   // calls per timed sub-batch — 1,152 samples per level
 
 const CONC_DRIVER = path.join(TMP, 'conc-driver.js');
 fs.writeFileSync(CONC_DRIVER, `
@@ -434,10 +533,7 @@ const { parseFrameArgs } = require(${src('lib-pure.js')});
 const LEVELS = ${JSON.stringify(CONC_LEVELS)};
 const SCOPES_FIXES = ${CONC_SCOPES};
 const SOUS_LOTS = ${CONC_SOUS_LOTS};
-const PLANCHER_NS = ${CONC_FLOOR_MS} * 1e6;
-const LOT_PILOTE = ${CONC_PILOT_BATCH};
-const LOT_MIN = ${CONC_LOT_MIN};
-const LOT_MAX = ${CONC_LOT_MAX};
+const LOT = ${CONC_LOT};
 const WARMUP = ${CONC_WARMUP};
 const HTTP_REQS = ${CONC_HTTP};
 
@@ -464,7 +560,7 @@ let puits = 0;
 //    It is not a strawman: keeping a peer registry and touching it per request
 //    is what most servers do, and doing it in the REQUEST path instead of at
 //    accept time is the entire defect.
-const store = !sabotage ? vrai : {
+const raw = !sabotage ? vrai : {
   loadState: (p, s) => vrai.loadState(p, s),
   saveState: (p, s, v) => {
     puits += JSON.stringify([...vivantes].map((k) => k.remotePort)).length;
@@ -474,6 +570,37 @@ const store = !sabotage ? vrai : {
   size: () => vrai.size(),
   scopes: () => vrai.scopes(),
 };
+
+// 🛑 THE LOCK IS PRICED OUTSIDE THE TIMED REGION, EXACTLY AS ON AXIS A, AND FOR
+//    THE SAME MEASURED REASON — a whole \`handle('/turn')\` costs 1,267,266 ns of
+//    which the cross-process lock is 1,413,648 ns on an EMPTY section and the
+//    store work is 1,254 ns. The sabotage here walks the connection set for a few
+//    tens of NANOSECONDS per client, so against that constant cell ④ read
+//    **1.24-1.28 against its 2.83 bar** and stayed red: the criterion had stopped
+//    discriminating. Widening cannot fix it either — the arithmetic in
+//    \`scale-bench.md\` puts the level needed at ~23,000 established sockets, past
+//    the ephemeral port range. **The constant was the only lever, and this is it.**
+// 🛑 THE REAL PATH IS UNCHANGED: every timed call still goes through the real
+//    handler, still takes the real lock at the real address. Only the clock moved.
+// ⚠️ OUTERMOST, so the sabotage's walk is INSIDE the timed region; installed on
+//    BOTH modes, so the pair compares the same measurement.
+let storeNs = 0;
+const store = {
+  loadState: (p, s) => { const t = process.hrtime.bigint(); try { return raw.loadState(p, s); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  saveState: (p, s, v) => { const t = process.hrtime.bigint(); try { return raw.saveState(p, s, v); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  purge: (k) => { const t = process.hrtime.bigint(); try { return raw.purge(k); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  size: () => { const t = process.hrtime.bigint(); try { return raw.size(); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+  scopes: () => { const t = process.hrtime.bigint(); try { return raw.scopes(); } finally { storeNs += Number(process.hrtime.bigint() - t); } },
+};
+
+// The instrument's OWN cost, MEASURED — the floor every reading must stand above.
+function clockCost() {
+  const M = 20000;
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < M; i += 1) { const a = process.hrtime.bigint(); const b = process.hrtime.bigint(); if (b < a) throw new Error('the monotonic clock went backwards'); }
+  return Number(process.hrtime.bigint() - t0) / M;
+}
+const clockNs = clockCost();
 
 const deps = { runFn: run, outputFn: output, parseFrames: parseFrameArgs, store, onAddressInUse: null };
 
@@ -485,31 +612,12 @@ function turnCall(i) {
   hs.handle(JSON.stringify({ prefix: 'turn-count-', scope: 'agent-' + (i % SCOPES_FIXES) }), '/turn', deps);
 }
 
-// HOW BIG ONE SUB-BATCH MUST BE, ASKED OF THE RUNTIME INSTEAD OF TYPED.
-// 🛑 THE MINIMUM OF THREE PILOT PASSES, NEVER THE MEAN. A preemption can only ADD
-//    time, never remove it, so the minimum is the least contaminated estimate of
-//    what one call really costs. A mean would let the very noise this sizing
-//    exists to defeat shrink the batch — the reading would then be short again,
-//    and short is exactly how the artefact was born.
-// ⚠️ It runs at EVERY level and in EVERY mode: the sabotage makes a call ~20x
-//    dearer at 1024 connections, and a batch calibrated once at level 64 would
-//    leave the cheap end long and the dear end short. Equal PROTECTION per level
-//    is the point, not an equal number of calls.
-function calibrer(appel) {
-  let parAppel = Infinity;
-  for (let k = 0; k < 3; k += 1) {
-    const t0 = process.hrtime.bigint();
-    for (let i = 0; i < LOT_PILOTE; i += 1) appel(i);
-    const dt = Number(process.hrtime.bigint() - t0) / LOT_PILOTE;
-    if (dt < parAppel) parAppel = dt;
-  }
-  const vise = Math.ceil(PLANCHER_NS / Math.max(parAppel, 1));
-  return Math.min(LOT_MAX, Math.max(LOT_MIN, vise));
-}
-
-// ONE READING = THE MEDIAN OF NINE EQUAL SUB-BATCHES, each longer than a
-// scheduler quantum by construction. A collector pause or a preemption lands in
-// one sub-batch, never in five, so the median discards what a mean would carry.
+// ONE READING = THE MEDIAN OF NINE EQUAL SUB-BATCHES of LOT calls each. A
+// collector pause or a preemption lands in one sub-batch, never in five, so the
+// median discards what a mean would carry — and since 2026-08-25 the timed
+// window is ~0.3 % of each call's wall time, so such an event overwhelmingly
+// lands OUTSIDE it in the first place. The reasoning, and the 30 s timeout that
+// forced it, are in the sizing block above.
 // 🔑 TWO NOISE FIGURES, AND ONLY ONE OF THEM GATES — read this before touching
 //    either, because the first version got it wrong and the cell flipped between
 //    runs because of it.
@@ -524,19 +632,24 @@ function calibrer(appel) {
 //      genuinely loaded".
 function lots(appel, parLot) {
   const t = [];
+  const mur = [];
   for (let s = 0; s < SOUS_LOTS; s += 1) {
     global.gc();
+    const a0 = storeNs;
     const t0 = process.hrtime.bigint();
     for (let i = 0; i < parLot; i += 1) appel(s * parLot + i);
-    t.push(Number(process.hrtime.bigint() - t0) / parLot);
+    mur.push(Number(process.hrtime.bigint() - t0) / parLot);
+    t.push((storeNs - a0) / parLot);
   }
   t.sort((a, b) => a - b);
+  mur.sort((a, b) => a - b);
   const q = (SOUS_LOTS - 1) / 4;
   return {
     med: t[(SOUS_LOTS - 1) / 2],
     nu: t[SOUS_LOTS - 1 - q] / t[q],
     spread: t[SOUS_LOTS - 1] / t[0],
-    lotNs: t[(SOUS_LOTS - 1) / 2] * parLot,
+    // PRINTED ONLY: the whole call, lock included. Asserted on by NOTHING.
+    murNs: mur[(SOUS_LOTS - 1) / 2],
   };
 }
 
@@ -610,15 +723,13 @@ srv.listen(0, '127.0.0.1', async () => {
       await attendre(jusqua);
     }
 
-    // 🛑 CALIBRATE FIRST, AT THIS LEVEL, IN THIS MODE. The pilot is UNTIMED for
-    //    the verdict — it only decides how long a timed sub-batch must be.
-    const lot = calibrer(turnCall);
+    const lot = LOT;
     const r = lots(turnCall, lot);
     global.gc(); global.gc();
     const heap = process.memoryUsage().heapUsed;
     readings.push({
       conns: cible, seen: vivantes.size, turnNs: r.med,
-      nu: r.nu, spread: r.spread, lot: lot, lotNs: r.lotNs,
+      nu: r.nu, spread: r.spread, lot: lot, murNs: r.murNs,
       retenu: heap - heapAvant,
     });
     heapAvant = heap;
@@ -671,7 +782,7 @@ srv.listen(0, '127.0.0.1', async () => {
 
   console.log(JSON.stringify({
     readings, calls, servis, livres, volNs, puits, portees,
-    tenues,
+    tenues, clockNs,
   }));
   for (const c of clients) c.destroy();
   srv.close();
@@ -753,6 +864,23 @@ const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 //    √(0.89 × 3.13) = 1.67 — the geometric mean, the only sense in which a
 //    MULTIPLICATIVE threshold sits equally far from both: healthy has 1.88x of
 //    headroom below, sabotaged 1.87x above.
+// 📐 RE-CONFRONTED 2026-08-25, ON A REDEFINED QUANTITY, AND THE BAR DID NOT MOVE —
+//    which is the whole reason this block is worth reading. The verdict is now
+//    taken on the STORE work with the lock priced outside (see the driver above),
+//    so the two ratios had to be re-measured rather than inherited:
+//      HEALTHY   turnRatio = 0.83 / 0.91   (flat)
+//      SABOTAGED turnRatio = 3.10 / 3.30   (the same untouched sabotage)
+//    √(0.91 × 3.10) = 1.68, √(0.83 × 3.30) = 1.66 — the geometric mean of the NEW
+//    pair lands on 1.67 to within a percent. **The threshold was re-derived and
+//    came back to the same number**; nothing here was tuned to fit. Clearances:
+//    healthy 1.8-2.0x of headroom below, sabotaged 1.86-1.98x above.
+// 🔴 AND THE READING THAT FORCED THE REDEFINITION, kept so nobody re-lives it:
+//    on 2026-08-25 the cell was GREEN and its negative check FAILED — the same
+//    sabotage scored **1.15x** against this bar, "certifying, not measuring". The
+//    cause was not the range and not the bar: the cross-process lock was 99.9 % of
+//    the timed quantity. Three isolated measurements, one whole `handle('/turn')`
+//    1,267,266 ns · `withLock` on an EMPTY section 1,413,648 ns · `turnCore.bump`
+//    alone 1,254 ns.
 // 🔴 WHY IT MOVED DOWN FROM 3: at 3 the sabotaged store cleared the bar by 4 %,
 //    and at the previous range it scored 2.85 and the gate CERTIFIED the defect.
 //    Sensitivity was bought back by shrinking the constant (range doubled) and the
@@ -771,6 +899,23 @@ const MARGE = 1.67;
 //    memory track on noise alone — a threshold moved by an argument that never
 //    applied to it.
 const MARGE_MEM = 3;
+
+// ═══════════════════════════════════════════════════════════════════════
+// A READING MUST BE RESOLVABLE — the anti-vacuity the new timed region needs.
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 SINCE 2026-08-25 the verdict is taken on the STORE work, which is ~1 µs per
+//    request instead of ~1.3 ms. That buys the sensitivity back, and it opens ONE
+//    new way to measure nothing: a reading of the same order as the CLOCK itself.
+//    So the driver MEASURES the cost of its own instrument (two `hrtime.bigint`
+//    calls) and every cell requires the smallest reading to stand this many times
+//    above it. 🛑 It is a MULTIPLE of a measured quantity, never a nanosecond
+//    figure — a typed floor would be this machine's number and would travel
+//    nowhere, which is the one thing this file refuses everywhere else.
+// 📐 Ten, because a reading ten times the bracket cost carries at most 10 % of
+//    instrument in it, i.e. less than the 2 % of margin that already decided this
+//    file to widen its samples. Raise it if a run ever lands near it; do NOT
+//    lower it to make a cell pass.
+const PLANCHER_RESOLUTION = 10;
 
 const ratio = (xs) => mean(xs.slice(-2)) / mean(xs.slice(0, 2));
 const round = (x) => Math.round(x);
@@ -1253,8 +1398,15 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
     levels: scopes,
     turnNs: turn.map(round),
     turnRatio: Number(rTurn.toFixed(2)),
-    pretoolUs: pretool.map((p) => round(p / 1000)),
+    pretoolNs: pretool.map(round),
     pretoolRatio: Number(rGate.toFixed(2)),
+    // PRINTED, ASSERTED ON BY NOTHING — the whole call, lock included. The gap
+    // between these and the numbers above IS the price of the cross-process
+    // lock, and keeping it visible on a GREEN run is what stops the next reader
+    // rediscovering it the day a cell stops discriminating.
+    turnWallUs: out.readings.map((r) => round(r.turnWallNs / 1000)),
+    pretoolWallUs: out.readings.map((r) => round(r.pretoolWallNs / 1000)),
+    clockNs: Number(out.clockNs.toFixed(1)),
     bytesPerScope: perScope.map(round),
     memRatio: Number(rMem.toFixed(2)),
     marge: MARGE,
@@ -1286,8 +1438,15 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
     'not one request produced a document: a MUTE engine measures the cost of doing nothing, and it is flat by definition');
   assert.equal(out.servis, 100, `the real socket served ${out.servis}/100 round trips — the benched handler is not the served one`);
   assert.ok(out.livres >= 1, 'the real socket delivered nothing: what was benchmarked is not what a client gets');
+  // 🛑 THE READING MUST STAND ABOVE THE CLOCK THAT TOOK IT. Since the verdict
+  //    moved onto the store work, a reading of the same order as the instrument
+  //    would be measuring `hrtime.bigint` and would be flat by construction —
+  //    the newest way this cell could measure nothing.
+  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns — `
+    + `under ${PLANCHER_RESOLUTION}x that, this cell is timing its own instrument, not the store`);
 
-  const shown = out.readings.map((r) => `${r.scopes}:${round(r.turnNs)}ns/${round(r.pretoolNs / 1000)}us`).join(' → ');
+  const shown = out.readings.map((r) => `${r.scopes}:${round(r.turnNs)}ns/${round(r.pretoolNs)}ns`).join(' → ');
 
   // THE VERDICT — ratios only. Never a millisecond, never a byte total.
   assert.ok(rTurn < MARGE,
@@ -1327,12 +1486,16 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
     levels: out.readings.map((r) => r.scopes),
     turnNs: turn.map(round),
     turnRatio: Number(rTurn.toFixed(2)),
+    turnWallUs: out.readings.map((r) => round(r.turnWallNs / 1000)),
+    clockNs: Number(out.clockNs.toFixed(1)),
     marge: MARGE,
   })}`);
 
   assert.equal(out.readings.length, 4, 'the sabotaged driver must have produced four readings too');
   assert.ok(out.puits > 0, 'the sabotage did no work at all — this cell would then prove nothing');
   assert.ok(out.calls >= 4000, `only ${out.calls} requests were served by the sabotaged driver`);
+  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
 
   // ⚠️ EXACTLY the assertion of cell ①, inverted, and sharing the same MARGE
   //    literally: weakening the margin up there turns THIS cell red in the same
@@ -1361,7 +1524,7 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    worst level, never by the mean of the levels.
   const nu = Math.max(...out.readings.map((r) => r.nu));
   const spread = Math.max(...out.readings.map((r) => r.spread));
-  const lotMs = Math.min(...out.readings.map((r) => r.lotNs / 1e6));
+  const wallUs = out.readings.map((r) => round(r.murNs / 1000));
   const total = out.readings.reduce((a, r) => a + r.retenu, 0);
 
   // 🛑 PRINTED BEFORE THE ASSERTIONS, ON EVERY PATH — success included. The bar
@@ -1377,12 +1540,14 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
     // loaded", and a reader who only sees one of them cannot tell them apart.
     jitter: Number(nu.toFixed(2)),
     spread: Number(spread.toFixed(2)),
-    // The calibration, exposed: how many calls one timed sub-batch ended up
-    // holding, and how long the shortest of them lasted. A batch that has drifted
-    // under the floor is the artefact of 2026-08-21 coming back, and it must be
-    // visible on a GREEN run, not discovered when the cell starts flipping.
+    // The sampling, exposed: how many calls one timed sub-batch holds. A change
+    // here changes how much of the machine's jitter the median can discard, and
+    // it must be visible on a GREEN run rather than discovered when a cell flips.
     batchCalls: out.readings.map((r) => r.lot),
-    batchMsMin: Number(lotMs.toFixed(1)),
+    // PRINTED, ASSERTED ON BY NOTHING — the whole call, lock included. The gap
+    // between this and `turnNs` IS the price of the cross-process lock.
+    wallUs,
+    clockNs: Number(out.clockNs.toFixed(1)),
     bar: Number(BAR_CONC.toFixed(2)),
     bytesPerConn: perConn.map(round),
     memRatio: Number(rMem.toFixed(2)),
@@ -1409,11 +1574,10 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    conflation the header exists to forbid.
   assert.equal(out.portees, CONC_SCOPES,
     `the store holds ${out.portees} durable scopes instead of ${CONC_SCOPES}: the held state MOVED, so this is axis A wearing axis B's name`);
-  // ⚠️ THE FLOOR IS DERIVED, NEVER TYPED: the batch size is calibrated at runtime,
-  //    so the only number that can be asserted in advance is the SMALLEST the
-  //    calibration is allowed to return. Pilot passes count too — they are real
-  //    requests through the real handler.
-  assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * (3 * CONC_PILOT_BATCH + CONC_SOUS_LOTS * CONC_LOT_MIN),
+  // ⚠️ THE FLOOR IS DERIVED FROM THE SAMPLING, NEVER TYPED: warm-up plus nine
+  //    sub-batches of LOT calls at every level, all of them real requests through
+  //    the real handler. A driver that served fewer never ran the load it claims.
+  assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * CONC_SOUS_LOTS * CONC_LOT,
     `only ${out.calls} requests were served; this cell is not exercising anything`);
   assert.equal(out.servis, CONC_HTTP,
     `the real socket served ${out.servis}/${CONC_HTTP} in-flight round trips under full load — the benched handler is not the served one`);
@@ -1422,17 +1586,19 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
 
   const shown = out.readings.map((r) => `${r.conns}:${round(r.turnNs)}ns`).join(' → ');
 
-  // 🛑 THE READING MUST BE LONGER THAN A SCHEDULER QUANTUM — CHECKED, NOT HOPED.
-  //    This is the 2026-08-21 artefact wired shut: at 160 calls a sub-batch lasted
-  //    well under a millisecond against a ~15.6 ms quantum, so ONE preemption was
-  //    the whole reading and the noise figure swung 1.71 → 3.35 between two runs
-  //    of the same code. The batch is now calibrated in TIME; if the calibration
-  //    ever hits its ceiling and comes back short, that must be a NAMED failure on
-  //    the spot, never a cell that quietly starts flipping again months later.
-  assert.ok(lotMs >= CONC_FLOOR_MS / 2,
-    `the timed sub-batches came back at ${lotMs.toFixed(1)} ms, under half the ${CONC_FLOOR_MS} ms floor `
-    + `(batches ${out.readings.map((r) => r.lot).join(',')} calls, ceiling ${CONC_LOT_MAX}). `
-    + 'A reading shorter than a scheduler quantum measures preemption, not the daemon — raise the ceiling, never the bar.');
+  // 🛑 THE READING MUST STAND ABOVE THE CLOCK THAT TOOK IT — CHECKED, NOT HOPED.
+  //    This replaces the "longer than a scheduler quantum" check of 2026-08-21,
+  //    and the swap is not a relaxation: that check was the right anti-vacuity for
+  //    a WALL reading, and it is meaningless for this one. Since the verdict moved
+  //    onto the store work (the lock priced outside, see the sizing block), the new
+  //    way to measure nothing is a reading of the same order as `hrtime.bigint`
+  //    itself — flat by construction, and green for the worst possible reason.
+  //    The floor is a MULTIPLE of the instrument's OWN measured cost, never a
+  //    nanosecond figure typed from this machine.
+  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns `
+    + `(batches ${out.readings.map((r) => r.lot).join(',')} calls). Under ${PLANCHER_RESOLUTION}x that, this cell is timing `
+    + 'its own instrument and not the daemon — raise the sample, never the bar.');
 
   // 🛑 DECIDABILITY BEFORE VERDICT. `nu` is the INTER-QUARTILE ratio of nine
   //    IDENTICAL sub-batches: the jitter of the MEDIAN, which is the statistic the
@@ -1442,10 +1608,10 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    central half can reach the bar on its own, no conclusion drawn against that
   //    bar means anything — so the run REFUSES, by name, instead of passing.
   assert.ok(nu < BAR_CONC,
-    `THIS RUN CANNOT DECIDE: the central half of ${CONC_SOUS_LOTS} identical sub-batches of ${lotMs.toFixed(1)} ms `
+    `THIS RUN CANNOT DECIDE: the central half of ${CONC_SOUS_LOTS} identical sub-batches of ${CONC_LOT} calls `
     + `spreads by ${nu.toFixed(2)}x (full max/min ${spread.toFixed(2)}x), which reaches the ${BAR_CONC.toFixed(2)}x bar on jitter alone. `
-    + 'After the 2026-08-21 sizing fix this no longer names background activity — a preemption is bounded by the batch length and an '
-    + 'outlier is discarded by the quartile — so it names a SATURATED machine. Free it and re-run. '
+    + 'This no longer names background activity — the timed window is a fraction of a percent of each call, so a preemption almost '
+    + 'never lands inside it, and an outlier is discarded by the quartile — so it names a SATURATED machine. Free it and re-run. '
     + '🛑 Do NOT widen the bar to make this pass — the bar is derived from the levels, and noise is never allowed to move it.');
 
   // THE VERDICT — ratios only. Never a millisecond, never a byte total.
@@ -1490,14 +1656,19 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
     connections: out.readings.map((r) => r.conns),
     turnNs: turn.map(round),
     turnRatio: Number(rTurn.toFixed(2)),
+    wallUs: out.readings.map((r) => round(r.murNs / 1000)),
+    clockNs: Number(out.clockNs.toFixed(1)),
     bar: Number(BAR_CONC.toFixed(2)),
   })}`);
 
   assert.deepEqual(out.readings.map((r) => r.conns), CONC_LEVELS,
     'the sabotaged driver must have reached the same connection levels');
   assert.ok(out.puits > 0, 'the sabotage walked nothing at all — this cell would then prove nothing');
-  assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * (3 * CONC_PILOT_BATCH + CONC_SOUS_LOTS * CONC_LOT_MIN),
+  assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * CONC_SOUS_LOTS * CONC_LOT,
     `only ${out.calls} requests were served by the sabotaged driver`);
+
+  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
 
   assert.ok(!(rTurn < BAR_CONC),
     `the criterion FAILED TO SEE a cost proportional to the number of connected clients (ratio ${rTurn.toFixed(2)}x over 8x the `

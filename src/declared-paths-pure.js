@@ -37,6 +37,152 @@
 const STATE_DIR_KEY = 'stateDir';
 const DOCS_DIR_KEY = 'docsDir';
 const SESSION_DOCS_DIR_KEY = 'sessionDocsDir';
+const HTTP_KEY = 'http';
+
+// ⚠️ The spelling of the environment escape, written ONCE: it travels into the
+//    refusal message, and a second spelling would name a variable nobody set.
+//    🛑 UNLIKE THE `CTXROUTE_*_DIR` VARIABLES, THIS ONE IS **NOT** TEST-RESERVED
+//    — `service/ctxroute-http.service` declares it and `service/install-windows.ps1`
+//    reads it back, so an operator legitimately owns it. What it shares with them
+//    is its TREATMENT: it wins over the config key, exactly as they do.
+// 🛑 THERE IS NO `CTXROUTE_HTTP_HOST`, AND THAT ASYMMETRY IS DECLARED, NEVER an
+//    omission: no supervisor ever names a host to us (systemd writes it in
+//    `ListenStream=`, launchd in `SockNodeName`), and an environment variable is
+//    INHERITED — one leak able to move this bind OFF the loopback would hand this
+//    fleet's private knowledge to the local network, on an endpoint that has no
+//    authentication and must never need one. The host is declared in the config,
+//    in writing, next to its port.
+const HTTP_PORT_ENV = 'CTXROUTE_HTTP_PORT';
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE DAEMON'S LISTENING ADDRESS — ONE fact, and it used to be FOUR halves
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 UNTIL 2026-08-25 ONE ADDRESS LIVED IN FOUR PLACES, TWO PER FIELD: a `HOST`
+//    constant and a `DEFAULT_PORT` constant in `src/hooks/http-server.js` (what
+//    the daemon BINDS) facing `transport.host` and `transport.port` in
+//    `wiring.json` (where the harness POSTs). Each pair agreed by luck, and
+//    NOTHING compared them — the class of the 2026-08-22 split brain, where one
+//    truth held in nineteen hand-edited copies failed in silence. Here the
+//    silence would be total: the http lane has NO fallback, so a wiring one
+//    number — or one name — away from the listener loses EVERY frame of EVERY
+//    action, instantly, with no error and no badge.
+// ⇒ The address follows `frames` exactly: DERIVE, NEVER ENUMERATE. It is a
+//    declared key of `ctxroute-config.json`, resolved HERE once, and both
+//    consumers read that single resolution.
+// 🛑 AND IT IS **ONE** KEY, NOT TWO. An `httpHost` beside an `httpPort` would be
+//    two settings for one fact — the same disease one level up, in the
+//    VOCABULARY this time. Grouped as `http: { host, port }`, an address can
+//    only ever be read WHOLE, in ONE call, by both consumers.
+// ⚠️ 127.0.0.1 and 8787 (the IANA dynamic range) are DEFAULTS rather than
+//    refusals on purpose: the daemon must start on a machine that declared
+//    nothing, and `frames`'s named refusal is admissible only because nothing
+//    at RUNTIME depends on it.
+const DEFAULT_HTTP_HOST = '127.0.0.1';
+const DEFAULT_HTTP_PORT = 8787;
+
+/**
+ * A NAMED REFUSAL about the listening address — it says WHERE the value came
+ * from, WHAT it was, what was required, and why nothing is resolved.
+ * 🛑 A quiet fallback to 127.0.0.1:8787 is the defect, not the mercy: an
+ *    operator who declared an address ASKED for that address, and a daemon
+ *    listening somewhere else while the wiring knocks at the declared one is
+ *    exactly the two-places divergence this key removes.
+ * @param {string} source the config key (or one of its halves), or the variable
+ * @param {unknown} value
+ * @param {string} requirement one sentence saying what a usable value is
+ * @returns {Error}
+ */
+function refuseEndpoint(source, value, requirement) {
+  return new Error(
+    `ctxroute REFUSED: "${source}" does not declare a usable listening address — received `
+    + `${JSON.stringify(value)}. ${requirement} Nothing is resolved at all: the daemon BINDS this `
+    + 'address and the harness wiring POSTs to it, so guessing here would wire the fleet where '
+    + 'nobody listens — a refused connection is instant and SILENT on that lane, which has NO '
+    + `fallback. Fix "${source}", or remove it to keep the default address.`
+  );
+}
+
+/** @param {unknown} n @returns {boolean} */
+function isPort(n) {
+  // ⚠️ `Number.isInteger` DOES NOT COERCE — the specification returns false for
+  //    anything that is not a Number — so it IS the type check, and a
+  //    `typeof n === 'number'` in front of it would be dead at RUNTIME: a mutant
+  //    no input can ever kill, and a test written to chase it would freeze
+  //    useless code for ever. What the CHECKER still needs is an ASSERTION,
+  //    which is erased at runtime and therefore never mutated (same idiom, and
+  //    same reason, as the cast in `portOf` below).
+  const port = /** @type {number} */ (n);
+  return Number.isInteger(n) && port >= 1 && port <= 65535;
+}
+
+/**
+ * The HOST half. ⚠️ Its SHAPE is checked, never its MEANING: an address this
+ * kernel cannot bind fails at `listen` with the kernel's own error, and the
+ * kernel is the authority — a list of admissible addresses written here would
+ * refuse healthy ones and still prove nothing about the rest.
+ * @param {unknown} declared @returns {string}
+ */
+function hostOf(declared) {
+  if (declared === undefined || declared === null) return DEFAULT_HTTP_HOST;
+  if (typeof declared !== 'string' || declared.length === 0) {
+    throw refuseEndpoint(`${HTTP_KEY}.host`, declared, 'It must be a non-empty string.');
+  }
+  return declared;
+}
+
+/**
+ * The PORT half, and the ONE place the environment escape is honoured.
+ * @param {unknown} envPort @param {unknown} declared @returns {number}
+ */
+function portOf(envPort, declared) {
+  if (typeof envPort === 'string' && envPort !== '') {
+    const n = Number(envPort);
+    if (!isPort(n)) throw refuseEndpoint(HTTP_PORT_ENV, envPort, 'It must be an integer in 1..65535.');
+    return n;
+  }
+  if (declared === undefined || declared === null) return DEFAULT_HTTP_PORT;
+  if (!isPort(declared)) {
+    throw refuseEndpoint(`${HTTP_KEY}.port`, declared, 'It must be an integer in 1..65535.');
+  }
+  // The guard above IS the proof; the checker cannot narrow through a call.
+  return /** @type {number} */ (declared);
+}
+
+/**
+ * Resolve the ONE address the daemon binds and the wiring posts to.
+ *
+ * PRECEDENCE, the SAME shape as `resolveDeclaredDir` and for the same reason:
+ *   ① `envPort` — `CTXROUTE_HTTP_PORT`. It MUST keep winning: the systemd unit
+ *      declares it and the Windows installer reads it back, and every suite that
+ *      forks a daemon on a free port sets it. It moves the PORT alone, because
+ *      no supervisor ever names a host (see `HTTP_PORT_ENV` above).
+ *   ② `readConfiguredHttp` — the operator's declared `http` object.
+ *   ③ the historical `127.0.0.1:8787`, byte for byte.
+ *
+ * ⚠️ `readConfiguredHttp` is a THUNK because the I/O belongs to the SHELL, and
+ *    it is called UNCONDITIONALLY: the host has no environment escape, so the
+ *    config is the only place it can come from. (While the port lived alone,
+ *    stage ② was skipped whenever stage ① fired — one read fewer, and an address
+ *    that could only ever be resolved by halves.)
+ * ⚠️ An EMPTY variable is an ABSENT variable (a shell exporting
+ *    `CTXROUTE_HTTP_PORT=` means "I set nothing"), while a variable holding
+ *    NONSENSE is a refusal — the operator typed it.
+ * ⚠️ The key, and each of its halves, is OPTIONAL: absent (or JSON `null`) means
+ *    "the framework decides", which is the behaviour that predates this key, to
+ *    the byte.
+ *
+ * @param {{envPort?: unknown, readConfiguredHttp: () => unknown}} o
+ * @returns {{host: string, port: number}}
+ */
+function resolveDeclaredHttp(o) {
+  const declared = o.readConfiguredHttp();
+  if (declared !== undefined
+    && (typeof declared !== 'object' || Array.isArray(declared))) {
+    throw refuseEndpoint(HTTP_KEY, declared, 'It must be an object carrying `host` and `port`.');
+  }
+  const pair = /** @type {{host?: unknown, port?: unknown}} */ (declared || {});
+  return { host: hostOf(pair.host), port: portOf(o.envPort, pair.port) };
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // THE CONFIG'S OWN ADDRESS — A LAUNCH ARGUMENT, AND NOTHING ELSE
@@ -170,8 +316,12 @@ function refuseArgument(value, why) {
  */
 function configPathArgument(o) {
   if (!Array.isArray(o.argv)) return undefined;
+  // ⚠️ `indexOf` answers EXACTLY -1 when the flag is absent, so absence is
+  //    compared for EQUALITY, never for order: `i < 0` would carry a boundary
+  //    (`i === 0`) that no caller can ever reach — an untestable comparison, i.e.
+  //    a mutant that survives for ever and freezes the line if a test chases it.
   const i = o.argv.indexOf(CONFIG_FLAG);
-  if (i < 0) return undefined;
+  if (i === -1) return undefined;
   if (o.argv.lastIndexOf(CONFIG_FLAG) !== i) throw refuseArgument(CONFIG_FLAG, 'declared MORE THAN ONCE');
   const next = o.argv[i + 1];
   if (typeof next !== 'string' || next === '') throw refuseArgument(next, 'followed by no address at all');
@@ -308,6 +458,7 @@ function conventionalConfigParts(o) {
 
 module.exports = {
   resolveDeclaredDir,
+  resolveDeclaredHttp,
   configPathArgument,
   conventionalConfigParts,
   APP_DIR_NAME,
@@ -315,5 +466,9 @@ module.exports = {
   STATE_DIR_KEY,
   DOCS_DIR_KEY,
   SESSION_DOCS_DIR_KEY,
+  HTTP_KEY,
+  HTTP_PORT_ENV,
+  DEFAULT_HTTP_HOST,
+  DEFAULT_HTTP_PORT,
   CONFIG_FLAG,
 };

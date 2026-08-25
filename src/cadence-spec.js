@@ -238,6 +238,22 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    caught as a clone. That warning was the symptom; this is the cause.
   }
 
+  // ⑤bis THE ALTERNATION IS A PROPERTY OF THE GESTURE, NOT OF A DOCUMENT (2026-08-24).
+  //    What an agent redoes is an ACTION, and an action is refused as soon as ONE of
+  //    the documents biting it refuses. So the promise "a refusal is never followed by
+  //    a refusal" is only meaningful when quantified over that whole set: was ANY of
+  //    them the author of the previous refusal? If so, this gesture is a RETRY, and a
+  //    retry always passes — no matter which document had spoken.
+  // 🔴 MEASURED IN PRODUCTION THE SAME DAY: two enforcing documents whose memories sat
+  //    in ANTIPHASE refused three gestures in a row, while each of them read alone
+  //    honoured the rule perfectly. This model agreed, because it asked the right
+  //    question about the wrong object — the very failure described above, one level
+  //    up. Quantifying over the action is what makes a refusal provably terminating.
+  let retryOfARefusal = false;
+  for (const d of kept) {
+    const memory = prev[d];
+    if (reg('enforce', d) && memory && memory.denied) retryOfARefusal = true;
+  }
   const inject = [];
   const blocked = [];
   for (const doc of kept) {
@@ -252,7 +268,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
     //    agent redoes ALWAYS passes, then the cadence resumes. This is the whole
     //    anti-loop: no mode has to be forbidden, `dumb` included (block, pass,
     //    block, pass).
-    if (delivered && enforce && !(entry && entry.denied === true)) blocked.push(doc);
+    if (delivered && enforce && !retryOfARefusal) blocked.push(doc);
 
     // ④ A recalled doc forgets its drift, delivered or not — being looked at is
     //    what resets it. We only WRITE that memory if the mode can ever read it;

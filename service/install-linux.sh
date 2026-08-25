@@ -88,7 +88,7 @@ cp "$HERE/ctxroute-http.socket" "$UNIT_DIR/ctxroute-http.socket"
 #    edited. ⚠️ A clone path containing spaces would produce an ExecStart systemd
 #    splits on whitespace; that is a real limitation of the unit format, not of
 #    this script.
-sed "s|^ExecStart=.*|ExecStart=$NODE $REPO/src/hooks/http-server.js|" \
+sed "s|^ExecStart=.*|ExecStart=$NODE $REPO/src/hooks/http-daemon.js|" \
   "$HERE/ctxroute-http.service" > "$UNIT_DIR/ctxroute-http.service"
 
 systemctl --user daemon-reload

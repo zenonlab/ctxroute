@@ -5,6 +5,7 @@
   "mode": "smart",
   "defaultThreshold": 4,
   "frames": 12,
+  "http": { "host": "127.0.0.1", "port": 8787 },
   "filterMode": "none",
   "filterList": [],
   "servers": {},

@@ -38,6 +38,17 @@ import {
 const machine = (over = {}) => ({
   root: 'C:/fixture/ctxroute',
   frames: 3,
+  // The daemon's listening ADDRESS is a MACHINE fact since 2026-08-25, read
+  // WHOLE from `ctxroute-config.json` by the SAME resolution the daemon binds
+  // with — never re-typed in a manifest, where each half agreed with the
+  // listener only by luck.
+  host: '127.0.0.1',
+  port: 8787,
+  // The GATE's ROUTE is a MACHINE fact too since 2026-08-25, read from the one
+  // module that owns every route of this protocol — never re-typed in a
+  // manifest, where a misspelling would not even 404: the daemon serves the
+  // gate route for anything it does not recognise.
+  routePath: '/pretool',
   laneFlag: '--client',
   stateConsumers: ['ctxroute-reset.js', 'doc-inject.js'],
   settingsPath: 'C:/fixture/settings.json',
@@ -81,7 +92,7 @@ test('a framed consumer is repeated once per frame, each copy carrying its own c
 
 test('`kind: "http"` turns each frame into a POST, coordinates in the query, bound from the manifest', () => {
   const out = plan(manifest({
-    transport: { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' },
+    transport: { kind: 'http' },
   }), machine());
   const gate = out.filter((d) => d.type === 'http');
   assert.deepStrictEqual(gate, [
@@ -101,7 +112,7 @@ test('`kind: "http"` turns each frame into a POST, coordinates in the query, bou
 test('the frame coordinates are ONE fact: both writings are read by the SAME reader', () => {
   const spawned = plan(manifest(), machine());
   const posted = plan(manifest({
-    transport: { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' },
+    transport: { kind: 'http' },
   }), machine());
 
   assert.deepStrictEqual(gateFrames(spawned).map(frameCoordinates), [
@@ -126,9 +137,9 @@ test('an unknown transport is a NAMED refusal, and an absent one is `command`, u
   // 🛑 THE SILENT SHAPE FORBIDDEN HERE: an unknown `kind` quietly wired as a
   //    spawn. On a harness with no handler for what was declared, such a
   //    declaration runs NOTHING — no error, no log, no injection.
-  expect(() => plan(manifest({ transport: { kind: 'grpc', host: 'h', port: 1, path: '/x' } }), machine()))
+  expect(() => plan(manifest({ transport: { kind: 'grpc' } }), machine()))
     .toThrow(/`transport.kind` must be one of command \| http/);
-  expect(() => plan(manifest({ transport: { host: '127.0.0.1', port: 8787, path: '/pretool' } }), machine()))
+  expect(() => plan(manifest({ transport: { path: '/pretool' } }), machine()))
     .toThrow(/`transport.kind` must be one of/);
   expect(() => plan(manifest({ transport: 'http' }), machine())).toThrow(/`transport` is an object/);
   expect(() => plan(manifest({ transport: [] }), machine())).toThrow(/`transport` is an object/);
@@ -144,24 +155,80 @@ test('an unknown transport is a NAMED refusal, and an absent one is `command`, u
   );
 });
 
-test('an http endpoint is DECLARED, never guessed, and its parts are checked', () => {
-  const bad = (transport) => () => plan(manifest({ transport }), machine());
-  expect(bad({ kind: 'http', port: 8787, path: '/pretool' })).toThrow(/`transport.host` is a non-empty string/);
-  expect(bad({ kind: 'http', host: '', port: 8787, path: '/pretool' })).toThrow(/`transport.host` is a non-empty string/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', path: '/pretool' })).toThrow(/`transport.port` must be an integer in 1..65535, got undefined/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 0, path: '/pretool' })).toThrow(/must be an integer in 1..65535, got 0/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 65536, path: '/pretool' })).toThrow(/must be an integer in 1..65535, got 65536/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 87.5, path: '/pretool' })).toThrow(/must be an integer in 1..65535, got 87.5/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: '8787', path: '/pretool' })).toThrow(/must be an integer in 1..65535, got "8787"/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 8787 })).toThrow(/`transport.path` must start with `\/`, got undefined/);
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 8787, path: 'pretool' })).toThrow(/must start with `\/`, got "pretool"/);
-  // The query is OURS: it carries the coordinates. A path bringing its own
+test('the gate ROUTE is a machine fact, and re-declaring an endpoint in the manifest is a NAMED refusal', () => {
+  const at = (over) => () => plan(manifest({ transport: { kind: 'http' } }), machine(over));
+  expect(at({ routePath: undefined })).toThrow(/the gate's route must start with `\/`, got undefined/);
+  expect(at({ routePath: 'pretool' })).toThrow(/must start with `\/`, got "pretool"/);
+  expect(at({ routePath: 42 })).toThrow(/must start with `\/`, got 42/);
+  // The query is OURS: it carries the coordinates. A route bringing its own
   // would put two `?` in one URL — coordinates nobody can read back.
-  expect(bad({ kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool?x=1' })).toThrow(/must carry no query and no fragment/);
+  expect(at({ routePath: '/pretool?x=1' })).toThrow(/must carry no query and no fragment/);
+  expect(at({ routePath: '/pretool#f' })).toThrow(/must carry no query and no fragment/);
+
+  // ⚠️ AND THE COMMAND LANE NAMES NO ROUTE AT ALL: demanding one of it would
+  //    refuse a wiring that POSTs nowhere.
+  assert.strictEqual(plan(manifest(), machine({ routePath: undefined })).length, 5,
+    'A spawn wiring was refused for a route it never uses. The refusal must bite on the http transport and on nothing else.');
+
+  // 🛑 NEITHER THE ADDRESS NOR THE ROUTE IS THE MANIFEST'S TO NAME, and a
+  //    re-declared one is REFUSED rather than ignored: a key read by NOBODY is
+  //    a truth its author believes they moved while the URL keeps another
+  //    value — the divergence this manifest exists to remove, rebuilt inside it.
+  for (const dead of [{ path: '/pretool' }, { host: 'elsewhere.invalid' }, { port: 9999 }]) {
+    expect(() => gateTransport({ transport: { kind: 'http', ...dead } }))
+      .toThrow(/the ADDRESS and the ROUTE are not the wiring's to name/);
+  }
+  assert.deepStrictEqual(
+    gateTransport({ transport: { kind: 'http', statusMessage: 'ctxroute' } }),
+    { kind: 'http', statusMessage: 'ctxroute' },
+    'The http transport must come back carrying its kind and its declared status line, and nothing else.',
+  );
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// THE DAEMON'S ADDRESS — A MACHINE FACT, REFUSED WHEN IT IS NOT ONE
+// ════════════════════════════════════════════════════════════════════════
+test("the daemon's address reaches the plan as a MACHINE fact, and a bad half is a NAMED refusal", () => {
+  const http = { kind: 'http' };
+  const at = (over) => () => plan(manifest({ transport: http }), machine(over));
+  // 🛑 THE ENGINE NEVER TRUSTS ITS INPUT: `httpEndpoint()` already refuses
+  //    nonsense, and this refuses it again — a wiring one number, or one name,
+  //    away from the listener loses every frame of every action, in silence.
+  expect(at({ port: undefined })).toThrow(/the daemon's port must be an integer in 1\.\.65535, got undefined/);
+  expect(at({ port: 0 })).toThrow(/got 0/);
+  expect(at({ port: 65536 })).toThrow(/got 65536/);
+  expect(at({ port: 87.5 })).toThrow(/got 87\.5/);
+  expect(at({ port: '8787' })).toThrow(/got "8787"/);
+  // ⚠️ THE HOST IS CHECKED WITH THE SAME RIGOUR, because it was re-typed in the
+  //    manifest exactly as the port was, and a host can point nowhere just as well.
+  expect(at({ host: undefined })).toThrow(/the daemon's host must be a non-empty string, got undefined/);
+  expect(at({ host: '' })).toThrow(/got ""/);
+  expect(at({ host: 8787 })).toThrow(/got 8787/);
+
+  // ⚠️ AND THE COMMAND LANE NAMES NO ADDRESS AT ALL: demanding one of it
+  //    would refuse a wiring that has no endpoint to point anywhere.
+  assert.strictEqual(plan(manifest(), machine({ host: undefined, port: undefined })).length, 5,
+    'A spawn wiring was refused for an address it never uses. The refusal must bite on the http transport and on nothing else.');
+
+  // BOTH values REACH the URL — an assertion that would pass on any address is
+  // an assertion that cannot see a constant left behind on either side, and
+  // NEITHER of these is the historical default.
+  // ⚠️ ONE traversal, written as a loop on purpose: a `.filter().map()` chain
+  //    is a traversal INSIDE a traversal, which `no-undeclared-quadratic` counts
+  //    and this file's ratchet has no room for — and a ratchet only goes DOWN.
+  const url = [];
+  for (const d of plan(manifest({ transport: http }), machine({ host: 'declared.invalid', port: 41999, routePath: '/elsewhere' }))) {
+    if (d.type === 'http') url.push(d.url);
+  }
+  assert.deepStrictEqual(url, [
+    'http://declared.invalid:41999/elsewhere?frame=1&frames=3',
+    'http://declared.invalid:41999/elsewhere?frame=2&frames=3',
+    'http://declared.invalid:41999/elsewhere?frame=3&frames=3',
+  ], 'The declared address, or the declared route, did not reach the URL: the wiring knocks somewhere the daemon does not answer.');
 });
 
 test('an http gate declares its bound and cannot carry arguments a URL would drop', () => {
-  const http = { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  const http = { kind: 'http' };
   // 🛑 NO BOUND, NO WIRING — on this transport the harness default is 600 s
   //    (ten minutes of an agent waiting), and an absent bound does not read as
   //    a mistake, it reads as a line.
@@ -455,8 +522,8 @@ test('`kind: "command"` written out is the command transport, and carries nothin
 
 test('the port range ADMITS its own extremities', () => {
   const at = (port) => plan(manifest({
-    transport: { kind: 'http', host: '127.0.0.1', port, path: '/pretool' },
-  }), machine({ frames: 1 }))[0].url;
+    transport: { kind: 'http' },
+  }), machine({ frames: 1, port }))[0].url;
   assert.strictEqual(at(1), 'http://127.0.0.1:1/pretool?frame=1&frames=1',
     'Port 1 is a legal port. Refusing it refuses a healthy endpoint the operator is entitled to choose.');
   assert.strictEqual(at(65535), 'http://127.0.0.1:65535/pretool?frame=1&frames=1',
@@ -638,7 +705,7 @@ test('the ceiling is DERIVED from the harness table, and a table it cannot read 
 //    a tool. Declared, it stays DATA; the derivation remains the default.
 
 test('`transport.statusMessage` is DECLARED, and the derivation is the written default', () => {
-  const endpoint = (over = {}) => ({ kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool', ...over });
+  const endpoint = (over = {}) => ({ kind: 'http', ...over });
 
   const derived = plan(manifest({ transport: endpoint() }), machine({ frames: 1 }));
   assert.strictEqual(derived.find((d) => d.type === 'http').statusMessage, 'ctxroute',
@@ -672,7 +739,7 @@ test('`transport.statusMessage` is DECLARED, and the derivation is the written d
 // ═══════════════════════════════════════════════════════════════════════
 
 test('`http` + `stateLane: "files"` is a SPLIT BRAIN, and the generator refuses to write it', () => {
-  const endpoint = { kind: 'http', host: '127.0.0.1', port: 8787, path: '/pretool' };
+  const endpoint = { kind: 'http' };
   expect(() => plan(manifest({ transport: endpoint, stateLane: 'files' }), machine()))
     .toThrow('`transport.kind: "http"` with `stateLane: "files"` is a SPLIT BRAIN');
 

@@ -257,7 +257,7 @@
     -->
     <Exec>
       <Command>C:\Program Files\nodejs\node.exe</Command>
-      <Arguments>C:\CHANGE_ME\ctxroute\src\hooks\http-server.js</Arguments>
+      <Arguments>C:\CHANGE_ME\ctxroute\src\hooks\http-daemon.js</Arguments>
     </Exec>
   </Actions>
 

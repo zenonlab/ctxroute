@@ -1,0 +1,268 @@
+{
+  "_doc": "RENDEZVOUS BUDGET — every literal by which one component of this repository REACHES another, DECLARED with the rendezvous it names, the origin of its value and the reason it may be written down at all (2026-08-25). SINGLE SOURCE, consumed by `test/rendezvous-address-gate.test.js`. DETECTION is DERIVED: the JavaScript atoms below are rendered into an ast-grep rule AT GATE TIME (same shape as the method-anchored family of `disk-writers.json`), and the data-file atoms are line patterns applied to the declarative OS units. This file carries the POLICY and the RATCHET, never an `ignores:`.",
+  "_doc_why": "THREE DEFECTS OF ONE CLASS WERE FOUND IN A SINGLE DAY, ONE AT A TIME, HOURS APART, EACH BY A HUMAN PULLING ON A THREAD. The daemon's rendezvous address was hashed from the CODE folder, so the daemon (a frozen copy) and its clients (the working repository) computed different pipe names and never met — silently, for about twelve hours. The daemon's PORT lived as a constant in `src/hooks/http-server.js` AND as `transport.port` in `wiring.json`, agreeing by luck. The HOST was the same defect one field over. Nothing in this repository could have found the FOURTH: the tests written that day are INSTANCE judges — they cover those three addresses and stay green when a new one is written the same way. An address is the one kind of value whose divergence is TOTALLY SILENT: nobody errors, nothing is logged, the injection simply stops. THE FOURTH WAS FOUND BY THAT INVENTORY AND CLOSED THE SAME DAY: the protocol ROUTES. `/purge`, `/turn` and `/emit` were constants of `src/hooks/http-server.js` AND hand-written strings in three client shells; `/pretool` was written in `src/hooks/state-client.js` AND as `transport.path` in `wiring.json`. They now have ONE owner, a module that knows nothing else (`src/protocol-routes-pure.js`), imported by the daemon, by the four clients and by the wiring generator — so the seven declarations those sites held became one, and this file stopped permitting a duplication it could only ever watch.",
+  "_doc_ratchet": "BOTH DIRECTIONS, and the count is an EQUALITY. A literal that is not declared here is RED (fail-closed: an address nobody wrote down is an address nobody compared). A declaration whose literal has DISAPPEARED is RED too — a dormant permit gets re-inherited, reason included, by the next line that takes that shape. MOVING an address is therefore RED on both ends, and that is the intended behaviour, not friction: the whole class is one truth quietly acquiring a second home.",
+  "_doc_agreement": "THE CHECK THAT ACTUALLY CLOSES THE CLASS, and it is the one an instance judge cannot do: every site declaring the same `rendezvous` must declare the same `value`. Two places holding one address is not forbidden — sometimes the operating system insists on holding its own copy — what is forbidden is holding two DIFFERENT ones. `daemon-http-port` is written in `src/declared-paths-pure.js` (the default the daemon binds) AND in `service/ctxroute-http.socket` and `service/ctxroute-http.service` (what the supervisor binds on Linux) AND in `service/com.ctxroute.http.plist` (what launchd binds on macOS): four places, one number, and until this file existed nothing on earth compared them.",
+  "_doc_origins": "The origin says WHERE the value comes from, and the list is CLOSED — the test refuses any other word, exactly as `temporal-budget.json` admits only two motives. A word that fits everything justifies nothing.",
+  "_doc_perimeter": "TWO PERIMETERS, both DERIVED from `git ls-files`, both stated rather than assumed. JavaScript: `src/` and `tools/`, the code that REACHES. `test/` is excluded and the exclusion is measured, not felt: a test binds port 0 (the kernel picks a free one) and connects to whatever it was given back, so a test literal names no rendezvous between components — enrolling them would add roughly forty declarations that protect nothing, and a noisy gate is a gate the first annoyed agent disarms. Data: the DECLARATIVE OS units under `service/` plus `wiring.json`. The shell and PowerShell installers are EXCLUDED with their reason: they do not declare the address, they ASK the unit for it, and that is the derived form this gate exists to encourage — reddening it would punish the correct gesture.",
+  "_doc_blind_cells": "DECLARED, WITH THE TRUE FAILURE DIRECTION — and for every cell below that direction is SILENCE, i.e. FAIL-OPEN. An address COMPOSED at runtime from pieces none of which looks like an address has no literal to match, and no static detector closes that. An address held in a file this perimeter does not read — the operator's `settings.json`, the Codex `config.toml` — lives outside every repository and is covered instead by `doctor.js --settings`, which reads whatever is really there; that is a BOUNDARY, not a hole. An installer script that STOPPED asking the unit and started hard-coding a port would not be seen, by the exclusion above; what limits the damage is that those scripts print the port they derived and `service/verify-responds.sh` proves the daemon ANSWERS on it. A file still UNTRACKED by git is invisible to `git ls-files`, hence to both perimeters, until it is committed. The route names of our own protocol are matched by SHAPE, so a route spelled with a path segment is seen but one built by concatenation is not — same cause as the first cell.",
+  "_doc_not_a_pure_module": "The verdict lives in `src/rendezvous-budget-pure.js`, a PURE module imported statically by its suite and mutated to 100.00 % (105 killed, 0 survived). It used to sit inside the test file, which the mutation runner does not mutate, so an inverted comparison would have stayed green for ever. Moving it also exposed two real defects the test-side version had: a rendezvous table read by plain indexing returned `Object.prototype.toString` for a rendezvous named `toString`, and the gate refused the module's own `NOT_AN_ADDRESS` constant, renamed rather than granted a permit.",
+  "origins": {
+    "resolved": "The literal is the DEFAULT of a SINGLE resolution point, and every consumer reads it through that point. This is the only origin that makes a second copy impossible rather than merely absent.",
+    "kernel": "The operating system imposes this literal. A named pipe MUST live in the pipe namespace, an abstract Linux socket MUST begin with an at-sign; writing anything else is refused by the kernel, so the value is not ours to choose and cannot be declared elsewhere.",
+    "protocol": "A route name of our own wire protocol. It has ONE owner — the constant the daemon dispatches on — and every other site is a CLIENT writing what it asks for.",
+    "supervisor": "The address as the OPERATING SYSTEM's supervisor must hold it. systemd binds ListenStream, launchd binds SockNodeName and SockServiceName: under socket activation the OS owns the listening socket and our own resolution is ignored, so this copy is REQUIRED to exist and cannot be derived away. It is the exact case the agreement check exists for.",
+    "environment": "The NAME of an environment variable that carries an address. Not an address itself, but the only spelling by which one can arrive — a second spelling names a variable nobody set.",
+    "not-an-address": "A shape collision, MEASURED: the literal matches an atom and names no rendezvous at all. Kept declared rather than excluded by a rule, so that the day it becomes an address the line is already in front of a reader."
+  },
+  "rendezvous": {
+    "daemon-http-host": {
+      "value": "127.0.0.1",
+      "why": "The interface the daemon's TCP listener binds and the harness POSTs to. Loopback, and it must stay loopback: this endpoint has no authentication and serves the whole fleet's private knowledge to whoever connects."
+    },
+    "daemon-http-port": {
+      "value": "8787",
+      "why": "The port the daemon binds and the harness POSTs to. FOUR sites, one number: the resolution default, the systemd socket unit, the systemd service unit's environment, and the launchd plist. On the http lane there is NO fallback — a wiring one number away from the listener loses every frame of every action, instantly and in silence."
+    },
+    "daemon-http-path": {
+      "value": "/pretool",
+      "why": "The route the gate's frames POST to. ONE site since 2026-08-25 — `src/protocol-routes-pure.js` — read by the daemon that serves it and by `tools/wiring-generate.js` that writes it into the URL. Also the daemon's DEFAULT route, which is what keeps an older client identical and is precisely why a typo here fails SILENTLY rather than loudly: a misspelt route is served by the gate instead of erroring."
+    },
+    "daemon-route-purge": {
+      "value": "/purge",
+      "why": "PreCompact purge. ONE site since 2026-08-25 — `src/protocol-routes-pure.js` — read by the daemon's dispatcher and by its client shell. A mismatch never 404ed: it fell through to the GATE route, so the operation was answered by a route nobody meant, in silence."
+    },
+    "daemon-route-turn": {
+      "value": "/turn",
+      "why": "Turn counter. ONE site since 2026-08-25 — `src/protocol-routes-pure.js` — read by the daemon's dispatcher and by its client shell. A mismatch never 404ed: it fell through to the GATE route, so the operation was answered by a route nobody meant, in silence."
+    },
+    "daemon-route-emit": {
+      "value": "/emit",
+      "why": "Session-gate emission. ONE site since 2026-08-25 — `src/protocol-routes-pure.js` — read by the daemon's dispatcher and by its client shell. A mismatch never 404ed: it fell through to the GATE route, so the operation was answered by a route nobody meant, in silence."
+    },
+    "kernel-rendezvous": {
+      "value": "ctxroute-<fingerprint>",
+      "why": "The client lane's meeting point, one per INSTALLATION. Its identity is the RESOLVED state directory — the DATA served — never the folder the code lives in: hashing the code root gave one installation two addresses on 2026-08-24, the daemon listening on one and its clients knocking on the other, in silence, for about twelve hours."
+    },
+    "http-port-environment": {
+      "value": "CTXROUTE_HTTP_PORT",
+      "why": "The environment escape that wins over the declared port. Its NAME is a rendezvous of its own: `service/ctxroute-http.service` writes it and `service/install-windows.ps1` reads it back, so a second spelling would name a variable nobody set."
+    }
+  },
+  "atoms": {
+    "js": [
+      {
+        "kind": "string",
+        "regex": "^[\"'](\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|localhost|::1?)[\"']$"
+      },
+      {
+        "kind": "string",
+        "regex": "^[\"'](https?|ws|wss|tcp|unix)://"
+      },
+      {
+        "kind": "string",
+        "regex": "(\\\\\\\\[.?]\\\\\\\\pipe|\\.sock)"
+      },
+      {
+        "kind": "template_string",
+        "regex": "(pipe|\\.sock|^`@|^`/[A-Za-z])"
+      },
+      {
+        "kind": "string",
+        "regex": "^[\"']/[A-Za-z][A-Za-z0-9_-]*[\"']$"
+      },
+      {
+        "kind": "variable_declarator",
+        "regex": "^(?:[A-Za-z0-9$_]*_)?(HOST|PORT|ADDR|ADDRESS|ENDPOINT|SOCKET|PIPE|URL|ROUTE)(?:_[A-Za-z0-9$_]*)?\\s*="
+      }
+    ],
+    "data": [
+      "\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b",
+      "\\b(?:ListenStream|SockNodeName|SockServiceName|CTXROUTE_HTTP_PORT)\\b",
+      "^<string>\\d{2,5}</string>$"
+    ],
+    "manifestKeys": [
+      "host",
+      "port",
+      "url",
+      "address",
+      "socketPath",
+      "endpoint",
+      "path"
+    ]
+  },
+  "_doc_atoms": "EVERY ATOM CARRIES A WITNESS AND THE GATE DERIVES ITS WITNESS TABLE FROM THIS LIST: an atom added tomorrow enters the table by itself and stays RED until someone pairs it with a real line of code. AST, never regex, on the JavaScript side — an address quoted in a comment is a FALSE POSITIVE, and this repository is written by agents who quote addresses in comments constantly (`http-server.js` explains its own former port constant in prose). The regex inside an atom applies to the TEXT OF A NODE the parser already identified, which is the opposite of grepping a file. The data side has no parser to lean on, so comments are STRIPPED per format first and the perimeter is restricted to DECLARATIVE units — that pair is what took the false-positive count on those files from 8 in 21 down to 0 in 6, measured 2026-08-25.",
+  "witnesses": {
+    "js": [
+      "const h = '127.0.0.1';",
+      "const u = 'http://127.0.0.1:8787/pretool';",
+      "const p = '/var/run/ctxroute-abc.sock';",
+      "const t = `@ctxroute-${print}`;",
+      "const r = '/purge';",
+      "const DEFAULT_HTTP_PORT = 8787;"
+    ],
+    "data": [
+      "ListenStream=127.0.0.1:8787",
+      "Environment=CTXROUTE_HTTP_PORT=8787",
+      "<string>8787</string>"
+    ]
+  },
+  "floors": {
+    "jsPerimeterFiles": 40,
+    "dataPerimeterFiles": 4,
+    "jsOccurrences": 10,
+    "dataOccurrences": 6
+  },
+  "_doc_floors": "ANTI-VACUITY, THREE INDEPENDENT LAYERS AND NONE REPLACES ANOTHER: a floor on each perimeter, a floor on each family's occurrence count, and a WITNESS per atom whose detection is REQUIRED. This repository has been bitten THREE times by a gate that was green because it analysed zero files (`deps-purity`, `deadline-gate`, `layers-gate`), and its worst defect has never been a red gate — it is a GREEN gate that sees nothing.",
+  "sites": {
+    "src/declared-paths-pure.js": {
+      "DEFAULT_HTTP_HOST = '127.0.0.1'": {
+        "count": 1,
+        "rendezvous": "daemon-http-host",
+        "value": "127.0.0.1",
+        "origin": "resolved",
+        "why": "The HOST half of the single resolution point paths.httpEndpoint(). A DEFAULT and not a refusal on purpose: the daemon must start on a machine that declared nothing. Both consumers — the daemon that BINDS and tools/wiring-generate.js which writes the URL the harness POSTs to — read it through that one point, which is what makes a second copy unbuildable rather than merely absent."
+      },
+      "'127.0.0.1'": {
+        "count": 1,
+        "rendezvous": "daemon-http-host",
+        "value": "127.0.0.1",
+        "origin": "resolved",
+        "why": "The same literal seen a second time, by the string atom, inside the declarator above. Declared as its own line rather than swallowed by a containment dedup: the two atoms are independent detectors and losing either one must stay visible."
+      },
+      "DEFAULT_HTTP_PORT = 8787": {
+        "count": 1,
+        "rendezvous": "daemon-http-port",
+        "value": "8787",
+        "origin": "resolved",
+        "why": "The PORT half of the same address, in the IANA dynamic range. It was a DEFAULT_PORT constant of src/hooks/http-server.js facing transport.port in wiring.json until 2026-08-25 — one truth, two places, agreeing by luck with nothing comparing them. The agreement check of this file is what now compares it with the three supervisor copies."
+      },
+      "HTTP_PORT_ENV = 'CTXROUTE_HTTP_PORT'": {
+        "count": 1,
+        "rendezvous": "http-port-environment",
+        "value": "CTXROUTE_HTTP_PORT",
+        "origin": "environment",
+        "why": "The spelling of the environment escape, written ONCE because it travels into the refusal message and into two files under service/. Unlike the CTXROUTE_*_DIR variables it is NOT test-reserved: an operator legitimately owns it, so a second spelling would name a variable nobody set."
+      }
+    },
+    "src/kernel-endpoint.js": {
+      "`\\\\\\\\.\\\\pipe\\\\ctxroute-${print}`": {
+        "count": 1,
+        "rendezvous": "kernel-rendezvous",
+        "value": "ctxroute-<fingerprint>",
+        "origin": "kernel",
+        "why": "Windows named pipe. The prefix is IMPOSED by the kernel — a server that listens anywhere else is refused with EACCES, measured while writing that module — and the fingerprint is derived from the RESOLVED state directory, so neither half is ours to move."
+      },
+      "`@ctxroute-${print}`": {
+        "count": 1,
+        "rendezvous": "kernel-rendezvous",
+        "value": "ctxroute-<fingerprint>",
+        "origin": "kernel",
+        "why": "Linux abstract socket. The leading at-sign is the transportable spelling of the kernel leading NUL byte, which an argv string may not carry; kernelAddress() converts it at the two places the kernel reads it and nowhere else."
+      },
+      "`ctxroute-${print}.sock`": {
+        "count": 1,
+        "rendezvous": "kernel-rendezvous",
+        "value": "ctxroute-<fingerprint>",
+        "origin": "kernel",
+        "why": "macOS socket file — the one kernel of the three that leaves a filesystem entry behind. Its directory comes from paths.stateDir() and is never composed here."
+      }
+    },
+    "src/protocol-routes-pure.js": {
+      "'/pretool'": {
+        "count": 1,
+        "rendezvous": "daemon-http-path",
+        "value": "/pretool",
+        "origin": "protocol",
+        "why": "THE OWNER of the gate route, and the ONLY place it may be decided. It was spelled in `src/hooks/state-client.js` AND as `transport.path` of `wiring.json` until 2026-08-25; the wiring now reads it from here, through `tools/wiring-generate.js`, exactly as it reads the listening address from `paths.httpEndpoint()`. It is ALSO the daemon's DEFAULT route — anything unrecognised is served by the gate — which is why a divergence here is answered instead of erroring."
+      },
+      "'/purge'": {
+        "count": 1,
+        "rendezvous": "daemon-route-purge",
+        "value": "/purge",
+        "origin": "protocol",
+        "why": "THE OWNER of the purge route. The daemon dispatches on what this module returns and the PreCompact shell asks for the same value, so the two spellings that used to face each other are one. A mismatch never 404ed: it fell through to the gate route and the compaction silently purged nothing."
+      },
+      "'/turn'": {
+        "count": 1,
+        "rendezvous": "daemon-route-turn",
+        "value": "/turn",
+        "origin": "protocol",
+        "why": "THE OWNER of the turn route, read by the daemon's dispatcher and by the UserPromptSubmit client. Same silent fall-through as the purge if the two spellings ever diverged, costing a turn-unit document its re-injection."
+      },
+      "'/emit'": {
+        "count": 1,
+        "rendezvous": "daemon-route-emit",
+        "value": "/emit",
+        "origin": "protocol",
+        "why": "THE OWNER of the emit route, read by the daemon's dispatcher and by the SessionStart client. Same silent fall-through, costing the session queue."
+      }
+    },
+    "tools/scope-reach.js": {
+      "'/rule'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A LABEL suffix printed in a measurement report (a skill name followed by /rule), not a route. It matches the route atom because a route and a label suffix share a shape, and narrowing the atom to tell them apart would mean teaching it which strings are routes — a list, hence born stale. MEASURED 2026-08-25: this is the only such collision across src/ and tools/, one occurrence in twenty."
+      }
+    },
+    "service/ctxroute-http.socket": {
+      "ListenStream=127.0.0.1:8787": {
+        "count": 1,
+        "rendezvous": "daemon-http-port",
+        "value": "8787",
+        "origin": "supervisor",
+        "why": "systemd binds this socket ITSELF under socket activation, so the daemon own resolution is ignored on Linux and this copy cannot be derived away. Until this gate existed nothing compared this number with DEFAULT_HTTP_PORT; they agreed by luck. The host half of the same line belongs to the same address and moves this declared text if it ever changes."
+      }
+    },
+    "service/ctxroute-http.service": {
+      "Environment=CTXROUTE_HTTP_PORT=8787": {
+        "count": 1,
+        "rendezvous": "daemon-http-port",
+        "value": "8787",
+        "origin": "supervisor",
+        "why": "Kept deliberately even though a passed socket makes it inert under activation: it is what the unit falls back to if the service is ever started without its socket. A third copy of one number, and now a compared one."
+      }
+    },
+    "service/com.ctxroute.http.plist": {
+      "<key>SockNodeName</key>": {
+        "count": 1,
+        "rendezvous": "daemon-http-host",
+        "value": "127.0.0.1",
+        "origin": "supervisor",
+        "why": "launchd name for the interface it binds. The KEY line is what this atom sees; the value sits on the next line and is declared beside it, so a change to either one moves a declared text and reddens."
+      },
+      "<string>127.0.0.1</string>": {
+        "count": 1,
+        "rendezvous": "daemon-http-host",
+        "value": "127.0.0.1",
+        "origin": "supervisor",
+        "why": "The launchd bind address itself. macOS is a LIVE target — the operator associate runs this framework there — so a divergence here costs a real user their injection lane, silently."
+      },
+      "<key>SockServiceName</key>": {
+        "count": 1,
+        "rendezvous": "daemon-http-port",
+        "value": "8787",
+        "origin": "supervisor",
+        "why": "launchd name for the port it binds. On macOS the port lives ONLY here, EnvironmentVariables having been removed rather than left as a second copy the daemon ignores while activated."
+      },
+      "<string>8787</string>": {
+        "count": 1,
+        "rendezvous": "daemon-http-port",
+        "value": "8787",
+        "origin": "supervisor",
+        "why": "The launchd port itself, the FOURTH site of one number. It is detected by an atom of its own rather than inferred from the key above, because a value nobody matches is a value nobody compares."
+      }
+    },
+    "wiring.json": {
+      "harness.layout.fields.url": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A FIELD-NAME map: it says that this framework url field is spelled url in this harness document. It matches because the manifest walk keys on the NAME of an address field, which is exactly what must stay armed — re-adding transport.port or transport.host here is the 2026-08-25 defect, and it would be RED."
+      }
+    }
+  }
+}

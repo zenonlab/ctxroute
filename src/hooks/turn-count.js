@@ -47,6 +47,10 @@ const { resolveStore, turnLockDir } = require('../store-resolve');
 const turnCore = require('../turn-core');
 const client = require('../client-core');
 const { request } = require('./state-client');
+// Same single owner as every other route of our protocol: a hand-written '/turn'
+// facing the daemon's constant would fall through to the GATE route and the turn
+// would simply go uncounted, costing a turn-unit document its re-injection.
+const { routes: protocolRoutes } = require('../protocol-routes-pure');
 const { readStdinJson } = require('../stdin-json');
 const paths = require('../paths');
 
@@ -175,7 +179,7 @@ readStdinJson(
       const lane = client.clientLane(process.argv);
       if (lane) {
         request(
-          '/turn',
+          protocolRoutes().turn,
           { prefix: STORE_PREFIX, scope: sessionId },
           { socketPath: lane.socketPath },
           (response, error) => {

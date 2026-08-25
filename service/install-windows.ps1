@@ -122,7 +122,7 @@ $xml = $xml -replace '(?s)^\s*<\?xml.*?\?>\s*', ''
 
 $xml = Set-XmlValues $xml 'UserId'    $user   # LogonTrigger AND Principal — both
 $xml = Set-XmlValues $xml 'Command'   $node
-$xml = Set-XmlValues $xml 'Arguments' (Join-Path $Repo 'src\hooks\http-server.js')
+$xml = Set-XmlValues $xml 'Arguments' (Join-Path $Repo 'src\hooks\http-daemon.js')
 
 # ⚠️ `-Force` so a re-run REPLACES the registration instead of failing: the
 #    target state is declared, never negotiated with what is already there.
@@ -143,7 +143,7 @@ Start-ScheduledTask -TaskName $TaskName
 # authority is the module's own default, and it is READ from it, never re-typed.
 $port = $env:CTXROUTE_HTTP_PORT
 if (-not $port) {
-  $entry = (($Repo -replace '\\', '/') + '/src/hooks/http-server.js')
+  $entry = (($Repo -replace '\\', '/') + '/src/hooks/http-daemon.js')
   $port = (& node -p "require('$entry').DEFAULT_PORT")
   if ($LASTEXITCODE -ne 0) { throw "could not read DEFAULT_PORT from $entry — refusing to guess a port" }
 }

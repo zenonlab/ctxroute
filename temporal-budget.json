@@ -34,6 +34,11 @@
       "count": 4,
       "motive": "undecidable",
       "why": "Waits for the KERNEL to have OBSERVED an event (a watch being armed, a peer socket seen as closed) before asserting on the daemon's reaction. The kernel holds the fact but exposes no signal for 'you have now observed it', so 'has it noticed yet?' is not decidable from the test process. Any NEW wait added to this suite must first prove that no observable exists (an event, an exit code, a bound port): these four are a ceiling, not a licence."
+    },
+    "test/stale-code-guard.test.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "ONE yield (`settle`) between two observations of a FOREIGN process: has the daemon written its journal line yet, has it bound its port yet. The fact belongs to another process and no signal says 'you may now observe it', so 'has it got there yet?' is not decidable from this one. Nothing here concludes from time passing: every loop asks the kernel again and gives up the moment the child is gone. The yield exists so a poll does not saturate a core while the kernel does the work."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `pattern:` atom of `rules/temporal-call.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",

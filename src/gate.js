@@ -303,6 +303,24 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
 
   // Per-DOC decision on the state from BEFORE (unaffected by this call), then
   // reset of its counter — matched = "recalled", injected or not.
+  // ── THE ALTERNATION IS A PROPERTY OF THE ACTION (2026-08-24) ──────────
+  // 🔴 PRODUCTION DEFECT THIS CLOSES, measured: THREE consecutive refusals of the
+  //    same gesture while EVERY document individually honoured "never twice in a
+  //    row". Two `enforce` docs whose flags sit in ANTIPHASE block on alternating
+  //    actions, and an action refuses as soon as ONE of them blocks ⇒ the gesture
+  //    is refused FOR EVER. One gesture matching only one of the two is enough to
+  //    create the offset.
+  // 🛑 THE GUARANTEE BELONGS TO THE GESTURE THE AGENT REDOES, never to the
+  //    bookkeeping of a document. So the question asked here is about the ACTION:
+  //    "did any of the documents biting me refuse the previous time?" — if so, this
+  //    action may not refuse, whichever document it was. Refusing per document was
+  //    the right rule stated about the wrong object, and it made the framework able
+  //    to deny a workflow permanently, in silence.
+  // ⚠️ Clearing then happens for ALL of them at once (`blocked` stays empty, so
+  //    every matched enforce doc is written back with `denied: false`), which is
+  //    what REALIGNS the phases instead of merely skipping one refusal.
+  const previouslyDenied = kept.some((doc) => enforceForDoc(config, decls[doc], src(doc))
+    && prev[doc] && prev[doc].denied === true);
   const inject = [];
   // Docs that REFUSE the gesture on THIS call (alternation: cf below).
   const blocked = [];
@@ -327,7 +345,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
     //    so `dumb` becomes legitimate too (block, pass, block, pass).
     // ⚠️ Do not confuse it with "the doc is no longer injected": in `dumb` it
     //    is re-injected on every call, only the REFUSAL alternates.
-    if (injects && enforceForDoc(config, decls[doc], src(doc)) && !(entry && entry.denied === true)) {
+    if (injects && enforceForDoc(config, decls[doc], src(doc)) && !previouslyDenied) {
       blocked.push(doc);
     }
     // ⚠️ Write the state ONLY if the mode consumes it: a `dumb` doc always

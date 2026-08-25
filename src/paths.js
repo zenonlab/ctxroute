@@ -117,8 +117,8 @@ function configPath() {
 //    already reads it that way, and a hook is fail-open by contract. What IS a
 //    named refusal is a config that READS FINE and declares a value this
 //    framework cannot honour — that one the operator wrote on purpose.
-/** @param {string} key @returns {unknown} */
-function configuredDir(key) {
+/** ONE reader for any value the config DECLARES — a directory, a port. @param {string} key @returns {unknown} */
+function configuredValue(key) {
   try {
     const raw = JSON.parse(fs.readFileSync(configPath(), 'utf8'));
     return raw && typeof raw === 'object' ? raw[key] : undefined;
@@ -146,11 +146,39 @@ function declarableDir(key, envDir, defaultDir) {
   return path.resolve(declared.resolveDeclaredDir({
     configKey: key,
     envDir,
-    readConfiguredDir: () => configuredDir(key),
+    readConfiguredDir: () => configuredValue(key),
     defaultDir,
     // ⚠️ The OS ANSWERING what an absolute path is — never a regex of ours.
     isAbsolute: path.isAbsolute,
   }));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// THE DAEMON'S LISTENING ADDRESS — the SINGLE point both consumers read
+// ════════════════════════════════════════════════════════════════════════
+// 🛑 TWO CONSUMERS, ONE RESOLUTION, AND THAT IS THE WHOLE POINT (2026-08-25):
+//    `src/hooks/http-server.js` BINDS this address, `tools/wiring-generate.js`
+//    writes it into the URL the harness POSTs to. Until that day each held its
+//    own copy of BOTH halves — `HOST` and `DEFAULT_PORT` constants there,
+//    `transport.host` and `transport.port` in `wiring.json` — agreeing by luck,
+//    with nothing comparing them. Reading them apart is what made a split brain
+//    buildable; there is no second place to write any more.
+// 🛑 AND IT IS RETURNED WHOLE, IN ONE CALL. A host resolved beside a port
+//    would be two settings for one fact, i.e. the same disease one level up —
+//    an address is read entire, or it is read twice.
+// ⚠️ `CTXROUTE_HTTP_PORT` still WINS over the port, and unlike the
+//    `CTXROUTE_*_DIR` variables it is NOT test-reserved:
+//    `service/ctxroute-http.service` declares it and `service/install-windows.ps1`
+//    reads it back. There is NO host variable, and the reason is written where
+//    the spelling lives (`declared-paths-pure.js`).
+// ⚠️ Under SOCKET ACTIVATION the supervisor owns the listening socket and the
+//    daemon IGNORES what this returns (`listenOn` decides, in ONE place). The
+//    value still tells the WIRING where to knock, and that address is the unit's.
+function httpEndpoint() {
+  return declared.resolveDeclaredHttp({
+    envPort: process.env.CTXROUTE_HTTP_PORT,
+    readConfiguredHttp: () => configuredValue(declared.HTTP_KEY),
+  });
 }
 
 // Corpus of the MCP docs. Env var RESERVED for tests and for doctor.js.
@@ -474,7 +502,7 @@ function archivePath(startDir) {
 }
 
 module.exports = {
-  configPath, conventionalConfigPath, docsDir, stateDir,
+  configPath, conventionalConfigPath, docsDir, stateDir, httpEndpoint,
   gitCommonDir, steeringDir, planPath, archivePath,
   fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
   transcriptsDir, harnessRoots,
