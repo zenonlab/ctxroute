@@ -935,6 +935,38 @@ const MARGE_MEM = 3;
 //    lower it to make a cell pass.
 const RESOLUTION_FLOOR = 10;
 
+// ⚠️ THIS IS AN ANTI-VACUITY CHECK, NOT A VERDICT ON THE STORE OR THE DAEMON —
+//    same family as `witness()` above, but where `witness()` prices the
+//    MACHINE'S scheduling noise BEFORE a driver ever runs, this one prices the
+//    INSTRUMENT itself AFTER a real reading came back. Both answer "can this
+//    run decide anything at all", never "is the code slow". 🔴 MEASURED
+//    2026-08-30: on a noisier CI runner a witness that read `loaded === false`
+//    (iqr 1.02, comfortably under the 1.5 bar) still produced a `turnNs`
+//    reading that missed this floor (2250 ns against a bracket of 235.6 ns,
+//    i.e. 9.5x — just under the required 10x). The two checks measure
+//    DIFFERENT things (scheduling noise vs. clock-bracket resolution) and
+//    neither substitutes for the other, so a machine can clear one and miss
+//    the second. 🛑 A cell that cannot resolve its own instrument is
+//    UNDECIDABLE, never a verdict on the code: rendering it a hard failure
+//    would report a code regression that does not exist. Fails-closed the
+//    other way too — this never turns a real regression into a skip, because
+//    it only fires on the SMALLEST reading falling below the bracket, a fact
+//    about the clock, not about the ratio the verdict actually asserts on.
+// @param {number[]} turn per-level readings, ns
+// @param {{clockNs:number}} out the driver's own output, carrying its measured bracket
+// @param {import('vitest').TestContext} ctx
+// @param {string} axis name shown in the skip message
+// @returns {boolean} true when the run may proceed to its verdict
+function resolutionFloorHolds(turn, out, ctx, axis) {
+  const floor = RESOLUTION_FLOOR * out.clockNs;
+  const smallest = Math.min(...turn);
+  if (smallest > floor) return true;
+  ctx.skip(`UNMEASURED: machine too loaded to decide axis ${axis} (smallest reading `
+    + `${round(smallest)} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns — `
+    + `under ${RESOLUTION_FLOOR}x that, this cell would be timing its own instrument, not the code)`);
+  return false;
+}
+
 const ratio = (xs) => mean(xs.slice(-2)) / mean(xs.slice(0, 2));
 const round = (x) => Math.round(x);
 
@@ -1613,10 +1645,9 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
   // 🛑 THE READING MUST STAND ABOVE THE CLOCK THAT TOOK IT. Since the verdict
   //    moved onto the store work, a reading of the same order as the instrument
   //    would be measuring `hrtime.bigint` and would be flat by construction —
-  //    the newest way this cell could measure nothing.
-  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
-    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns — `
-    + `under ${RESOLUTION_FLOOR}x that, this cell is timing its own instrument, not the store`);
+  //    the newest way this cell could measure nothing. UNDECIDABLE, never a red:
+  //    see `resolutionFloorHolds` above (2026-08-30, the runner that revealed it).
+  if (!resolutionFloorHolds(turn, out, ctx, 'A')) return;
 
   const shown = out.readings.map((r) => `${r.scopes}:${round(r.turnNs)}ns/${round(r.pretoolNs)}ns`).join(' → ');
 
@@ -1673,8 +1704,7 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
   assert.equal(out.readings.length, 4, 'the sabotaged driver must have produced four readings too');
   assert.ok(out.puits > 0, 'the sabotage did no work at all — this cell would then prove nothing');
   assert.ok(out.calls >= 4000, `only ${out.calls} requests were served by the sabotaged driver`);
-  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
-    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
+  if (!resolutionFloorHolds(turn, out, ctx, 'A(sabotaged)')) return;
 
   // ⚠️ EXACTLY the assertion of cell ①, inverted, and sharing the same MARGE
   //    literally: weakening the margin up there turns THIS cell red in the same
@@ -1776,11 +1806,9 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    way to measure nothing is a reading of the same order as `hrtime.bigint`
   //    itself — flat by construction, and green for the worst possible reason.
   //    The floor is a MULTIPLE of the instrument's OWN measured cost, never a
-  //    nanosecond figure typed from this machine.
-  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
-    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns `
-    + `(batches ${out.readings.map((r) => r.lot).join(',')} calls). Under ${RESOLUTION_FLOOR}x that, this cell is timing `
-    + 'its own instrument and not the daemon — raise the sample, never the bar.');
+  //    nanosecond figure typed from this machine. UNDECIDABLE, never a red: see
+  //    `resolutionFloorHolds` above (2026-08-30, the runner that revealed it).
+  if (!resolutionFloorHolds(turn, out, ctx, 'B')) return;
 
   // 🛑 DECIDABILITY BEFORE VERDICT. `nu` is the INTER-QUARTILE ratio of nine
   //    IDENTICAL sub-batches: the jitter of the MEDIAN, which is the statistic the
@@ -1859,8 +1887,7 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
   assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * CONC_SOUS_LOTS * CONC_LOT,
     `only ${out.calls} requests were served by the sabotaged driver`);
 
-  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
-    `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
+  if (!resolutionFloorHolds(turn, out, ctx, 'B(sabotaged)')) return;
 
   assert.ok(!(rTurn < BAR_CONC),
     `the criterion FAILED TO SEE a cost proportional to the number of connected clients (ratio ${rTurn.toFixed(2)}x over 8x the `

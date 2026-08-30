@@ -20,7 +20,8 @@
   },
   "include": [
     "src/**/*.js",
-    "tools/*.js"
+    "tools/*.js",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",

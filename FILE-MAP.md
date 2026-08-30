@@ -317,6 +317,7 @@
 - `.dependency-cruiser.json` — anti-coupling rules (lib-pure must stay pure, no cycles, stdin-json standalone).
 - `.jscpd.json` — duplication detection (1% threshold).
 - `jsconfig.json` — `tsc --checkJs` config (㉑, 16/08/2026): JSDoc + noEmit, node types, noImplicitAny off — the checker, never the syntax; the executed file stays the written file.
+- `types/zenon-lab-personal-data-guard.d.ts` — ambient module declaration for `@zenon-lab/personal-data-guard` (30/08/2026, tri-state defect): lets `check:types` pass on a clean clone that lacks the `file:../personal-data-guard` sibling checkout; the real package's own types win whenever the sibling IS present.
 
 **Doc & meta**:
 - `HOOK-INTERNALS.md` — detailed internal doc of the frozen legacy oracle (mechanism, invariants).

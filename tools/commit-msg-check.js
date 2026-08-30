@@ -25,6 +25,16 @@
 //    `leak-list.privateTerms()`, the SINGLE source of "which terms to
 //    protect") — never a second list. Checked FIRST: it needs no ESM import
 //    and refusing personal data must never wait behind the language check.
+//
+// 🔴 TRI-STATE, 2026-08-30, SAME REASON AS `src/commit-msg-leak.js`:
+//    `@zenon-lab/personal-data-guard` is a `file:../personal-data-guard`
+//    sibling checkout, absent on every machine but the maintainer's. A
+//    top-level `require` used to CRASH this whole shell before `main()`
+//    ever ran, so the existing "FAIL-CLOSED AND LOUD" `.catch()` below never
+//    even got the chance to fire — an adopter's first commit met a raw
+//    stack trace instead of a named refusal. `commit-msg-leak.verdict()`
+//    already renders `unavailable: true` when the package cannot be loaded,
+//    so this shell only needs to stop CRASHING on the `require` itself.
 // ═══════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -33,7 +43,12 @@ const fs = require('fs');
 const os = require('os');
 const { verdict, refusal } = require('../src/commit-msg-lang.js');
 const { verdict: leakVerdict, refusal: leakRefusal } = require('../src/commit-msg-leak.js');
-const { forbiddenPatterns } = require('@zenon-lab/personal-data-guard');
+let personalDataGuard = null;
+try {
+  personalDataGuard = require('@zenon-lab/personal-data-guard');
+} catch {
+  personalDataGuard = null;
+}
 const { privateTerms } = require('../src/leak-list.js');
 
 async function main() {
@@ -47,10 +62,14 @@ async function main() {
   // ⚠️ SAME BUILDER AS THE FILE GATE (test/leak-gate.test.js `motifs()`):
   //    OS account + home folder + the private list's derived/declared terms.
   //    Absent private list ⇒ generic mode (email/IP only), never a failure —
-  //    same degradation contract as the file gate.
-  const motifs = forbiddenPatterns(os.userInfo().username, os.homedir(), privateTerms());
+  //    same degradation contract as the file gate. Absent MATCHER ⇒ `null`
+  //    motifs, harmless: `leakVerdict` checks availability FIRST and never
+  //    reaches into `motifs` when the matcher itself could not load.
+  const motifs = personalDataGuard
+    ? personalDataGuard.forbiddenPatterns(os.userInfo().username, os.homedir(), privateTerms())
+    : null;
   const lv = leakVerdict(message, motifs);
-  if (lv.violations.length > 0) {
+  if (lv.violations.length > 0 || lv.unavailable) {
     console.log(leakRefusal(lv));
     process.exit(1);
   }

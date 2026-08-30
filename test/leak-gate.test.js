@@ -20,7 +20,40 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, normalizePath } from '@zenon-lab/personal-data-guard';
+import { createRequire } from 'node:module';
+
+// 🔴 TRI-STATE, 2026-08-30. `@zenon-lab/personal-data-guard` is a `file:
+//    ../personal-data-guard` sibling checkout, present on the maintainer's
+//    machine and ABSENT on any clean clone or CI runner. A STATIC `import`
+//    of it here used to CRASH THIS WHOLE FILE AT LOAD TIME — this repo's
+//    ONLY blocking gate (`.githooks/pre-commit` runs it directly) reported
+//    as a FAILED SUITE instead of naming the missing package.
+// ⚠️ PRESENT (the maintainer's machine, where `.githooks/pre-commit`
+//    actually enforces this gate) ⇒ every test below runs UNCHANGED,
+//    byte-for-byte — the gate bites exactly as before. ABSENT (CI, any
+//    adopter's clean clone) ⇒ those tests are SKIPPED VISIBLY
+//    (`test.skipIf`, reported as skipped — never silently passed, never a
+//    crash), and the dedicated tri-state tests at the bottom of this file
+//    prove the "named degrade, never a silent green" contract for real.
+//    Same precedent already established in this repo for the SAME package
+//    by `tools/matcher-suite-check.js` ("ABSENT SIBLING ⇒ NAMED MESSAGE,
+//    exit 0 … but never a SILENT skip").
+const require_ = createRequire(import.meta.url);
+let forbiddenPatterns = null;
+let scan = null;
+let escapeLiteral = null;
+let lastSegment = null;
+let forgottenRoots = null;
+let normalizePath = null;
+let matcherAbsent = true;
+try {
+  require_.resolve('@zenon-lab/personal-data-guard');
+  const matcher = await import('@zenon-lab/personal-data-guard');
+  ({ forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, normalizePath } = matcher);
+  matcherAbsent = false;
+} catch {
+  matcherAbsent = true;
+}
 
 // 🔴 THE ROOT IS MEASURED, NOT SUPPOSED — and getting it wrong made this gate scan a QUARTER
 //    of the repository for weeks. `path.dirname(import.meta.url)` is the `test/` FOLDER, and
@@ -135,7 +168,7 @@ function seenRoots(zones) {
   return seen;
 }
 
-test('② every client root is DECIDED — derived, or ignored with its reason', () => {
+test.skipIf(matcherAbsent)('② every client root is DECIDED — derived, or ignored with its reason', () => {
   let decl;
   try {
     decl = JSON.parse(fs.readFileSync(privateListPath(), 'utf8'));
@@ -154,7 +187,7 @@ test('② every client root is DECIDED — derived, or ignored with its reason',
     + '`ignoredRoots` writing WHY:\n  ' + forgotten.join('\n  '));
 });
 
-test('② self-validation: aspect ② BITES (an undecided root is named)', () => {
+test.skipIf(matcherAbsent)('② self-validation: aspect ② BITES (an undecided root is named)', () => {
   const seen = ['C:/p/client-sites', 'C:/p/agent/clients', 'C:/p/clients-vrac'];
   assert.deepEqual(
     forgottenRoots(seen, ['C:/p/client-sites'], ['C:/p/agent/clients']),
@@ -203,7 +236,7 @@ function schemaFaults(decl) {
   return faults;
 }
 
-test('②ter the REAL private list matches the CLOSED schema (unknown key = RED)', () => {
+test.skipIf(matcherAbsent)('②ter the REAL private list matches the CLOSED schema (unknown key = RED)', () => {
   let decl;
   try {
     decl = JSON.parse(fs.readFileSync(privateListPath(), 'utf8'));
@@ -226,7 +259,7 @@ test('②ter the REAL private list matches the CLOSED schema (unknown key = RED)
     + schemaFaults(decl).join('\n  '));
 });
 
-test('②ter self-validation: the schema gate BITES (in-memory sabotage)', () => {
+test.skipIf(matcherAbsent)('②ter self-validation: the schema gate BITES (in-memory sabotage)', () => {
   // The exact defect of 16/08: pre-rename French keys.
   const stale = { terms: [], dossiersDerives: [{ racine: 'C:/x', marker: 'brief.md' }] };
   assert.ok(schemaFaults(stale).some((f) => f.includes('dossiersDerives')),
@@ -246,7 +279,7 @@ test('②ter self-validation: the schema gate BITES (in-memory sabotage)', () =>
 });
 
 // ── THE GATE ────────────────────────────────────────────────────────────
-test('NO TRACKED file carries personal data', () => {
+test.skipIf(matcherAbsent)('NO TRACKED file carries personal data', () => {
   const violations = scanRepo(ICI, motifs());
   assert.deepEqual(
     violations,
@@ -255,7 +288,7 @@ test('NO TRACKED file carries personal data', () => {
   );
 });
 
-test('the gate only looks at what is TRACKED', () => {
+test.skipIf(matcherAbsent)('the gate only looks at what is TRACKED', () => {
   // ⚠️ `state/`, `docs/mcp/`, `ctxroute-config.json` are gitignored BY DESIGN
   //    and legitimately contain personal data. Scanning them would make the
   //    gate permanently red — hence unreadable, hence dead.
@@ -268,7 +301,7 @@ test('the gate only looks at what is TRACKED', () => {
 });
 
 // ── NEGATIVE-CHECK ──────────────────────────────────────────────────────
-test('NEGATIVE-CHECK: the gate KNOWS how to redden (sabotage on a COPY)', () => {
+test.skipIf(matcherAbsent)('NEGATIVE-CHECK: the gate KNOWS how to redden (sabotage on a COPY)', () => {
   // ⚠️ SABOTAGE ON A COPY, NEVER IN PLACE: on 03/08/2026, sabotaging a real
   //    file brought down 38 tests of other suites reading it IN PARALLEL.
   // ⚠️ THE SABOTAGED TERM IS FABRICATED, NEVER TAKEN FROM THE ENVIRONMENT:
@@ -321,7 +354,7 @@ test('NEGATIVE-CHECK: the gate KNOWS how to redden (sabotage on a COPY)', () => 
   }
 });
 
-test('NEGATIVE-CHECK: the DOCUMENTATION ranges remain allowed', () => {
+test.skipIf(matcherAbsent)('NEGATIVE-CHECK: the DOCUMENTATION ranges remain allowed', () => {
   // ⚠️ The doctrine REQUIRES writing 203.0.113.x in examples. A gate forbidding
   //    them would make the rule inapplicable — hence would be unplugged.
   const m = motifs();
@@ -330,7 +363,7 @@ test('NEGATIVE-CHECK: the DOCUMENTATION ranges remain allowed', () => {
   assert.deepEqual(scan('write to dev@example.com', m), []);
 });
 
-test('a REAL MACHINE IP (CGNAT/Tailscale block) is refused', () => {
+test.skipIf(matcherAbsent)('a REAL MACHINE IP (CGNAT/Tailscale block) is refused', () => {
   const m = motifs();
   assert.equal(scan('vps: ' + ip(100, 88, 41, 95), m).length, 1);
   // Edges of the 100.64/10 block — beyond that it is public space, not us.
@@ -339,7 +372,7 @@ test('a REAL MACHINE IP (CGNAT/Tailscale block) is refused', () => {
 });
 
 // ── THE DERIVATION (the core: no list to maintain) ──────────────────────
-test('DERIVATION: clients come from the FOLDERS, never from a written list', () => {
+test.skipIf(matcherAbsent)('DERIVATION: clients come from the FOLDERS, never from a written list', () => {
   // ⚠️ A hand-kept list would be out of date at the next client: the gate would
   //    protect less IN SILENCE. Here we check that derivation works AND that it
   //    rules out tooling (`.git`, `node_modules`) — without that filter, a term
@@ -371,7 +404,7 @@ test('DERIVATION: clients come from the FOLDERS, never from a written list', () 
   }
 });
 
-test('FRESH CLONE: private list missing ⇒ generic mode, never a failure', () => {
+test.skipIf(matcherAbsent)('FRESH CLONE: private list missing ⇒ generic mode, never a failure', () => {
   // ⚠️ "A repo gate must hold on a FRESH clone" (gitignore.md). Requiring the
   //    private file would make CI red for everyone.
   const before = process.env.CTXROUTE_LEAK_LIST;
@@ -387,7 +420,7 @@ test('FRESH CLONE: private list missing ⇒ generic mode, never a failure', () =
 });
 
 // ── THE PURE MODULE ─────────────────────────────────────────────────────
-test('escapeLiteral: a Windows path becomes a literal, never a wildcard', () => {
+test.skipIf(matcherAbsent)('escapeLiteral: a Windows path becomes a literal, never a wildcard', () => {
   // ⚠️ Without escaping, `C:\Users\x` contains `\U` and `.`: the regex would
   //    match almost everything and the gate would scream at the whole repo.
   const re = new RegExp(escapeLiteral('C:\\Users\\dev'));
@@ -395,7 +428,7 @@ test('escapeLiteral: a Windows path becomes a literal, never a wildcard', () => 
   assert.ok(!re.test('CxUsersxdev'));
 });
 
-test('lastSegment: the USER folder, never the generic root', () => {
+test.skipIf(matcherAbsent)('lastSegment: the USER folder, never the generic root', () => {
   // ⚠️ Taking all the segments would give "Users", present in every example
   //    path of the repo — 6 false positives measured on 04/08/2026.
   assert.equal(lastSegment('C:/Users/dev'), 'dev');
@@ -403,7 +436,7 @@ test('lastSegment: the USER folder, never the generic root', () => {
   assert.equal(lastSegment(''), '');
 });
 
-test('WORD BOUNDARIES: a first name does not match the word containing it', () => {
+test.skipIf(matcherAbsent)('WORD BOUNDARIES: a first name does not match the word containing it', () => {
   // ⚠️ REAL case of 04/08/2026: "un prénom" ⊂ "théorique" made frontmatter.js
   //    and the skill go red. A gate that screams on healthy code dies.
   const m = forbiddenPatterns(undefined, undefined, ['un prénom']);
@@ -413,7 +446,7 @@ test('WORD BOUNDARIES: a first name does not match the word containing it', () =
   assert.equal(scan('(un prénom)', m).length, 1);
 });
 
-test('scan: TOTAL — absurd inputs, never a throw', () => {
+test.skipIf(matcherAbsent)('scan: TOTAL — absurd inputs, never a throw', () => {
   const m = motifs();
   for (const wrong of [undefined, null, 42, {}, []]) {
     assert.deepEqual(scan(wrong, m), []);
@@ -421,7 +454,7 @@ test('scan: TOTAL — absurd inputs, never a throw', () => {
   }
 });
 
-test('forbiddenPatterns: an absent or too short input invents no pattern', () => {
+test.skipIf(matcherAbsent)('forbiddenPatterns: an absent or too short input invents no pattern', () => {
   // ⚠️ A 1-2 character term would match half the repo: the gate would be red
   //    permanently, hence dead.
   assert.equal(forbiddenPatterns(undefined, undefined, undefined).length, 2);
@@ -429,7 +462,32 @@ test('forbiddenPatterns: an absent or too short input invents no pattern', () =>
   assert.equal(forbiddenPatterns('abc', '', []).length, 3);
 });
 
-test('forbiddenPatterns: a term present twice creates only ONE pattern', () => {
+test.skipIf(matcherAbsent)('forbiddenPatterns: a term present twice creates only ONE pattern', () => {
   const m = forbiddenPatterns('dupont', 'C:/Users/dupont', ['dupont']);
   assert.equal(m.filter((x) => x.name.includes('dupont')).length, 1);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// TRI-STATE — the ABSENT half, proven for REAL on whatever machine lacks
+// the sibling checkout (CI, any adopter), never simulated.
+// ═══════════════════════════════════════════════════════════════════════
+
+test.skipIf(!matcherAbsent)('TRI-STATE (absent matcher): the gate NAMES the missing package, never a silent pass', () => {
+  // This cell only EXECUTES on a machine where the package genuinely could
+  // not be resolved (skipped elsewhere, visibly) — it is not a simulation.
+  // 🛑 `matcherAbsent` staying true is itself the observable: nothing above
+  //    could scan a single tracked file this run, so "NO TRACKED file
+  //    carries personal data" reporting SKIPPED (not PASSED) is what keeps
+  //    this from reading as "the repo was checked and is clean".
+  assert.equal(forbiddenPatterns, null, 'the matcher must not have loaded on this run');
+  assert.equal(scan, null, 'the matcher must not have loaded on this run');
+});
+
+// ⚠️ UNCONDITIONAL — deterministic on EVERY machine, present or absent.
+test('TRI-STATE: a missing matcher is a resolvable, catchable failure — never an uncaught crash', () => {
+  // `require.resolve` on a genuinely missing package must THROW, not silently
+  // return something — that throw is exactly what this file (and
+  // src/commit-msg-leak.js) catch to render the named degrade instead of
+  // crashing at import time.
+  assert.throws(() => require_.resolve('a-package-that-does-not-exist-anywhere-zzz'));
 });

@@ -23,11 +23,38 @@
 //
 // ⚠️ PURE: zero I/O (no `fs`, no `os`, no `process.env`). Reading the message
 //    file and building the patterns from the environment live in the shell.
+//
+// 🔴 TRI-STATE, 2026-08-30. `@zenon-lab/personal-data-guard` is a devDependency
+//    declared as `file:../personal-data-guard` — a SIBLING checkout that exists
+//    on the maintainer's machine and NOWHERE else (a clean clone, CI, any
+//    adopter). `npm ci` there leaves a DANGLING symlink, so a top-level
+//    `require` used to CRASH this module at LOAD time everywhere but the
+//    maintainer's machine — breaking `tsc` type resolution and every file that
+//    so much as imports this module, before `verdict()` was ever called.
+// 🛑 PRESENT ⇒ the gate bites EXACTLY as before, byte-for-byte unchanged.
+//    ABSENT ⇒ this module still LOADS, and `verdict()` returns a NAMED, LOUD
+//    "cannot judge" state (`unavailable: true`) — NEVER a quiet `violations: []`
+//    read as "nothing to see". This is THE anti-leak gate for a PUBLIC
+//    repository's commit history: a silent green here is indistinguishable
+//    from a working gate, and that is exactly the failure mode this file
+//    exists to forbid. `refusal()` below REFUSES on this state too — a missing
+//    matcher is never treated as permission to let the message through.
 // ═══════════════════════════════════════════════════════════════════════
 
 'use strict';
 
-const { scan } = require('@zenon-lab/personal-data-guard');
+let personalDataGuard = null;
+try {
+  personalDataGuard = require('@zenon-lab/personal-data-guard');
+} catch {
+  personalDataGuard = null;
+}
+
+/** Named, loud reason shown whenever the matcher could not be loaded. */
+const UNAVAILABLE_REASON =
+  '@zenon-lab/personal-data-guard is not installed (the `file:../personal-data-guard` sibling '
+  + 'checkout is missing) — this gate CANNOT JUDGE the message for personal data.';
+
 // 🛑 THE TRAILER BLOCK IS EXCLUDED, AND THAT IS NOT A CONVENIENCE.
 //    `Co-Authored-By:` carries an email BY DEFINITION (git's own convention), so scanning the
 //    whole message refuses the repository's most ordinary commit. Measured the day this shipped:
@@ -47,14 +74,23 @@ function scannable(message) {
  * matcher the file gate runs — over patterns built by the CALLER.
  * @param {string} message
  * @param {{name:string, re:RegExp}[]} motifs
- * @returns {{violations: {name:string, excerpt:string}[]}}
+ * @returns {{violations: {name:string, excerpt:string}[], unavailable?: boolean}}
  */
 function verdict(message, motifs) {
-  return { violations: scan(scannable(message), motifs) };
+  if (!personalDataGuard) return { violations: [], unavailable: true };
+  return { violations: personalDataGuard.scan(scannable(message), motifs) };
 }
 
 /** The refusal text. Kept here so the hook and the suite say the SAME thing. */
 function refusal(v) {
+  if (v.unavailable) {
+    return [
+      'COMMIT REFUSED — the anti-leak gate CANNOT JUDGE this message.',
+      '  ' + UNAVAILABLE_REASON,
+      'This repository never lets a commit through when it cannot verify personal data.',
+      'Install the sibling package, or use `git commit --no-verify` CONSCIOUSLY.',
+    ].join('\n');
+  }
   const lines = v.violations.map((o) => `  ${o.name} (${o.excerpt})`);
   return [
     'COMMIT REFUSED — the message carries personal data.',
@@ -64,4 +100,4 @@ function refusal(v) {
   ].join('\n');
 }
 
-module.exports = { scannable, verdict, refusal };
+module.exports = { scannable, verdict, refusal, UNAVAILABLE_REASON };

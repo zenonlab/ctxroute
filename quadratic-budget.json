@@ -172,6 +172,11 @@
       "max": 4,
       "class": "INHERITED_DEBT"
     },
+    "test/daemon-dialect-gate.test.js": {
+      "max": 3,
+      "class": "O(N)",
+      "why": "All three sites walk a collection bounded by THIS repository, never by client volume: `.split().map().filter()` normalizes the lines `git ls-files` returned for this one repo's tracked files; the `while` loop over `pile` walks the local `require()` graph reachable from one entry point (a handful of modules); `hits.some()` scans the handful of ast-grep matches produced by scanning a single decoy file. None grows with a fleet's sites or pages."
+    },
     "test/deadline-gate.test.js": {
       "max": 7,
       "class": "INHERITED_DEBT"
@@ -188,6 +193,11 @@
     "test/declfor-gate.test.js": {
       "max": 5,
       "class": "INHERITED_DEBT"
+    },
+    "test/delivery-notice-integration.test.js": {
+      "max": 3,
+      "class": "O(N)",
+      "why": "The three `messages.filter((m) => m.includes('ctxroute: all'))` calls scan the systemMessages collected across ONE test invocation's frames — a fixed constant of 5 declared in the test itself (`for (let k = 1; k <= 5; ...)`), never the number of frames a real wiring uses nor anything that grows with a fleet's sites or pages."
     },
     "test/deps-criticality-gate.test.js": {
       "max": 2,
