@@ -61,6 +61,30 @@ const FLOOR = 100;
 const TUE = new Set(['Killed', 'Timeout', 'CompileError']);
 
 /**
+ * 🔴 THE HOLLOW GREEN THIS CLOSES, MEASURED 2026-08-30 — AND IT LASTED WEEKS.
+ *    `belowFloor` judges the files it FINDS in the report. A local run is always
+ *    `--mutate <one file>`, so the report only ever holds what the incremental
+ *    cache already knew: **28 files against the 42 `mutate` declares**. The 14
+ *    missing ones were not green, they were ABSENT — and the gate said nothing.
+ *    The CI, which mutates everything, reported 177 survivors across five of
+ *    them the same day, while this gate was GREEN locally on the same commit.
+ * 🛑 A REPORT THAT DOES NOT COVER EVERY DECLARED MODULE PROVES NOTHING, and that
+ *    is decidable: `stryker.conf.json` holds the list. Missing file ⇒ RED, named.
+ *    Never "skip the ones we did not run" — that is the hollow green rebuilt.
+ * ⚠️ DERIVED from the config, never a hand list: a module added to `mutate`
+ *    tomorrow enters this check by itself.
+ * @param {{files?: Record<string, unknown>}|null} rapport
+ * @param {string[]} declares the `mutate` entries of stryker.conf.json
+ * @returns {string[]|null} the declared files absent from the report, or null
+ *   when the question does not arise (no report, no declaration)
+ */
+function missingFromReport(rapport, declares) {
+  if (!rapport || typeof rapport !== 'object' || !rapport.files) return null;
+  if (!Array.isArray(declares) || declares.length === 0) return null;
+  const present = new Set(Object.keys(rapport.files));
+  return declares.filter((f) => !present.has(f));
+}
+/**
  * Returns the files below the floor, or `null` if the question does not arise
  * (report absent/unreadable). ⚠️ `null` = OUT OF SCOPE, never "healthy".
  */
@@ -85,6 +109,62 @@ function belowFloor(rapport, floor) {
   return offending;
 }
 
+// 🛑 WHERE A PARTIAL REPORT IS A DEFECT, AND WHERE IT IS SIMPLY THE NORMAL DAY.
+//    In CI the run mutates EVERYTHING, so a missing module means the run did not
+//    finish or the config drifted — a real defect, RED. Locally every run is
+//    `--mutate <one file>` BY DOCTRINE (an exhaustive run does not fit an agent
+//    session), so a partial report is the NORMAL state and reddening on it would
+//    give a cell that shouts on every developer run — and a cell that shouts
+//    always is a cell that gets disarmed. **TRI-STATE, never a quiet green:**
+//    complete ⇒ judged · partial in CI ⇒ RED · partial locally ⇒ a NAMED skip,
+//    the same idiom `resolutionFloorHolds` uses in the scale bench.
+// ⚠️ `process.env.CI` is set by GitHub Actions (and by every CI provider); its
+//    ABSENCE is what marks a developer machine. This is not a harness dialect
+//    leaking into the engine — it is a TEST asking which authority it is running
+//    under, and the CI is the only one whose report can be complete.
+const EN_CI = process.env.CI === 'true' || process.env.CI === '1';
+
+test('㉞bis — the report COVERS every module `mutate` declares, or it proves nothing', (ctx) => {
+  let rapport = null;
+  let conf = null;
+  try {
+    rapport = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'reports', 'mutation.json'), 'utf8'));
+    conf = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'stryker.conf.json'), 'utf8'));
+  } catch {
+    return; // no report or no config = out of scope, same rule as the cell below
+  }
+  const missing = missingFromReport(rapport, conf.mutate);
+  if (missing === null) return;
+  if (missing.length > 0 && !EN_CI) {
+    ctx.skip('UNJUDGED: this report covers ' + Object.keys(rapport.files).length
+      + ' of the ' + conf.mutate.length + ' declared modules, so the per-file floor below judges only part of the project. Normal for a targeted local run — the COMPLETE verdict is the CI\'s. Never read the next cell\'s green as "everything is at 100 %".');
+    return;
+  }
+  assert.deepStrictEqual(missing, [],
+    'HOLLOW GREEN: the per-file floor judged only '
+    + Object.keys(rapport.files).length + ' of the ' + conf.mutate.length
+    + ' modules `mutate` declares. These were never judged:\n  '
+    + missing.join('\n  ')
+    + '\n  ⇒ the report comes from a TARGETED run (`--mutate <one file>`), whose'
+    + ' incremental cache holds only part of the project. Regenerate a COMPLETE'
+    + ' report (CI, or `--force` with no `--mutate`) before trusting any score.'
+    + ' NEVER narrow this check to the files that happen to be present.');
+});
+
+test('㉞bis NEGATIVE — the completeness check really bites, and really stays silent', () => {
+  // ⚠️ IN MEMORY, never the real report: other suites and the CI read it.
+  const rap = { files: { 'a.js': { mutants: [] }, 'b.js': { mutants: [] } } };
+  assert.deepStrictEqual(missingFromReport(rap, ['a.js', 'b.js']), [],
+    'a complete report must be silent');
+  assert.deepStrictEqual(missingFromReport(rap, ['a.js', 'b.js', 'c.js']), ['c.js'],
+    'the check does not see an absent module: it is INERT');
+  // out of scope, never "healthy"
+  for (const x of [null, undefined, 42, {}, { files: null }]) {
+    assert.strictEqual(missingFromReport(x, ['a.js']), null);
+  }
+  assert.strictEqual(missingFromReport(rap, []), null, 'no declaration = no question');
+  assert.strictEqual(missingFromReport(rap, null), null);
+});
 test('㉞ — no mutated module falls below the per-file floor', () => {
   let rapport = null;
   try {
