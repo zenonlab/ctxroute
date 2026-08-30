@@ -92,6 +92,7 @@ if (config) {
   const list = Array.isArray(config.filterList) ? config.filterList : [];
   ok('shipped config: no test-fixture residue in filterList',
     !list.some((s) => /^testserver|^concserver|^server[ab]$/i.test(s)));
+
 }
 
 // ── $schema DRIFT-TEST: the shipped config stays within the schema vocabulary ──

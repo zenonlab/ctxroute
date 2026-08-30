@@ -33,6 +33,48 @@ function withoutOrdinal(ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// DELIVERY NOTICE — DECLARED, PERMANENT DIVERGENCE (2026-08-30)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🛑 THIS ONE IS NOT A TRANSPORT ARTEFACT LIKE THE ORDINAL ABOVE — IT IS A
+//    STRUCTURAL IMPOSSIBILITY OF BYTE-FOR-BYTE PARITY, AND IT NEVER CLOSES.
+//    `delivery-notice-pure.js` tells the human whether every declared frame
+//    of an invocation reached the daemon. Only the HTTP daemon can observe
+//    that: it is the single process that sees every connecting request of
+//    one invocation (`frame-sequencer-pure.js`). The `command` (spawn) lane
+//    has NO equivalent observer -- its N processes are independent OS
+//    processes with no shared memory, so none of them can ever say "all of
+//    us arrived". The message is only TRUE where an observer exists, so it
+//    can only ever be emitted on ONE of the two lanes. That is a declared
+//    divergence, not a bug to fix -- closing it would mean fabricating the
+//    same claim on a lane that cannot back it.
+//
+// 🛑 ANCHORED AT THE END OF THE STRING, ONE OF THE TWO EXACT WORDINGS ONLY --
+//    never a blind strip of everything after `ctxroute: `. A badge suffix
+//    that merely starts with our own prefix but is NOT one of the two known
+//    forms (a typo, a future third notice not yet taught to this filter, an
+//    injected decoy) must stay VISIBLE: this filter's whole job is to hide
+//    the ONE thing we know is harmless, never to widen into "anything with
+//    our name on it". Part (2) of the negative-check enforces exactly this.
+// 🛑 THE PRECEDING BADGE (' . ') IS PART OF THE MATCH, NEVER THE CONTENT
+//    BEFORE IT: `pretool-core.js` joins every suffix with ' . ', so removing
+//    our own tail must also remove the separator that introduced it --
+//    otherwise a real badge would come back with a dangling ' . ' and LOOK
+//    unequal for a reason that has nothing to do with a real regression.
+const DELIVERY_NOTICE_TAIL = / ?· ?ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action)$|^ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action)$/;
+
+/**
+ * Removes the delivery-completion/deferral notice `delivery-notice-pure.js`
+ * appends to a `systemMessage` on the HTTP lane -- the ONE declared,
+ * permanent gap between the two lanes (see the header above). TOTAL: a
+ * non-string input is returned as is.
+ */
+function withoutDeliveryNotice(systemMessage) {
+  if (typeof systemMessage !== 'string') return systemMessage;
+  return systemMessage.replace(DELIVERY_NOTICE_TAIL, '');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // FRAMES + CHUNKING — REASSEMBLE BY THE PROTOCOL'S OWN NUMBERS
 // ═══════════════════════════════════════════════════════════════════════
 //
@@ -226,4 +268,4 @@ function reassemble(frames) {
   return stitch(bodies);
 }
 
-module.exports = { withoutOrdinal, reassemble };
+module.exports = { withoutOrdinal, withoutDeliveryNotice, reassemble };

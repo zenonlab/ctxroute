@@ -10,7 +10,7 @@
 //    `pretool-differential.test.js` — NEVER ship one without the other.
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { withoutOrdinal, reassemble } from '../src/differential-normalize.js';
+import { withoutOrdinal, withoutDeliveryNotice, reassemble } from '../src/differential-normalize.js';
 // ⚠️ THE FIXTURES ARE COMPOSED BY THE ENGINE ITSELF (`budget.js::planFrames`),
 //    never hand-written: a reader tested against a hand-written envelope proves
 //    that it can read WHAT I BELIEVE the engine emits. The whole class of defect
@@ -58,6 +58,56 @@ test('withoutOrdinal: a CONTENT divergence stays VISIBLE after normalization', (
 // reads like an engine failure.
 test('withoutOrdinal: TOTAL — a non-string input is returned as is, never a throw', () => {
   for (const x of [undefined, null, 42, {}]) assert.strictEqual(withoutOrdinal(x), x);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// withoutDeliveryNotice — the DECLARED, PERMANENT lane gap, and its
+// MANDATORY negative-check (part 1: it removes OUR message; part 2: it
+// removes NOTHING ELSE).
+// ═══════════════════════════════════════════════════════════════════════
+
+const COMPLETE = 'ctxroute: all 32 chunk(s) delivered — 32 of 32 declared frames reached the daemon';
+const DEFERRED = 'ctxroute: 5 chunk(s) deferred to the next action';
+
+// ① THE FILTER REMOVES OUR OWN MESSAGE, ANCHORED, WITH ITS SEPARATOR.
+test('withoutDeliveryNotice (1): removes the COMPLETE notice, badge + separator included', () => {
+  assert.strictEqual(withoutDeliveryNotice('📄 doc: gros (chunk 4/4) · ' + COMPLETE), '📄 doc: gros (chunk 4/4)');
+});
+
+test('withoutDeliveryNotice (1): removes the DEFERRED notice, badge + separator included', () => {
+  assert.strictEqual(withoutDeliveryNotice('📄 doc: gros (chunk 1/4) · ' + DEFERRED), '📄 doc: gros (chunk 1/4)');
+});
+
+test('withoutDeliveryNotice (1): removes a STANDALONE notice (no preceding badge)', () => {
+  assert.strictEqual(withoutDeliveryNotice(COMPLETE), '');
+  assert.strictEqual(withoutDeliveryNotice(DEFERRED), '');
+});
+
+// ② THE PART THAT COUNTS — without it, a widened filter would swallow a REAL
+//    divergence and BOTH the http-lane differential and this filter would
+//    stay green while hiding a genuine regression.
+test('withoutDeliveryNotice (2): a DECOY — our own prefix, NOT one of the two exact forms — SURVIVES', () => {
+  const decoy = '📄 doc: gros (chunk 4/4) · ctxroute: something else entirely';
+  assert.strictEqual(withoutDeliveryNotice(decoy), decoy,
+    'a filter that strips this would also strip a REAL regression sharing our prefix by accident');
+});
+
+test('withoutDeliveryNotice (2): a MODIFIED badge before a real notice still SURVIVES on the badge side', () => {
+  const a = withoutDeliveryNotice('📄 doc: gros (chunk 4/4) · ' + COMPLETE);
+  const b = withoutDeliveryNotice('📄 doc: AUTRE (chunk 4/4) · ' + COMPLETE);
+  assert.notStrictEqual(a, b, 'a real content divergence in the badge must NEVER be masked by this filter');
+});
+
+test('withoutDeliveryNotice (2): a NEAR-MISS number pattern that is not one of the two forms SURVIVES', () => {
+  // Neither "chunk(s) delivered" without "all N " nor a bogus third verb is a
+  // form this module knows — they must stay visible, exactly like a future
+  // THIRD notice not yet taught to this filter.
+  const nearMiss = 'ctxroute: 4 chunk(s) delivered — 4 of 4 declared frames reached the daemon';
+  assert.strictEqual(withoutDeliveryNotice(nearMiss), nearMiss);
+});
+
+test('withoutDeliveryNotice: TOTAL — a non-string input is returned as is, never a throw', () => {
+  for (const x of [undefined, null, 42, {}]) assert.strictEqual(withoutDeliveryNotice(x), x);
 });
 
 // ═══════════════════════════════════════════════════════════════════════

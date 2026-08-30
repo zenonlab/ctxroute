@@ -126,6 +126,94 @@ async function driveFrames(payload) {
   return { first, texts };
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// DENY-SIDE CONTENT — measured 2026-08-30, see `driveActionFrames`/`docMap`
+// below and the block above the WRITE test itself for the full diagnosis.
+// ═══════════════════════════════════════════════════════════════════════
+// ⚠️ `denyOutput()` (pretool-core.js) carries the SAME sealed body as an
+//    allow would, just under `permissionDecisionReason`, prefixed by this
+//    ONE literal (copied from `pretool-core.js`, never re-derived — a
+//    dialect string, not a parsing rule).
+const DENY_PREFIX = '[ACTION REFUSED — read this, then start over]\n\n';
+
+// 🛑 MUST BE THE SAME `tool_use_id` FOR EVERY FRAME OF ONE ACTION, ON THE
+//    FIRST ATTEMPT — measured 2026-08-30, real bug in an earlier version of
+//    this fix. Calling a FRESH invocation just to re-read the deny content is
+//    a SECOND action to the alternation (`denied` flag), so it flips straight
+//    to `allow` and there is no deny content left to read at all ("no frame
+//    was delivered"). `driveActionFrames` therefore drives frames 1..N of
+//    ONE invocation and reads WHICHEVER channel that action actually used
+//    (`additionalContext` on allow/none, `permissionDecisionReason` on deny)
+//    — never guessed, read from `permissionDecision` on frame 1 itself.
+// 🛑 SECOND DEFECT OF THE SAME KIND, MEASURED THE SAME DAY: running this file
+//    solo passed, running it inside the FULL suite reddened intermittently.
+//    Cause — `runHook`'s hardcoded `session_id: 'porte-diff'` is SHARED by
+//    EVERY test of this file, and the `integration` project runs a file's
+//    tests CONCURRENTLY (`vitest.config.mjs`, "each has its own tmpdir AND
+//    its own state — verified: no shared state" is the condition that makes
+//    that safe, and this file broke it). READ/BASH/GIT all touch cadence-
+//    bearing docs on the SAME shared session, so whichever of them happens to
+//    run before or alongside WRITE can consume `pointer.md`'s `smart` cadence
+//    (or `live-production.md`'s `once`) before WRITE ever sees it — a SECOND,
+//    file-wide instance of the exact class this fix exists to close. ⇒ WRITE
+//    drives its OWN two actions on a DEDICATED session id, unreachable by any
+//    other test in this file.
+const WRITE_SESSION_ID = 'porte-diff-write';
+
+async function driveActionFrames(payload, sessionId) {
+  const invocationId = `${sessionId}-${++actions}`;
+  const texts = [];
+  let first = null;
+  let decision = null;
+  for (let k = 1; k <= FRAMES; k++) {
+    const out = await runHook(PORTE, payload, GATE_ENV,
+      ['--frame', String(k), '--frames', String(FRAMES)], { tool_use_id: invocationId, session_id: sessionId });
+    if (k === 1) { first = out; decision = out && out.hookSpecificOutput ? out.hookSpecificOutput.permissionDecision : null; }
+    if (!out || !out.hookSpecificOutput) break;
+    const raw = decision === 'deny' ? out.hookSpecificOutput.permissionDecisionReason : out.hookSpecificOutput.additionalContext;
+    if (typeof raw !== 'string' || raw === '') break;
+    texts.push(decision === 'deny' && raw.startsWith(DENY_PREFIX) ? raw.slice(DENY_PREFIX.length) : raw);
+  }
+  return { first, decision, texts };
+}
+
+// ⚠️ LOCAL COPY OF `budget.js::SEPARATOR` ('\n\n---\n\n'), DELIBERATE (2026-08-30):
+//    unlike `reassemble()`/`withoutOrdinal` (the PARSING safety net, single
+//    source with `mcp-differential`), this only re-reads an ALREADY-verified,
+//    ALREADY-reassembled document to compare it PER DOC against a stateless
+//    oracle — a different job, on already-trusted text, and not shared with
+//    any other differential.
+const DOC_SEPARATOR = '\n\n---\n\n';
+const SOURCE_TAG = /\[source: ([^\]]+)\]\s*$/;
+
+/**
+ * Splits an already-reassembled corpus into `Map<sourcePath, body>`, one
+ * entry per delivered document, keyed by its `[source: …]` tag.
+ *
+ * 🛑 WHY THIS EXISTS: `sameContent` compares the WHOLE corpus for byte
+ *    equality, which is right when every matched doc is `dumb` (the
+ *    assumption this differential's WRITE test carried since 2026-08-15).
+ *    MEASURED 2026-08-30 that assumption is FALSE for the real fleet corpus:
+ *    a personal fleet doc can be `mode: smart`/`once`, and the frozen
+ *    (stateless, cadence-blind) oracle re-delivers it on EVERY call while the
+ *    live engine correctly withholds it once already delivered THIS session.
+ *    Per-doc comparison is what lets the WRITE test tell "a real content
+ *    divergence" from "a doc the engine already delivered a moment ago,
+ *    through a channel the oracle cannot see" — DECIDED BY MEASUREMENT
+ *    (byte-identical lookup), never assumed.
+ * ⚠️ A segment with no recognizable `[source: …]` tag is kept under its own
+ *    full text as the key — opaque, but still comparable for equality; it
+ *    never silently vanishes from the map.
+ */
+function docMap(text) {
+  const map = new Map();
+  for (const part of text.split(DOC_SEPARATOR)) {
+    const m = SOURCE_TAG.exec(part);
+    map.set(m ? m[1] : part, part);
+  }
+  return map;
+}
+
 async function both(payload) {
   const [old, driven] = await Promise.all([
     runHook(LEGACY, payload, {}),
@@ -180,18 +268,71 @@ test.skipIf(!fleetPresent)('WRITE: decision mirroring the real rush, same docs',
   //    may REFUSE this action ONCE — a capability born AFTER the frozen oracle, which
   //    will never read `enforce`. The alternation (contract: a blockage is NEVER
   //    followed by a blockage) guarantees that the redone action passes ⇒ PARITY is
-  //    proven on the action that PASSES (the file docs are 100 % dumb, the
-  //    content of the 2nd action is identical). 🛑 NEVER "fix" this deny by
-  //    removing the doc from the fleet nor by requiring `allow` on the 1st action.
-  let { old, fresh, frames } = await both(payload);
-  if (fresh && fresh.hookSpecificOutput && fresh.hookSpecificOutput.permissionDecision === 'deny') {
-    ({ fresh, frames } = await both(payload));
+  //    proven on the action that PASSES. 🛑 NEVER "fix" this deny by removing the
+  //    doc from the fleet nor by requiring `allow` on the 1st action.
+  // 🔴 MEASURED 2026-08-30, AND THE COMMENT THIS REPLACES WAS WRONG: it claimed
+  //    "the file docs are 100 % dumb, the content of the 2nd action is
+  //    identical" — FALSE on the real fleet corpus (`pointer.md` is `mode:
+  //    smart`, `live-production.md` itself is `mode: once`). Both get
+  //    DELIVERED to the agent on the FIRST (denied) action too — a deny's
+  //    `permissionDecisionReason` carries the SAME sealed body an allow would
+  //    carry in `additionalContext` (`pretool-core.js::denyOutput`) — so the
+  //    live engine CORRECTLY withholds them on the retried action while the
+  //    frozen, STATELESS oracle (no cadence concept at all) re-delivers
+  //    everything unconditionally on every call. Byte equality against a
+  //    SINGLE action is therefore structurally impossible whenever an enforce
+  //    doc and a non-dumb doc share one gesture — not a flaky machine, a
+  //    permanent property of comparing a stateful engine to a stateless one.
+  //    ⇒ compare PER DOC (`docMap`): a doc the oracle delivers must be found,
+  //    byte-identical, in THIS action's content OR in the earlier denied
+  //    one's — MEASURED, never assumed away.
+  const [old, action1] = await Promise.all([
+    runHook(LEGACY, payload, {}),
+    driveActionFrames(payload, WRITE_SESSION_ID),
+  ]);
+  let fresh = action1.first;
+  let frames = action1.texts;
+  let deniedContent = null;
+  if (action1.decision === 'deny') {
+    const denyRes = reassemble(action1.texts);
+    assert.ok(denyRes.ok, `DENY REASSEMBLY REFUSED — ${denyRes.reason}`);
+    deniedContent = withoutOrdinal(denyRes.text);
+    const action2 = await driveActionFrames(payload, WRITE_SESSION_ID);
+    fresh = action2.first;
+    frames = action2.texts;
   }
   assert.ok(old && fresh, 'both engines must react on a documented write');
   if (RUSH) {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-    sameContent(reassemble(frames), old.hookSpecificOutput.additionalContext, RUSH_PREFIX);
+    const res = reassemble(frames);
+    assert.ok(res.ok, `REASSEMBLY REFUSED — ${res.reason}`);
+    const oldRaw = old.hookSpecificOutput.additionalContext;
+    assert.ok(oldRaw.startsWith(RUSH_PREFIX), `oracle output missing the RUSH prefix: ${JSON.stringify(oldRaw.slice(0, 80))}`);
+    const oldDocs = docMap(oldRaw.slice(RUSH_PREFIX.length));
+    const freshDocs = docMap(withoutOrdinal(res.text));
+    const deniedDocs = deniedContent ? docMap(deniedContent) : new Map();
+    // Every doc the OLD (stateless) oracle delivers must be found, byte
+    // identical, either in THIS action's content or in the earlier denied
+    // one's — a real content divergence stays red on BOTH.
+    for (const [src, body] of oldDocs) {
+      const seenNow = freshDocs.get(src);
+      const seenDenied = deniedDocs.get(src);
+      assert.ok(seenNow === body || seenDenied === body,
+        `doc "${src}" delivered by the oracle has no byte-identical match in the live engine's output `
+        + '(neither this action nor the earlier denied one) — a real content divergence, not a cadence gap.\n'
+        + `  oracle : ${JSON.stringify(body.slice(0, 200))}\n`
+        + `  this   : ${JSON.stringify((seenNow || '').slice(0, 200))}\n`
+        + `  denied : ${JSON.stringify((seenDenied || '').slice(0, 200))}`);
+    }
+    // And the reverse: the oracle has no cadence to shrink its output, so it
+    // is always the SUPERSET — anything the live engine delivers on the
+    // PASSING action that the oracle does not know at all is a real
+    // divergence too.
+    for (const [src, body] of freshDocs) {
+      assert.strictEqual(body, oldDocs.get(src),
+        `doc "${src}" delivered by the live engine on the passing action has no byte-identical match in the oracle's output`);
+    }
   } else {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'ask');
     assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'ask');

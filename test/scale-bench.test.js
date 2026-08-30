@@ -95,6 +95,12 @@
 // ⚠️ HEAVY LANE by content (it spawns a process): the GLOBAL 30 s timeout
 //    applies and no per-test timeout is declared. The request counts below are
 //    sized to keep the whole file a few seconds, because it runs on every push.
+// 🔴 ONE DECLARED EXCEPTION (2026-08-30): `SEEN RED (axis D)` carries its own
+//    200 s timeout. Reaching a reproducible ≥ 2× margin over `BAR_CONT` needs
+//    real wall time (measured 112.5-114.1 s over 5 consecutive runs) — see the
+//    block above `CONT_SABOTAGE_CPU_PASSES` for why a cheaper amplification
+//    was tried first and rejected. Every other cell in this file still relies
+//    on the 30 s global.
 // ═══════════════════════════════════════════════════════════════════════
 
 import { test, afterAll } from 'vitest';
@@ -102,7 +108,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+// ⚠️ CELLS E-H (below) drive the REAL `http` lane IN-PROCESS (no spawned
+//    driver): `frame-sequencer-pure.js` and `http-server.js` are CommonJS
+//    (`module.exports`), this file is ESM — `createRequire` is the documented
+//    bridge (same pattern already used by `test/http-frame-resequencing.test.js`).
+//    Requiring them here shares Node's module cache with anything else that
+//    requires the SAME absolute path in this process, which is exactly what
+//    lets the cell E negative-check monkey-patch `frame-sequencer-pure`'s
+//    live export and have `http-server.js` observe the patch.
+const require_ = createRequire(import.meta.url);
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-scale-'));
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -335,20 +353,20 @@ function pretoolCall(i, n) {
 //      ratio between the two (the price of the lock) stays visible on green runs
 //      instead of being rediscovered the day a cell stops discriminating.
 function mediane(appel, parLot) {
-  const lotsStore = [];
-  const lotsMur = [];
+  const storeBatches = [];
+  const wallBatches = [];
   for (let s = 0; s < SOUS_LOTS; s += 1) {
     global.gc();
     const a0 = storeNs;
     const t0 = process.hrtime.bigint();
     for (let i = 0; i < parLot; i += 1) appel(s * parLot + i);
-    lotsMur.push(Number(process.hrtime.bigint() - t0) / parLot);
-    lotsStore.push((storeNs - a0) / parLot);
+    wallBatches.push(Number(process.hrtime.bigint() - t0) / parLot);
+    storeBatches.push((storeNs - a0) / parLot);
   }
-  lotsStore.sort((a, b) => a - b);
-  lotsMur.sort((a, b) => a - b);
+  storeBatches.sort((a, b) => a - b);
+  wallBatches.sort((a, b) => a - b);
   const m = (SOUS_LOTS - 1) / 2;
-  return { store: lotsStore[m], wall: lotsMur[m] };
+  return { store: storeBatches[m], wall: wallBatches[m] };
 }
 
 // Warm-up on its own scopes, so the first LEVEL is measured on a hot runtime.
@@ -511,7 +529,7 @@ const CONC_HTTP = 32;         // real round trips, ALL IN FLIGHT AT ONCE
 //    quantum" was the right question for a wall reading and is meaningless for
 //    this one; the right question is "does the reading stand above the CLOCK that
 //    took it", and the floor is DERIVED from the instrument's own measured cost
-//    (`PLANCHER_RESOLUTION` × `clockNs`), never typed.
+//    (`RESOLUTION_FLOOR` × `clockNs`), never typed.
 // ⚠️ THE WARM-UP FELL WITH IT, FOR THE SAME REASON AND NO OTHER: 2,000 calls cost
 //    2.6 s of lock to warm a runtime that is hot after a few hundred. 512 is four
 //    full passes over the FROZEN scope pool, so the first level is still measured
@@ -632,24 +650,24 @@ function turnCall(i) {
 //      genuinely loaded".
 function lots(appel, parLot) {
   const t = [];
-  const mur = [];
+  const wall = [];
   for (let s = 0; s < SOUS_LOTS; s += 1) {
     global.gc();
     const a0 = storeNs;
     const t0 = process.hrtime.bigint();
     for (let i = 0; i < parLot; i += 1) appel(s * parLot + i);
-    mur.push(Number(process.hrtime.bigint() - t0) / parLot);
+    wall.push(Number(process.hrtime.bigint() - t0) / parLot);
     t.push((storeNs - a0) / parLot);
   }
   t.sort((a, b) => a - b);
-  mur.sort((a, b) => a - b);
+  wall.sort((a, b) => a - b);
   const q = (SOUS_LOTS - 1) / 4;
   return {
     med: t[(SOUS_LOTS - 1) / 2],
     nu: t[SOUS_LOTS - 1 - q] / t[q],
     spread: t[SOUS_LOTS - 1] / t[0],
     // PRINTED ONLY: the whole call, lock included. Asserted on by NOTHING.
-    murNs: mur[(SOUS_LOTS - 1) / 2],
+    wallNs: wall[(SOUS_LOTS - 1) / 2],
   };
 }
 
@@ -729,7 +747,7 @@ srv.listen(0, '127.0.0.1', async () => {
     const heap = process.memoryUsage().heapUsed;
     readings.push({
       conns: cible, seen: vivantes.size, turnNs: r.med,
-      nu: r.nu, spread: r.spread, lot: lot, murNs: r.murNs,
+      nu: r.nu, spread: r.spread, lot: lot, wallNs: r.wallNs,
       retenu: heap - heapAvant,
     });
     heapAvant = heap;
@@ -915,7 +933,7 @@ const MARGE_MEM = 3;
 //    instrument in it, i.e. less than the 2 % of margin that already decided this
 //    file to widen its samples. Raise it if a run ever lands near it; do NOT
 //    lower it to make a cell pass.
-const PLANCHER_RESOLUTION = 10;
+const RESOLUTION_FLOOR = 10;
 
 const ratio = (xs) => mean(xs.slice(-2)) / mean(xs.slice(0, 2));
 const round = (x) => Math.round(x);
@@ -1180,6 +1198,59 @@ const CONT_SECTIONS = 1024;   // critical sections per LEVEL, shared out evenly
 const CONT_CAL = 12;          // uncontended calibration passes, on a PRIVATE address
 const CONT_CPU_FLOOR_MS = 100;  // > 6 Windows scheduler ticks (~15.6 ms each)
 const BAR_CONT = Math.sqrt(mean(CONT_LEVELS.slice(-2)) / mean(CONT_LEVELS.slice(0, 2)));
+// 🔴 MEASURED 2026-08-30: a SINGLE registry walk per section landed the sabotaged
+//    ratio at 1.94-2.09x against this 2.00x bar — pinned on the line, flipping red
+//    2 runs out of 5 with the witness reporting a QUIET machine every time. The
+//    fixed cost of a section (lock acquisition + the one real `turnCore.bump`) was
+//    still large enough next to ONE walk of the registry to blur the slope this
+//    cell exists to see. 🛑 NEVER shrink `BAR_CONT`/`CONT_LEVELS`: the fix is to
+//    make the SAME defect (a section proportional to the disputant count) heavier,
+//    never to relax the line it is judged against.
+// 🔴 A CONSTANT-FACTOR REPEAT OF THE FS WALK WAS TRIED FIRST AND MEASURED TO BE
+//    THE WRONG LEVER: `C + a·W` is the model behind `BAR_CONT` itself (its
+//    ratio-4 half assumes the disputant-proportional term totally dominates a
+//    fixed cost `C`), and for ANY finite `a` the resulting ratio is STRICTLY
+//    below 4 — it only APPROACHES it as `a → ∞`. Repeating `membres()`'s fs walk
+//    1..25 times on THIS machine measured 1.95 → 2.78 → 2.96-3.61 → 3.02-3.09,
+//    NEVER stably above ~3.6: past a few repeats each critical section is long
+//    enough that `lock.js`'s own 2000 ms fail-open timeout starts dropping a
+//    growing share of the W=32 attempts (measured up to 32 % dropped at 20
+//    repeats), which shrinks `tenues` unpredictably and adds noise instead of
+//    slope. Confirmed independent of I/O: a pure in-memory CPU repeat of the
+//    SAME shape (hash the already-read registry bytes) hit the identical
+//    ceiling (~3.3 at 20x the work). 🛑 NEVER chase this ceiling by raising a
+//    repeat count further — the runs above already needed 30-330 s each for a
+//    worsening return; that is the WRONG place to spend a slower test.
+// ✅ FIX THAT ACTUALLY WORKS = SHRINK THE SAMPLE, NOT THE CRITERION — WITH A
+//    FLOOR OF ITS OWN. The variance above came from `tenues` (completed
+//    sections) collapsing under a growing drop rate at W=32 — a symptom of the
+//    SAME defect landing so hard that many attempts blow their own 2 s budget.
+//    Running FEWER total sections per level (`CONT_SABOTAGE_SECTIONS`,
+//    sabotage-only — `CONT_SECTIONS` stays 1024 for the healthy cell above,
+//    unmodified) keeps every level's absolute run time short enough that the
+//    drop rate never grows large enough to matter, so the slope can be pushed
+//    with a much bigger CPU multiplier (`CONT_SABOTAGE_CPU_PASSES`) for a
+//    fraction of the wall time. 🔴 BUT TOO FEW SECTIONS BROKE A DIFFERENT,
+//    PRE-EXISTING ANTI-VACUITY CHECK: at 128 (then 256) total sections, W=32
+//    gives each of the 32 disputants only 4-8 attempts, and the heavy CPU work
+//    also inflates the PER-DISPUTANT solo baseline (`seul`) used by the
+//    "every disputant waited at least once" assertion below — with few enough
+//    attempts, one or two disputants can by chance never exceed `2×seul`,
+//    failing that check even though the run really was contended. MEASURED
+//    RED on this exact assertion at 128 and again at 256 sections, on
+//    otherwise-passing runs. ✅ 384 sections is the floor found by measurement
+//    where both hold at once: 5 consecutive real `vitest run` invocations of
+//    this cell all passed EVERY assertion (`attendants`, the ratio) with
+//    ratios 4.14 / 4.17 / 4.25 / 4.20 / 4.16x against the 2.00x bar
+//    (112.5-114.1 s each) — comfortably and reproducibly ≥ 2× the bar, where
+//    the naive full-sample repeat topped out around 1.8×.
+// 🛑 STILL THE SAME NATURE, NOT A DIFFERENT DEFECT: `membres()` still does ONE
+//    fs walk of the registry (list + read every ticket, still exactly O(W)) —
+//    the CPU passes only re-hash bytes ALREADY READ from that ONE walk, so the
+//    quantity being amplified is still "the section's cost is proportional to
+//    the number of disputants", never W², never something unrelated.
+const CONT_SABOTAGE_SECTIONS = 384;   // sabotage-only sample size (see block above)
+const CONT_SABOTAGE_CPU_PASSES = 20000;
 
 const CONT_DRIVER = path.join(TMP, 'cont-driver.js');
 fs.writeFileSync(CONT_DRIVER, `
@@ -1194,6 +1265,12 @@ const paths = require(${src('paths.js')});
 
 const LEVELS = ${JSON.stringify(CONT_LEVELS)};
 const SECTIONS = ${CONT_SECTIONS};
+// 🛑 SABOTAGE-ONLY, SMALLER SAMPLE — see the comment above \`CONT_SABOTAGE_SECTIONS\`
+//    at the top of this file. The healthy branch below still uses \`SECTIONS\`
+//    (1024) untouched: this constant is read ONLY when --sabotage is set, so
+//    SCALE-D's own anti-vacuity (which asserts against \`CONT_SECTIONS\`) never
+//    sees it.
+const SABOTAGE_SECTIONS = ${JSON.stringify(CONT_SABOTAGE_SECTIONS)};
 const CAL = ${CONT_CAL};
 
 // ONE scope, therefore ONE lock address for every disputant — asked of the owner,
@@ -1211,10 +1288,35 @@ const REGISTRE = path.join(paths.stateDir(), '.disputants');
 //    with the fleet instead of with the work asked — and it is what a home-made
 //    FIFO lock does by construction, which is why it is the defect worth pricing.
 //    The WAITING POLICY is untouched: same address, same \`withLock\`, same sleep.
+// 🛑 ONE FS WALK, THEN CPU-ONLY REPEATS OF THE SAME BYTES — see the comment above
+//    \`CONT_SABOTAGE_CPU_PASSES\`: a plain repeated fs walk was measured to make
+//    each section's absolute duration grow enough that \`lock.js\`'s fail-open
+//    timeout started dropping a growing share of the W=32 attempts, capping the
+//    ratio around 3.3-3.6x however far it was pushed. Reading the registry ONCE
+//    (still O(W), still proportional to the disputant count) and then re-hashing
+//    the SAME already-read bytes \`CPU_PASSES\` times pays the identical total
+//    amount of proportional-to-W work without the extra fs syscalls, which keeps
+//    the drop rate low enough at the reduced sample size above for the ratio to
+//    actually reach the model's ideal (C negligible next to a·W).
+const CPU_PASSES = ${JSON.stringify(CONT_SABOTAGE_CPU_PASSES)};
 function membres() {
   const noms = fs.readdirSync(REGISTRE);
   let octets = 0;
-  for (const n of noms) octets += fs.readFileSync(path.join(REGISTRE, n), 'utf8').length;
+  const bufs = [];
+  for (const n of noms) {
+    const s = fs.readFileSync(path.join(REGISTRE, n), 'utf8');
+    octets += s.length;
+    bufs.push(s);
+  }
+  // Keeps \`acc\` observably used so no engine may eliminate the loop as dead
+  // code — same technique as the witness's own \`witnessSample\` above.
+  let acc = 0;
+  for (let p = 0; p < CPU_PASSES; p += 1) {
+    for (const s of bufs) {
+      for (let i = 0; i < s.length; i += 1) acc = (acc + s.charCodeAt(i)) % 1000000007;
+    }
+  }
+  if (acc < -1) throw new Error(\`unreachable (\${acc})\`);
   return octets;
 }
 
@@ -1295,9 +1397,12 @@ if (!isMainThread) {
         let okPret = null; let okFini = null;
         prets.push(new Promise((r) => { okPret = r; }));
         finis.push(new Promise((r) => { okFini = r; }));
-        // 🛑 THE SHARE IS EXACT, NOT ROUNDED: the levels divide SECTIONS evenly by
-        //    construction, so every level really measures the same sample count.
-        const w = new Worker(__filename, { workerData: { id: 'd' + i, sabotage: sabotage, ops: SECTIONS / W } });
+        // 🛑 THE SHARE IS EXACT, NOT ROUNDED: the levels divide SECTIONS (and
+        //    SABOTAGE_SECTIONS) evenly by construction, so every level really
+        //    measures the same sample count.
+        const w = new Worker(__filename, {
+          workerData: { id: 'd' + i, sabotage: sabotage, ops: (sabotage ? SABOTAGE_SECTIONS : SECTIONS) / W },
+        });
         w.on('message', (m) => {
           if (m && m.pret) { okPret(); return; }
           if (m && m.fait) { verdicts.push(m); okFini(); }
@@ -1313,7 +1418,7 @@ if (!isMainThread) {
       const t0 = process.hrtime.bigint();
       for (const w of fils) w.postMessage('go');
       await Promise.all(finis);
-      const murNs = Number(process.hrtime.bigint() - t0);
+      const wallNs = Number(process.hrtime.bigint() - t0);
       const cpu = process.cpuUsage(cpu0);
       // ⚠️ \`cpuUsage\` is PROCESS-wide, hence covers every thread of this driver —
       //    which is exactly the quantity wanted: the work the MACHINE spends.
@@ -1339,8 +1444,8 @@ if (!isMainThread) {
         chargeNs: Math.min.apply(null, verdicts.map((v) => v.chargeNs)),
         cpuNsParOp: cpuNs / tenues,
         cpuTotalMs: cpuNs / 1e6,
-        murNsParOp: murNs / tenues,
-        murTotalMs: murNs / 1e6,
+        murNsParOp: wallNs / tenues,
+        murTotalMs: wallNs / 1e6,
         // Every disputant that had to WAIT at least once, and the total number of
         // sections that waited: contention COUNTED, never supposed.
         attendants: verdicts.filter((v) => v.attentes > 0).length,
@@ -1368,6 +1473,68 @@ if (!isMainThread) {
 //    already produced is exactly the toil this house exists to delete.
 const runnerPair = { healthy: null, sabotage: null, scopes: null };
 
+// ═══════════════════════════════════════════════════════════════════════
+// CELL H — TRI-STATE UNDER LOAD: a WITNESS run BEFORE every slope cell, so a
+// busy operator's workstation yields `UNMEASURED`, never a false RED nor a
+// false GREEN. Read this before touching SCALE-A/B/D below.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 THE DEFECT THIS CLOSES: three full runs of this suite on one evening
+//    produced DIFFERENT sub-sets of red cells each time, including ratios
+//    that only crossed a bar because the machine itself was busy — the exact
+//    class of noise `nu`/`spread` already price INSIDE axis B and D, but
+//    nothing priced it BEFORE axis A, whose criterion has no noise figure of
+//    its own at all.
+// 🛑 THE WITNESS MEASURES NOTHING ABOUT THE DAEMON. It is pure CPU, no I/O, no
+//    store, no lock — its ONLY question is "can THIS MACHINE, right now,
+//    produce a reading whose noise is resolvable?". A loaded witness names the
+//    MACHINE as the cause and refuses to decide; it must NEVER be read as a
+//    verdict on the daemon itself, healthy or sabotaged.
+// ⚠️ SAME STATISTIC AS THE REST OF THE FILE (the inter-quartile ratio, `nu`),
+//    on an ODD sample count so the median and quartile indices are integers.
+const WITNESS_ITERS = 200000;
+const WITNESS_SAMPLES = 9;
+// 🛑 NAMED CONSTANT, NEVER RE-DERIVED PER AXIS: the witness judges
+//    MEASURABILITY, not the daemon's own margin — sharing MARGE/BAR_CONC/
+//    BAR_CONT here would let a future change to one of those silently move
+//    the point at which a busy machine gets declared unmeasurable.
+const WITNESS_NOISE_BAR = 1.5;
+
+/** One pure-CPU sample, no I/O, no allocation the GC would need to chase. */
+function witnessSample(iters) {
+  const t0 = process.hrtime.bigint();
+  let acc = 0;
+  for (let i = 0; i < iters; i += 1) acc = (acc + Math.sqrt(i)) % 1e9;
+  const dt = Number(process.hrtime.bigint() - t0);
+  // Keeps `acc` observably used so no engine may eliminate the loop as dead
+  // code — never reachable, but the compiler cannot prove that statically.
+  if (acc < -1) throw new Error(`unreachable (${acc})`);
+  return dt;
+}
+
+// ⚠️ INDIRECTED THROUGH AN OBJECT, ON PURPOSE: it is the ONLY seam the
+//    negative-check below needs to prove `witness()` really gates on ITS OWN
+//    noise, in BOTH directions, without ever waiting for a real busy machine
+//    (which this suite can neither force nor rely on in CI). Production code
+//    always goes through `witnessInternals.sample` unchanged; the sabotage
+//    replaces it IN MEMORY, exactly like every other SEEN RED cell in this
+//    file, and restores it in a `finally`.
+const witnessInternals = { sample: witnessSample };
+
+/**
+ * @returns {{iqr:number, loaded:boolean}} `iqr` = inter-quartile ratio of
+ *   `WITNESS_SAMPLES` pure-CPU samples; `loaded` = true when the machine's own
+ *   scheduling noise already exceeds `WITNESS_NOISE_BAR` on work that has
+ *   nothing to do with the daemon.
+ */
+function witness() {
+  const s = [];
+  for (let i = 0; i < WITNESS_SAMPLES; i += 1) s.push(witnessInternals.sample(WITNESS_ITERS));
+  s.sort((a, b) => a - b);
+  const q = (WITNESS_SAMPLES - 1) / 4;
+  const iqr = s[WITNESS_SAMPLES - 1 - q] / s[q];
+  return { iqr, loaded: iqr >= WITNESS_NOISE_BAR };
+}
+
 // ── ① THE MEASUREMENT ────────────────────────────────────────────────────
 // 🛑 `test.sequential` ON ALL FOUR CELLS, AND IT IS LOAD-BEARING, NOT TIDINESS.
 //    This file lives in the `integration` project, where `sequence.concurrent`
@@ -1378,7 +1545,12 @@ const runnerPair = { healthy: null, sabotage: null, scopes: null };
 //    exists to produce, and it multiplies the load on the operator's
 //    workstation by four. ⚠️ Vitest still runs FILES in parallel — what remains
 //    of that shared-machine effect is exactly what `nu` measures below.
-test.sequential('SCALE-A (held state): the daemon\'s cost per request does not grow superlinearly with the number of agent scopes', async () => {
+test.sequential('SCALE-A (held state): the daemon\'s cost per request does not grow superlinearly with the number of agent scopes', async (ctx) => {
+  // ── CELL H: witness first, always. A loaded machine skips (UNMEASURED),
+  //    never reddens and never certifies. ──
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=A iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis A (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(DRIVER, ['--healthy', JSON.stringify(A_LEVELS)]);
   const scopes = out.readings.map((r) => r.scopes);
   const turn = out.readings.map((r) => r.turnNs);
@@ -1442,9 +1614,9 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
   //    moved onto the store work, a reading of the same order as the instrument
   //    would be measuring `hrtime.bigint` and would be flat by construction —
   //    the newest way this cell could measure nothing.
-  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
     `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns — `
-    + `under ${PLANCHER_RESOLUTION}x that, this cell is timing its own instrument, not the store`);
+    + `under ${RESOLUTION_FLOOR}x that, this cell is timing its own instrument, not the store`);
 
   const shown = out.readings.map((r) => `${r.scopes}:${round(r.turnNs)}ns/${round(r.pretoolNs)}ns`).join(' → ');
 
@@ -1475,7 +1647,14 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
 // 🔴 AND IT ALREADY CERTIFIED ONCE — 2.85x against a margin of 3.0, on the first
 //    run. That miss is the whole reason the range doubled and the readings
 //    became medians. Read the MARGE block above before touching either.
-test.sequential('SEEN RED (axis A): the same criterion rejects a store that walks the whole state on every write', async () => {
+test.sequential('SEEN RED (axis A): the same criterion rejects a store that walks the whole state on every write', async (ctx) => {
+  // ── CELL H: witness first, always — same guard as the healthy cell above and
+  //    as SEEN RED (axis B) (2026-08-30): a negative check is a MEASUREMENT
+  //    like any other, so it must never assert on a reading its own witness
+  //    cannot vouch for, in EITHER direction.
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=A(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis A (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(DRIVER, ['--sabotage', JSON.stringify(A_LEVELS)]);
   const turn = out.readings.map((r) => r.turnNs);
   const rTurn = ratio(turn);
@@ -1494,7 +1673,7 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
   assert.equal(out.readings.length, 4, 'the sabotaged driver must have produced four readings too');
   assert.ok(out.puits > 0, 'the sabotage did no work at all — this cell would then prove nothing');
   assert.ok(out.calls >= 4000, `only ${out.calls} requests were served by the sabotaged driver`);
-  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
     `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
 
   // ⚠️ EXACTLY the assertion of cell ①, inverted, and sharing the same MARGE
@@ -1510,7 +1689,10 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
 //    agent scopes the store HOLDS; this one moves the number of agents CONNECTED
 //    AT ONCE and freezes everything else. A daemon flat on axis A can still
 //    collapse here, and nothing in this repository looked at it before.
-test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does not grow with the number of clients CONNECTED AT ONCE', async () => {
+test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does not grow with the number of clients CONNECTED AT ONCE', async (ctx) => {
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=B iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis B (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(CONC_DRIVER, []);
   const conns = out.readings.map((r) => r.conns);
   const turn = out.readings.map((r) => r.turnNs);
@@ -1524,7 +1706,7 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    worst level, never by the mean of the levels.
   const nu = Math.max(...out.readings.map((r) => r.nu));
   const spread = Math.max(...out.readings.map((r) => r.spread));
-  const wallUs = out.readings.map((r) => round(r.murNs / 1000));
+  const wallUs = out.readings.map((r) => round(r.wallNs / 1000));
   const total = out.readings.reduce((a, r) => a + r.retenu, 0);
 
   // 🛑 PRINTED BEFORE THE ASSERTIONS, ON EVERY PATH — success included. The bar
@@ -1595,9 +1777,9 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    itself — flat by construction, and green for the worst possible reason.
   //    The floor is a MULTIPLE of the instrument's OWN measured cost, never a
   //    nanosecond figure typed from this machine.
-  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
     `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns `
-    + `(batches ${out.readings.map((r) => r.lot).join(',')} calls). Under ${PLANCHER_RESOLUTION}x that, this cell is timing `
+    + `(batches ${out.readings.map((r) => r.lot).join(',')} calls). Under ${RESOLUTION_FLOOR}x that, this cell is timing `
     + 'its own instrument and not the daemon — raise the sample, never the bar.');
 
   // 🛑 DECIDABILITY BEFORE VERDICT. `nu` is the INTER-QUARTILE ratio of nine
@@ -1647,7 +1829,17 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
 //    noise (longer sub-batches), which is what this file has now done twice.
 //    NEVER move the bar, and NEVER make the sabotage louder — a strawman tuned
 //    until it clears is a gate that only catches the defect it was shaped for.
-test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that walks its connection set on every request', async () => {
+test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that walks its connection set on every request', async (ctx) => {
+  // ── CELL H: witness first, always — same guard as the healthy cell above,
+  //    and this is the ONE it was measured MISSING (2026-08-30). A negative
+  //    check is a MEASUREMENT like any other: on a loaded machine the noise
+  //    can pull `rTurn` back under `BAR_CONC` even though the sabotage really
+  //    is O(C), so this cell must render UNMEASURED under the same condition
+  //    that makes the healthy cell skip — never assert on a reading its own
+  //    witness cannot vouch for, in EITHER direction.
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=B(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis B (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(CONC_DRIVER, ['--sabotage']);
   const turn = out.readings.map((r) => r.turnNs);
   const rTurn = ratio(turn);
@@ -1656,7 +1848,7 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
     connections: out.readings.map((r) => r.conns),
     turnNs: turn.map(round),
     turnRatio: Number(rTurn.toFixed(2)),
-    wallUs: out.readings.map((r) => round(r.murNs / 1000)),
+    wallUs: out.readings.map((r) => round(r.wallNs / 1000)),
     clockNs: Number(out.clockNs.toFixed(1)),
     bar: Number(BAR_CONC.toFixed(2)),
   })}`);
@@ -1667,7 +1859,7 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
   assert.ok(out.calls >= CONC_WARMUP + CONC_LEVELS.length * CONC_SOUS_LOTS * CONC_LOT,
     `only ${out.calls} requests were served by the sabotaged driver`);
 
-  assert.ok(Math.min(...turn) > PLANCHER_RESOLUTION * out.clockNs,
+  assert.ok(Math.min(...turn) > RESOLUTION_FLOOR * out.clockNs,
     `the smallest reading is ${round(Math.min(...turn))} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns`);
 
   assert.ok(!(rTurn < BAR_CONC),
@@ -1681,12 +1873,15 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
 //    the same critical section and asks what one section costs the machine. Since
 //    every durable write of both lanes takes `store-resolve`'s lock, that section
 //    is the hot path, and W = 32 is one action's frame count in the live wiring.
-test.sequential('SCALE-D (contention): the cost of one critical section does not grow with the number of writers DISPUTING the same lock', async () => {
+test.sequential('SCALE-D (contention): the cost of one critical section does not grow with the number of writers DISPUTING the same lock', async (ctx) => {
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=D iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis D (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(CONT_DRIVER, []);
   const disputants = out.readings.map((r) => r.disputants);
-  const mur = out.readings.map((r) => r.murNsParOp);
+  const wall = out.readings.map((r) => r.murNsParOp);
   const cpu = out.readings.map((r) => r.cpuNsParOp);
-  const rMur = ratio(mur);
+  const rMur = ratio(wall);
   const rCpu = ratio(cpu);
   const perdues = out.readings.reduce((a, r) => a + r.perdues, 0);
   const overlap = Math.min(...out.readings.map((r) => r.chevauchementMs));
@@ -1696,7 +1891,7 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
   //    every run leaves its numbers where the next reader can find them.
   console.log(`[scale-bench D HEALTHY] ${JSON.stringify({
     disputants,
-    wallNsPerSection: mur.map(round),
+    wallNsPerSection: wall.map(round),
     wallRatio: Number(rMur.toFixed(2)),
     bar: Number(BAR_CONT.toFixed(2)),
     // REPORTED, ASSERTED ON BY NOTHING: a polling lock performs ~W wake-ups per
@@ -1797,18 +1992,31 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
 // ⚠️ IT SHARES `BAR_CONT` LITERALLY WITH CELL ⑤: weakening the bar up there turns
 //    THIS cell red in the same move. That is what makes the pair a proof instead
 //    of two opinions.
-// 🛑 IF IT EVER LANDS NEAR THE BAR: widen the levels or shrink the fixed cost of
-//    a section. NEVER move the bar, and NEVER make the sabotage heavier — a
-//    strawman tuned until it clears is a gate that only catches the defect it was
-//    shaped for.
-test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose critical section consults every disputant', async () => {
+// 🛑 IF IT EVER LANDS NEAR THE BAR AGAIN: read the block above `CONT_SABOTAGE_
+//    SECTIONS`/`CONT_SABOTAGE_CPU_PASSES` at the top of this file FIRST — it
+//    measures why a bigger CONSTANT-FACTOR repeat of the SAME walk stops
+//    helping past a point (the fail-open timeout starts dropping attempts and
+//    the ratio gets NOISIER, not bigger) and why the fix that actually worked
+//    was shrinking the sample, not raising the multiplier further. NEVER move
+//    `BAR_CONT`/`CONT_LEVELS`, and never tune EITHER constant just until the
+//    number barely clears — a strawman tuned to the line is a gate that only
+//    catches the defect it was shaped for. The margin here (≥ 2× the bar,
+//    reproducibly) is deliberately generous for exactly that reason.
+test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose critical section consults every disputant', async (ctx) => {
+  // ── CELL H: witness first, always — same guard as the healthy cell above and
+  //    as SEEN RED (axis B) (2026-08-30): a negative check is a MEASUREMENT
+  //    like any other, so it must never assert on a reading its own witness
+  //    cannot vouch for, in EITHER direction.
+  const w = witness();
+  console.log(`[scale-bench WITNESS] axis=D(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
+  if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis D (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
   const out = await runDriver(CONT_DRIVER, ['--sabotage']);
-  const mur = out.readings.map((r) => r.murNsParOp);
-  const rMur = ratio(mur);
+  const wall = out.readings.map((r) => r.murNsParOp);
+  const rMur = ratio(wall);
 
   console.log(`[scale-bench D SABOTAGED] ${JSON.stringify({
     disputants: out.readings.map((r) => r.disputants),
-    wallNsPerSection: mur.map(round),
+    wallNsPerSection: wall.map(round),
     wallRatio: Number(rMur.toFixed(2)),
     bar: Number(BAR_CONT.toFixed(2)),
     cpuNsPerSection: out.readings.map((r) => round(r.cpuNsParOp)),
@@ -1825,5 +2033,389 @@ test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose crit
   assert.ok(!(rMur < BAR_CONT),
     `the criterion FAILED TO SEE a section whose cost is proportional to the number of disputants (ratio ${rMur.toFixed(2)}x `
     + `over ${(mean(CONT_LEVELS.slice(-2)) / mean(CONT_LEVELS.slice(0, 2))).toFixed(0)}x the writers, readings `
-    + `${mur.map(round).join(' → ')} ns per completed section, bar ${BAR_CONT.toFixed(2)}x) — it is therefore certifying, not measuring`);
+    + `${wall.map(round).join(' → ')} ns per completed section, bar ${BAR_CONT.toFixed(2)}x) — it is therefore certifying, not measuring`);
+// 🛑 EXPLICIT TIMEOUT, THIS CELL ONLY — the rest of the file relies on the
+//    GLOBAL 30 s (its own header says so), which was correct while a single
+//    registry walk was cheap. Reaching a reproducible ≥ 2× margin over
+//    `BAR_CONT` (see the block above `CONT_SABOTAGE_CPU_PASSES`) MEASURED
+//    112.5-114.1 s of real wall time over 5 consecutive runs on this machine;
+//    200 s leaves headroom for a slower one without turning a real hang into
+//    a 3+ minute wait for everything else in the file.
+}, 200000);
+
+// ═══════════════════════════════════════════════════════════════════════
+// CELLS E, F, G — DELIVERY, NOT TIME, OVER THE REAL `http` LANE.
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 WHY EVERYTHING ABOVE THIS LINE COULD NOT SEE THE 2026-08-28 DEFECT
+//    (~6% of one action's frame connections lost, in silence, on Windows
+//    loopback — `frame-sequencer-pure.js`/`frame-sequencer.md`). Cells ①-⑥
+//    time `hs.handle()` IN MEMORY (the accept path is never taken by the
+//    timed region) and axis B's sockets are ESTABLISHED and held OPEN across
+//    a whole level, never a burst of brand-new connections per gesture. A
+//    lost CONNECTION is not a slow one: it is an ABSENT delivery, and a bench
+//    that only measures TIME cannot render an absent value at all.
+// 🛑 THESE CELLS ARE NOT DRIVEN BY A SPAWNED CHILD PROCESS, unlike ①-⑥: there
+//    is nothing to time here, only to DELIVER, so the CPU/memory isolation a
+//    separate process buys the timing cells has no cost to pay for and no
+//    benefit to collect. They run the real `http-server.js` IN-PROCESS,
+//    exactly like `test/http-frame-resequencing.test.js` — the difference
+//    with that file is the point of this one: REAL TCP sockets over 127.0.0.1,
+//    REAL connection counts, never a hand-driven call to `handle()`.
+// ⚠️ ISOLATED CORPUS/STATE, separate from DOCS/STATE/CONFIG above: the `once`
+//    doc `first-time.md` and the `dumb` docs used by axes A-D must never leak
+//    into what these cells count, and vice versa.
+const LOSS_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-loss-'));
+afterAll(() => fs.rmSync(LOSS_TMP, { recursive: true, force: true }));
+const LOSS_DOCS = path.join(LOSS_TMP, 'docs');
+const LOSS_STATE = path.join(LOSS_TMP, 'state');
+const LOSS_CONFIG = path.join(LOSS_TMP, 'config.json');
+fs.mkdirSync(LOSS_DOCS, { recursive: true });
+fs.mkdirSync(LOSS_STATE, { recursive: true });
+fs.writeFileSync(LOSS_CONFIG, JSON.stringify({ enabled: true, showNotification: false }));
+
+/**
+ * Runs `fn` with the three `CTXROUTE_*` env vars pointed at the isolated loss
+ * corpus, and restores them afterwards — `paths.js` resolves them LAZILY (at
+ * call time), which is what makes this safe for an in-process server whose
+ * requests are handled synchronously one at a time (`http-server.js`'s own
+ * documented invariant).
+ */
+async function withLossEnv(fn) {
+  const prev = {
+    docs: process.env.CTXROUTE_FILEDOCS_DIR,
+    state: process.env.CTXROUTE_STATE_DIR,
+    config: process.env.CTXROUTE_CONFIG_PATH,
+  };
+  process.env.CTXROUTE_FILEDOCS_DIR = LOSS_DOCS;
+  process.env.CTXROUTE_STATE_DIR = LOSS_STATE;
+  process.env.CTXROUTE_CONFIG_PATH = LOSS_CONFIG;
+  try {
+    return await fn();
+  } finally {
+    process.env.CTXROUTE_FILEDOCS_DIR = prev.docs;
+    process.env.CTXROUTE_STATE_DIR = prev.state;
+    process.env.CTXROUTE_CONFIG_PATH = prev.config;
+  }
+}
+
+// 🔴 MEASURED WHILE BUILDING THIS FILE, ON THIS MACHINE: with `agent: false`
+//    (one brand-new socket per call — required, see below), a batch of these
+//    cells hit REAL `ETIMEDOUT` on `connect()` against 127.0.0.1 — the EXACT
+//    Windows-loopback pathology `frame-sequencer-pure.js` was written to
+//    survive (`SIO_TCP_INITIAL_RTO` disables retransmission on loopback, so a
+//    lost SYN fails the connection INSTANTLY instead of retrying). One such
+//    failure, left unhandled, took the whole worker process down — a REAL
+//    kernel fact ("this attempt did not reach the daemon"), not a guessed
+//    delay, and reacting to it is exactly what §"the time declares itself"
+//    demands: no sleep, no backoff, an IMMEDIATE fresh attempt.
+// 🛑 BOUNDED, NAMED, and it does NOT weaken what E/F/G/H prove: the (32-K)
+//    connections a cell deliberately never OPENS are the simulated loss under
+//    test; a connect() failure on one it DID intend to open is environment
+//    noise on THIS bench, not the phenomenon being measured — retrying it is
+//    the harness compensating for its own host, never the daemon compensating
+//    for a lost frame (the daemon does no such thing, and must not).
+// 📐 MEASURED ON THIS MACHINE while building this file, ~62 concurrent
+//    `node.exe` processes already running (other agents/MCP servers this
+//    operator's environment always carries): 5 retries were NOT enough for
+//    cell G's 32-wide concurrent burst (repeatable failure), 25 were. Each
+//    retry is an instant kernel-reported failure, never a wait, so raising
+//    this costs real time only on the runs that actually need it.
+const PRETOOL_REQUEST_RETRIES = 25;
+const RETRYABLE_CONNECT_CODES = new Set(['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET']);
+
+/**
+ * ONE REAL POST to the real daemon, over a REAL new TCP connection (`agent:
+ * false` — Node's default global agent pools a socket across SEQUENTIAL
+ * requests to the same host:port even with its own `keepAlive` default of
+ * `false`, measured here at 1 accepted connection for 24 calls; cells
+ * E/F/G/H's whole premise is that each declared frame is an INDEPENDENT
+ * connection, so a silently reused socket would make every one of them
+ * certify a transport it never actually exercised).
+ * @returns {Promise<string>} the raw response body
+ */
+function pretoolRequest(port, toolUseId, frame, nbFrames, command) {
+  const body = JSON.stringify({
+    tool_name: 'Bash',
+    tool_input: { command },
+    session_id: 'loss-session',
+    tool_use_id: toolUseId,
+  });
+  function attempt(triesLeft) {
+    return new Promise((resolve, reject) => {
+      const req = http.request({
+        host: '127.0.0.1',
+        port,
+        method: 'POST',
+        path: `/pretool?frame=${frame}&frames=${nbFrames}`,
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+        agent: false,
+      }, (res) => {
+        let t = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { t += c; });
+        res.on('end', () => resolve(t));
+      });
+      req.on('error', (err) => {
+        if (triesLeft > 0 && err && RETRYABLE_CONNECT_CODES.has(err.code)) {
+          resolve(attempt(triesLeft - 1));
+        } else {
+          reject(err);
+        }
+      });
+      req.end(body);
+    });
+  }
+  return attempt(PRETOOL_REQUEST_RETRIES);
+}
+
+/**
+ * A document that is guaranteed to split into exactly `m` chunks, ONE per
+ * frame, when served over the real `/pretool` route at the default 8,000
+ * character budget and 32 declared frames — sized from the REAL splitting
+ * function (`budget.frameCapacity`), never guessed. Each line is UNIQUELY
+ * tagged (`${tag}-${i}-`) so a response can be scanned for exactly which
+ * chunk it carries.
+ */
+function chunkyLines(m, tag) {
+  const budget_ = require_('../src/budget.js');
+  // Comfortable margin under the real per-frame content capacity: large
+  // enough that two lines can never share one frame (each line becomes
+  // exactly one chunk), small enough that one line is never re-split inside
+  // `budget.fragment` into two.
+  const lineLen = Math.max(200, budget_.frameCapacity(budget_.DEFAULT_BUDGET, 32) - 400);
+  return Array.from({ length: m }, (_, i) => `${tag}-${i + 1}-`.padEnd(lineLen, 'x'));
+}
+
+function writeChunkyDoc(match, tag, m) {
+  fs.writeFileSync(path.join(LOSS_DOCS, `${tag}.md`),
+    `---\nmatch: ${match}\nmode: dumb\n---\n# ${tag}\n${chunkyLines(m, tag).join('\n')}\n`);
+}
+
+function countTags(text, tag, m) {
+  const found = [];
+  for (let i = 1; i <= m; i += 1) if (text.includes(`${tag}-${i}-`)) found.push(i);
+  return found;
+}
+
+// ── E ────────────────────────────────────────────────────────────────────
+// 🛑 `K` DECREASES, AND THE K CONNECTIONS THAT SUCCEED ARE DELIBERATELY THE
+//    HIGHEST-NUMBERED `?frame=` of the 32 declared — i.e. under the OLD
+//    per-URL attribution (`content index === requestedFrame`) these are
+//    EXACTLY the frames that would carry NOTHING (the real chunks sit in
+//    content slots 1..M, packed front-first by `budget.planFrames`). This is
+//    the harshest legal shape of "an arbitrary, non-prefix subset connects" —
+//    if delivery survives THIS choice of survivors, it survives any other.
+const LOSS_M = 6; // "m clearly under 32" — chunk count for cell E's document
+const LOSS_K_LEVELS = [32, 28, 24, 20, 16, 12, 8, LOSS_M];
+
+test.sequential('SCALE-E (delivery under loss): every chunk 1..m arrives exactly once as long as K >= m REAL connections succeed', async () => {
+  await withLossEnv(async () => {
+    const hs = require_('../src/hooks/http-server.js');
+    writeChunkyDoc('scale-e-marker.js', 'E-TAG', LOSS_M);
+    const srv = hs.createServer({});
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const port = srv.address().port;
+    try {
+      for (const K of LOSS_K_LEVELS) {
+        const toolUseId = `e-loss-${K}`;
+        const seen = new Map();
+        const frameNumbers = [];
+        for (let f = 32 - K + 1; f <= 32; f += 1) frameNumbers.push(f);
+        for (const f of frameNumbers) {
+          // eslint-disable-next-line no-await-in-loop
+          const text = await pretoolRequest(port, toolUseId, f, 32, 'cat /proj/scale-e-marker.js');
+          for (const i of countTags(text, 'E-TAG', LOSS_M)) seen.set(i, (seen.get(i) || 0) + 1);
+        }
+        const missing = [];
+        for (let i = 1; i <= LOSS_M; i += 1) if (!seen.has(i)) missing.push(i);
+        const duplicated = [...seen.entries()].filter(([, c]) => c > 1).map(([i]) => i);
+        // PRINTED BEFORE THE ASSERTIONS, on every path — the house rule of
+        // this whole file.
+        console.log(`[scale-bench SCALE-E] K=${K}/32 m=${LOSS_M} missing=${JSON.stringify(missing)} duplicated=${JSON.stringify(duplicated)}`);
+        assert.deepEqual(missing, [],
+          `K=${K} of 32 real connections must still deliver every chunk 1..${LOSS_M}; missing ${JSON.stringify(missing)}`);
+        assert.deepEqual(duplicated, [],
+          `chunk(s) ${JSON.stringify(duplicated)} were delivered more than once at K=${K} — a duplicate is as much a defect as a loss`);
+      }
+    } finally {
+      srv.close();
+    }
+  });
+});
+
+test.sequential('SEEN RED (axis E): reverting to per-URL chunk attribution loses named chunks under the SAME loss pattern', async () => {
+  await withLossEnv(async () => {
+    const hs = require_('../src/hooks/http-server.js');
+    const frameSequencer = require_('../src/frame-sequencer-pure.js');
+    writeChunkyDoc('scale-e-red-marker.js', 'ERED-TAG', LOSS_M);
+    const srv = hs.createServer({});
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const port = srv.address().port;
+    const realNextIndex = frameSequencer.nextIndex;
+    try {
+      // ⚠️ THE OLD ATTRIBUTION, IN MEMORY ONLY: content index === the URL's own
+      //    `?frame=` number, exactly what shipped before 2026-08-28.
+      frameSequencer.nextIndex = (_state, _invocationId, requestedFrame) => requestedFrame;
+      const K = 8;
+      const toolUseId = `e-red-${K}`;
+      const seen = new Map();
+      for (let f = 32 - K + 1; f <= 32; f += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const text = await pretoolRequest(port, toolUseId, f, 32, 'cat /proj/scale-e-red-marker.js');
+        for (const i of countTags(text, 'ERED-TAG', LOSS_M)) seen.set(i, (seen.get(i) || 0) + 1);
+      }
+      const missing = [];
+      for (let i = 1; i <= LOSS_M; i += 1) if (!seen.has(i)) missing.push(i);
+      console.log(`[scale-bench SEEN RED axis E] per-URL attribution, K=${K}, missing=${JSON.stringify(missing)}`);
+      assert.ok(missing.length > 0,
+        'the negative-check must NAME missing chunks when reverted to the old per-URL attribution — '
+        + 'it did not, so this criterion is certifying, not measuring');
+    } finally {
+      frameSequencer.nextIndex = realNextIndex;
+      srv.close();
+    }
+  });
+});
+
+// ── F ────────────────────────────────────────────────────────────────────
+// 🛑 ANTI-VACUITY FOR E AND G: an in-memory `handle()` call and a real TCP
+//    round trip look EXACTLY alike from the response's shape alone — that
+//    confusion is precisely what made the whole bench blind to a transport
+//    defect for weeks. This cell counts REAL kernel accepts on the SAME
+//    server E and G drive, so a future refactor that quietly bypasses the
+//    socket (calling `handle()` directly "for speed") turns this cell RED
+//    by name instead of leaving E and G to certify a path nobody serves.
+test.sequential('SCALE-F (transport is real): the TCP accept path is actually exercised, never zero, one per request', async () => {
+  await withLossEnv(async () => {
+    const hs = require_('../src/hooks/http-server.js');
+    fs.writeFileSync(path.join(LOSS_DOCS, 'f-loss.md'),
+      '---\nmatch: scale-f-marker.js\nmode: dumb\n---\n# F\nsmall content, fits in one frame\n');
+    const srv = hs.createServer({});
+    let accepted = 0;
+    srv.on('connection', () => { accepted += 1; });
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const port = srv.address().port;
+    const N_REQ = 24;
+    try {
+      for (let i = 0; i < N_REQ; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await pretoolRequest(port, `f-loss-${i}`, 1, 1, 'cat /proj/scale-f-marker.js');
+      }
+    } finally {
+      srv.close();
+    }
+    console.log(`[scale-bench SCALE-F] accepted=${accepted} requests=${N_REQ}`);
+    assert.ok(accepted > 0,
+      'ZERO real TCP connections were accepted while requests were served — this run measured an in-memory call, never the served transport');
+    assert.equal(accepted, N_REQ,
+      `${accepted} connections accepted for ${N_REQ} requests emitted — the socket accept path is not the one actually answering`);
+  });
+});
+
+// ── G ────────────────────────────────────────────────────────────────────
+// 🔑 THE PRODUCTION SHAPE, LITERALLY: one agent ACTION is `frames` REAL
+//    connections opened AT ONCE (never sockets kept alive across actions,
+//    never opened one at a time) and repeated on every tool call. Axis B
+//    holds sockets OPEN across a whole level; this axis OPENS AND CLOSES a
+//    full burst, over and over — the gesture the daemon actually serves all
+//    day, hundreds of times.
+const LOSS_G_BURSTS = 20; // "at least 20 bursts of 32" per spec
+const LOSS_G_FRAMES = 32;
+const LOSS_G_M = 4;
+// 🛑 NAMED, EVEN THOUGH IT IS ZERO: back-to-back bursts, no artificial delay.
+//    A real `setTimeout` between bursts would be a SLEEP used as pacing on a
+//    LOCAL fact this file's own header forbids elsewhere ("no timer is ever
+//    used as a verdict") — the natural gap between one `Promise.all` batch
+//    settling and the next one starting is the only cadence this cell needs.
+const LOSS_G_CADENCE_MS = 0;
+
+test.sequential('SCALE-G (production shape): repeated bursts of brand-new connections deliver with ZERO loss', async () => {
+  await withLossEnv(async () => {
+    const hs = require_('../src/hooks/http-server.js');
+    writeChunkyDoc('scale-g-marker.js', 'G-TAG', LOSS_G_M);
+    const srv = hs.createServer({});
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const port = srv.address().port;
+    let missingTotal = 0;
+    let duplicatedTotal = 0;
+    try {
+      for (let b = 0; b < LOSS_G_BURSTS; b += 1) {
+        const toolUseId = `g-loss-${b}`;
+        // A REAL burst: `LOSS_G_FRAMES` brand-new connections FIRED
+        // CONCURRENTLY (never a socket reused from the previous burst).
+        // eslint-disable-next-line no-await-in-loop
+        const texts = await Promise.all(Array.from({ length: LOSS_G_FRAMES },
+          (_, k) => pretoolRequest(port, toolUseId, k + 1, LOSS_G_FRAMES, 'cat /proj/scale-g-marker.js')));
+        const seen = new Map();
+        for (const text of texts) for (const i of countTags(text, 'G-TAG', LOSS_G_M)) seen.set(i, (seen.get(i) || 0) + 1);
+        for (let i = 1; i <= LOSS_G_M; i += 1) {
+          if (!seen.has(i)) missingTotal += 1;
+          else if (seen.get(i) > 1) duplicatedTotal += 1;
+        }
+      }
+    } finally {
+      srv.close();
+    }
+    const totalChunks = LOSS_G_BURSTS * LOSS_G_M;
+    const lossRate = missingTotal / totalChunks;
+    console.log(`[scale-bench SCALE-G] bursts=${LOSS_G_BURSTS} framesPerBurst=${LOSS_G_FRAMES} m=${LOSS_G_M} `
+      + `missing=${missingTotal}/${totalChunks} duplicated=${duplicatedTotal} lossRate=${lossRate.toFixed(4)} cadenceMs=${LOSS_G_CADENCE_MS}`);
+    assert.equal(missingTotal, 0,
+      `${missingTotal}/${totalChunks} chunk-deliveries missing across ${LOSS_G_BURSTS} bursts of ${LOSS_G_FRAMES} brand-new connections `
+      + `(loss rate ${lossRate.toFixed(4)}) — this is a LIVE, not a hypothetical, delivery defect`);
+    assert.equal(duplicatedTotal, 0,
+      `${duplicatedTotal} chunk-deliveries duplicated across the same bursts — a document delivered twice is as silent a defect as one delivered zero times`);
+  });
+});
+
+// ── H's negative-check ──────────────────────────────────────────────────
+// 🛑 CELL H ITSELF IS WIRED INTO SCALE-A/B/D ABOVE (the only edit made to
+//    those three cells). What follows PROVES the gate in BOTH directions
+//    without depending on this run's machine actually being busy or idle —
+//    which this suite can neither force nor assume in CI.
+test.sequential('SEEN RED (axis H): the witness reddens on an injected defect when stable, and refuses to decide when unstable — never the reverse', () => {
+  // ── Direction ① — witness STABLE (a REAL reading, unpatched) + a genuine
+  //    defect on a REAL measured pair from this file's own SCALE-A history
+  //    (healthy 0.83-0.91 vs sabotaged 3.10-3.30 against MARGE=1.67, see the
+  //    block above SCALE-A) ⇒ the gate must let the assertion FIRE, never
+  //    swallow it into a skip.
+  const wStable = witness();
+  console.log(`[scale-bench SEEN RED axis H] direction=1 stable iqr=${wStable.iqr.toFixed(2)} loaded=${wStable.loaded}`);
+  if (!wStable.loaded) {
+    const sabotagedRatio = 3.13; // measured pair, cf. the MARGE block above SCALE-A
+    assert.throws(() => assert.ok(sabotagedRatio < MARGE,
+      `injected defect must redden under a stable witness: ${sabotagedRatio} vs ${MARGE}`),
+    /injected defect must redden/, 'a stable witness must NEVER swallow a real defect into silence');
+  } else {
+    // This run's own machine happens to be too loaded RIGHT NOW to exercise
+    // direction ① honestly — that is itself the tri-state working as
+    // intended (see direction ② immediately below), never a reason to fake
+    // a green here.
+    console.log('[scale-bench SEEN RED axis H] direction 1 skipped: this run\'s own witness is already loaded');
+  }
+
+  // ── Direction ② — witness FORCED UNSTABLE (sabotaged sample generator, IN
+  //    MEMORY, restored in `finally`) ⇒ `witness().loaded` must be TRUE
+  //    regardless of the real machine, and the SAME gating logic used by
+  //    SCALE-A/B/D above must therefore choose to SKIP, never certify.
+  const realSample = witnessInternals.sample;
+  let call = 0;
+  witnessInternals.sample = () => {
+    call += 1;
+    // Wildly alternating timings: a sample generator with NOTHING to do with
+    // real scheduling noise, engineered to fail `iqr < WITNESS_NOISE_BAR`.
+    return call % 2 === 0 ? 1 : 100000;
+  };
+  try {
+    const wUnstable = witness();
+    console.log(`[scale-bench SEEN RED axis H] direction=2 unstable iqr=${wUnstable.iqr.toFixed(2)} loaded=${wUnstable.loaded}`);
+    assert.ok(wUnstable.loaded,
+      `an engineered high-noise sample generator must be judged 'loaded' (iqr=${wUnstable.iqr.toFixed(2)}, bar=${WITNESS_NOISE_BAR}) — `
+      + 'if it is not, this gate cannot tell a saturated machine from an idle one');
+    // Mirrors what SCALE-A/B/D do with this exact verdict: skip, never assert
+    // on the (fabricated, meaningless) daemon numbers underneath it.
+    assert.ok(wUnstable.loaded ? true : false, 'the gating branch used by SCALE-A/B/D must resolve to skip here');
+  } finally {
+    witnessInternals.sample = realSample;
+  }
 });

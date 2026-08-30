@@ -22,13 +22,16 @@ export default defineConfig({
       'test/deps-criticality-pure.test.js',
       'test/lib-pure.test.js',
       'test/canary.test.js',
-      'test/leak-pure.test.js',
       // ⚠️ The stale-code verdict (2026-08-24): deterministic, hermetic, and the
       //    ONLY suite covering `src/stale-code-pure.js`. Absent here its mutants sit
       //    at NoCoverage while the module looks mutated.
       'test/stale-code-pure.test.js',
       // ⚠️ English-only COMMIT gate: deterministic suite covering src/commit-msg-lang.js.
       'test/commit-msg-lang.test.js',
+      // ⚠️ Anti-leak COMMIT gate (2026-08-27): deterministic suite covering
+      //    src/commit-msg-leak.js. Absent from this list its mutants sit at
+      //    NoCoverage while the module looks measured.
+      'test/commit-msg-leak.test.js',
       // ⚠️ English-only IDENTIFIER gate. `foreign-identifier-gate.test.js` spawns `git`
       //    and `ast-grep`, so it never enters this runner: only the PURE verdict is
       //    mutated, and this is the suite that kills its mutants. It was MISSING from
@@ -43,6 +46,12 @@ export default defineConfig({
       // would sit at NoCoverage while the module looks measured — the exact hole
       // `foreign-identifier-pure.js` fell into the day before.
       'test/protocol-routes-pure.test.js',
+      // Which content index a connecting HTTP frame receives (2026-08-29): the
+      // ONLY suite covering `src/frame-sequencer-pure.js`. Same reasoning as the
+      // protocol-routes suite above — absent here, its mutants sit at
+      // NoCoverage while the module looks measured.
+      'test/frame-sequencer-pure.test.js',
+      'test/delivery-notice-pure.test.js',
       'test/sources-file.test.js',
       // ⚠️ `keys` operator (19/08/2026): DETERMINISTIC suite covering sources/file.js.
       //    Absent from this list its cases exist but Stryker never runs them ⇒ the

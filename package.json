@@ -2,8 +2,8 @@
   "name": "ctxroute",
   "version": "2.0.0",
   "description": "Declarative context routing for coding agents: a small, non-Turing-complete language that delivers knowledge (invariants, pitfalls, project skills) into an agent context at the exact tool call where it matters. Predictable, explainable, harness-agnostic.",
-  "main": "legacy-mcp-inject.js",
   "scripts": {
+    "pretest": "node tools/matcher-suite-check.js",
     "test": "vitest run --project=unit",
     "test:all": "vitest run",
     "t": "vitest related --run --passWithNoTests=false",
@@ -42,7 +42,15 @@
     "spec:tlc": "node specs/tla/run-tlc.mjs && node specs/tla/run-tlc.mjs --matrix state-runs.json",
     "test:spec-tlc": "vitest run transport-spec-gate.test.js transport-spec-tlc.test.js transport-conformance.test.js",
     "check:spelling": "cspell lint --no-progress --no-summary \"**/*.{js,mjs,cjs}\"",
-    "test:spelling": "vitest run foreign-identifier-gate.test.js foreign-identifier-pure.test.js"
+    "test:spelling": "vitest run foreign-identifier-gate.test.js foreign-identifier-pure.test.js",
+    "test:entrypoint": "vitest run package-entrypoint-gate.test.js",
+    "test:matcher-check": "vitest run matcher-suite-check.test.js",
+    "ci": "node tools/ci.mjs",
+    "ci:unit": "node tools/ci.mjs unit",
+    "ci:coupling": "node tools/ci.mjs coupling",
+    "ci:mutation": "node tools/ci.mjs mutation",
+    "ci:spec": "node tools/ci.mjs spec",
+    "test:ci-steps": "vitest run ci-steps-gate.test.js ci-steps-pure.test.js"
   },
   "license": "MIT",
   "keywords": [
@@ -70,6 +78,7 @@
     "cspell": "^9.8.0",
     "dependency-cruiser": "^18.1.0",
     "eld": "^2.1.0",
+    "@zenon-lab/personal-data-guard": "file:../personal-data-guard",
     "fast-check": "^4.9.0",
     "jscpd": "^5.0.12",
     "typescript": "^7.0.2",

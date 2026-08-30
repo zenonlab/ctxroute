@@ -1,10 +1,16 @@
 ---
-rules: [{"pattern":"leak-pure.js","scope":["ctxroute"]},{"pattern":"leak-list.js","scope":["ctxroute"]},{"pattern":"leak-list.test.js","scope":["ctxroute"]},{"pattern":"leak-gate.test.js","scope":["ctxroute"]},{"pattern":"leak-pure.test.js","scope":["ctxroute"]}]
+rules: [{"pattern":"leak-list.js","scope":["ctxroute"]},{"pattern":"leak-list.test.js","scope":["ctxroute"]},{"pattern":"leak-gate.test.js","scope":["ctxroute"]}]
 mode: smart
 threshold: 25
 rank: 566
 ---
 # personal-leak — the gate that stops personal data from reaching a PUBLIC repo
+🛑 **THE MATCHER LEFT THIS REPOSITORY ON 2026-08-27 — it is the package `@zenon-lab/personal-data-guard`**
+(devDependency, `file:` link, own repo at `~/Desktop/personal-data-guard`). ctxroute is its FIRST
+CONSUMER, no longer its owner: the problem is generic and belongs to no single project.
+⚠️ **What it decides is NOT documented here** — normalisation, word boundaries, reserved domains,
+exit codes: read the skill `personal-data-guard`. Repeating them here would be a copy, and a copy
+drifts. What stays below is what remains OURS: WHICH terms, WHERE the list lives, WHEN it runs.
 🔴 **THE ROOT IS MEASURED, NEVER SUPPOSED — this gate scanned a QUARTER of the repo for weeks (found 2026-08-20).** `ICI` was `path.dirname(import.meta.url)`, i.e. the `test/` FOLDER, and `git ls-files` run from there lists only what is under it: **86 files instead of 229**. The repo's ONLY blocking gate, born from a real leak, was blind to `src/`, to the root and to `docs/` — and its anti-vacuity floor (">50") passed comfortably on the 86, so nothing screamed. 🛑 A gate that measures a SUBSET is indistinguishable from one that measures everything. Root now comes from `git rev-parse --show-toplevel`, floor raised to the real perimeter (>200) so shrinking the scan reddens at once. ⚠️ Proven by a real decoy: a tracked file carrying the maintainer's home path is now NAMED, exit 1 — it passed silently before. ⚠️ Re-scan after the fix: 229 files, ZERO real leak was sleeping in the 143 never read.
 
 ⚠️ **PUSHED DATA CANNOT BE TAKEN BACK**: it survives in `git log -p` even after the tree is fixed. Observed 2026-08-04 — 5 leaks in tracked files (fixed BY HAND, without a net) + the user config becoming tracked because a codemod had missed `.gitignore`.

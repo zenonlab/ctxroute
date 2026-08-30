@@ -27,8 +27,8 @@ on:
       # ── mutated modules (mirror of stryker.conf.json `mutate`) ──
       - 'src/lib-pure.js'
       - 'src/canary.js'
-      - 'src/leak-pure.js'
       - 'src/commit-msg-lang.js'
+      - 'src/commit-msg-leak.js'
       - 'src/docfacts.js'
       - 'src/scope-reach-pure.js'
       - 'src/derived-observables.js'
@@ -65,12 +65,14 @@ on:
       - 'src/wiring-dialect.js'
       - 'src/corpus-cache.js'
       - 'src/lifecycle-log-pure.js'
+      - 'src/frame-sequencer-pure.js'
+      - 'src/delivery-notice-pure.js'
       # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
       - 'test/harness-conformance.test.js'
       - 'test/lib-pure.test.js'
       - 'test/canary.test.js'
-      - 'test/leak-pure.test.js'
       - 'test/commit-msg-lang.test.js'
+      - 'test/commit-msg-leak.test.js'
       - 'test/sources-file.test.js'
       # `keys` operator (19/08/2026): launched by Stryker, so a change to it can move the
       # score — the workflow must therefore see it. Sealed by mutation-workflow-gate.
@@ -106,6 +108,8 @@ on:
       - 'test/model-twin-pure.test.js'
       - 'test/declared-paths-pure.test.js'
       - 'test/protocol-routes-pure.test.js'
+      - 'test/frame-sequencer-pure.test.js'
+      - 'test/delivery-notice-pure.test.js'
       - 'test/memory-store.test.js'
       - 'test/state-eviction-pure.test.js'
       - 'test/state-crdt-pure.test.js'
@@ -144,7 +148,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:mutation
+      # ⚠️ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
+      #    §Tests&CI, 2026-08-29): the real steps (test:mutation THEN the
+      #    per-file mutation floor) live in `src/ci-steps-pure.js` (group
+      #    `mutation`), executed by `tools/ci.mjs`. Never edit them here —
+      #    edit CI_STEPS, `test/ci-steps-gate.test.js` reddens on drift.
       # ⚠️ THE PER-FILE FLOOR MUST RUN **HERE**, never only in the `test` job
       #    (14/08/2026). `mutation-floor-gate` is SILENT without
       #    `reports/mutation.json` — INTENDED behavior locally, but the report
@@ -152,10 +160,10 @@ jobs:
       # 🔴 MEASURED: `docfacts.js` at 81.19% with 15 survivors, GREEN CI, because
       #    `thresholds.break` is an AVERAGE (99.05 global). That is the exact
       #    collapse this gate exists to prevent — invisible for a month.
-      # ⚠️ `if: always()`: a Stryker red on the GLOBAL threshold must not mask
-      #    the PER-FILE verdict — both diagnostics, never one instead of the
-      #    other. 🛑 NEVER "fix" a red here by lowering the floor: a survivor
-      #    gets KILLED or ELIMINATED.
-      - name: per-file mutation floor (the report is fresh here)
-        if: always()
-        run: npx vitest run mutation-floor-gate.test.js
+      # ⚠️ `tools/ci.mjs` runs EVERY step of a group to the end regardless of an
+      #    earlier failure (never stops at the first red) — that is what plays
+      #    the role the old `if: always()` played here: a Stryker red on the
+      #    GLOBAL threshold must not mask the PER-FILE verdict, both
+      #    diagnostics, never one instead of the other. 🛑 NEVER "fix" a red
+      #    here by lowering the floor: a survivor gets KILLED or ELIMINATED.
+      - run: npm run ci:mutation

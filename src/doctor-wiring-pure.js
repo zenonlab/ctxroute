@@ -29,9 +29,7 @@
 //    counts `.includes()` among its traversal atoms, so one inside a `filter` would spend a line of
 //    this file's complexity budget on a plain substring test. Same reasoning already written into
 //    the lane-coherence block of the original.
-
 'use strict';
-
 // ⚠️ The gate's file name is load-bearing in TWO places (the consumer derivation and the split
 //    brain report) — declared ONCE so the two cannot drift apart.
 const GATE_FILE = 'doc-inject.js';
@@ -44,8 +42,6 @@ const GATE_FILE = 'doc-inject.js';
  * @typedef {{base: string, label: string, absent?: (f: string) => string, copy?: (f: string, repo: string) => string}} HookSpec
  * @typedef {{settings: *, wantedFrames: (number|null), laneFlag: (string|null), consumers: string[], repoDir: string}} WiringInput
  */
-
-
 // ── THE DECLARATION READER ───────────────────────────────────────────────────
 // 🛑 BOTH TRANSPORTS, ALWAYS. A declaration is `type:"command"` (a spawned process, coordinates in
 //    `--frame k --frames N`) OR `type:"http"` (a POST to the daemon, coordinates in the URL's
@@ -54,7 +50,6 @@ const GATE_FILE = 'doc-inject.js';
 //    exact structure of settings.json either — it evolves with the harness, and rigid parsing would
 //    be a false negative.
 const DECL_RE = /"(?:command|url)"\s*:\s*"([^"]+)"/g;
-
 /**
  * Every hook declaration of a settings object, whatever the event that carries it.
  * @param {unknown} settings parsed settings.json
@@ -63,7 +58,6 @@ const DECL_RE = /"(?:command|url)"\s*:\s*"([^"]+)"/g;
 function declarations(settings) {
   return JSON.stringify(settings).match(DECL_RE) || [];
 }
-
 // ⚠️ ONE READER FOR THE TWO DIALECTS, never two copies: the total and the index must be read by the
 //    SAME code, or a transport gains an index check and loses the total one, silently.
 /**
@@ -77,7 +71,6 @@ function coord(text, word) {
   const http = new RegExp(`[?&]${word}=(\\d+)`).exec(text);
   return http ? Number(http[1]) : null;
 }
-
 // ⚠️ A path is extracted, never guessed: an absolute Windows path (`C:\…`) or a POSIX one, ending
 //    on the file we are looking for. A declaration carrying no such path (the http lane has NO file
 //    name at all) yields null and is simply not judged on existence — accusing it would turn one
@@ -92,7 +85,6 @@ function filePath(text, base) {
   const m = new RegExp(`([A-Za-z]:[\\\\/][^"]*?|/[^"]*?)${escaped}`).exec(text);
   return m ? `${m[1]}${base}` : null;
 }
-
 // ── THE HOOK REGISTRY — every path the wiring must carry ────────────────────
 // ⚠️ DERIVED CHECKS, never eight copy-pasted blocks: a hook added tomorrow joins the wiring check
 //    by adding ONE entry here. `file: false` = the hook is only required to be PRESENT (nothing
@@ -155,7 +147,6 @@ const HOOKS = Object.freeze([
     copy: (f, repo) => `settings.json points at ANOTHER copy of the framework: ${f} (this repo: ${repo}).`,
   }),
 ]);
-
 // ⚠️ The GATE is not in the list above because it is NOT recognised by a file name: on the http lane
 //    a declaration carries only a URL with the frame coordinates. Its own descriptor, same shape.
 const GATE = Object.freeze({
@@ -164,17 +155,14 @@ const GATE = Object.freeze({
   absent: (f) => `settings.json points at a NON-EXISTENT GATE: ${f} — hook dead in silence.`,
   copy: (f, repo) => `settings.json points at ANOTHER copy of the gate: ${f} (this repo: ${repo}).`,
 });
-
 // ⚠️ Two indices only, and no third: an unused constant is dead code, hence an EQUIVALENT mutant
 //    nobody can kill — this repository eliminates those at the source instead of testing them.
 const RESET = 0;
 const SESSION = 1;
-
 /** @param {{name: string, ok: boolean, detail: (string|undefined)}} e @returns {CheckFinding} */
 function said(e) {
   return { kind: 'check', name: e.name, ok: e.ok, detail: e.detail };
 }
-
 /**
  * Every finding of the wiring check, IN ORDER.
  *
@@ -190,12 +178,10 @@ function wiringFindings(input) {
   const commands = declarations(input.settings);
   /** @type {Finding[]} */
   const out = [];
-
   // ── RESET first: without it, docs are never re-injected after compaction, in silence.
   const resets = declsFor(commands, HOOKS[RESET].re);
   out.push(said({ name: HOOKS[RESET].name, ok: resets.length >= 1, detail: HOOKS[RESET].detail }));
   pushFiles(out, resets, HOOKS[RESET], input.repoDir);
-
   // ── SINGLE HOOK: since the merge (2026-07-17), legacy-mcp-inject.js must NO LONGER be wired —
   //    the gate also injects MCP docs. Leaving it = MCP docs injected TWICE on every call (tokens
   //    burned in silence).
@@ -204,7 +190,6 @@ function wiringFindings(input) {
     ok: !commands.some((c) => /legacy-mcp-inject/.test(c)),
     detail: 'legacy-mcp-inject.js still wired in settings.json: MCP docs injected TWICE (gate + legacy).',
   }));
-
   // ── GATE (doc-inject.js): the UNIQUE injector (file + MCP) since the merge.
   // ⚠️ A GATE DECLARATION IS RECOGNISED BY WHAT IT CARRIES, NEVER BY ITS FILE NAME ALONE: on the
   //    http lane there is no file name at all, only a URL carrying the frame coordinates. Anchored
@@ -217,7 +202,6 @@ function wiringFindings(input) {
     ok: gate.length >= 1,
     detail: 'doc-inject.js missing from settings.json: since the merge, IT is what injects ALL docs. Silent death.',
   }));
-
   // ── MULTI-FRAME COHERENCE. What is checked is the COHERENCE of the wiring, never its size: a
   //    missing or duplicated index makes an entire frame vanish IN SILENCE, and nothing else can see
   //    it (the wiring lives OUTSIDE the repo).
@@ -238,14 +222,12 @@ function wiringFindings(input) {
     ok: uniqueN.length === 1,
     detail: `Divergent --frames values in settings.json: ${uniqueN.join(', ')}. The processes would split the content differently: the frames would no longer re-assemble.`,
   }));
-
   const expected = uniqueN.length === 1 ? uniqueN[0] : gate.length;
   out.push(said({
     name: 'there are exactly as many declarations as announced frames',
     ok: gate.length === expected,
     detail: `${gate.length} declaration(s) of doc-inject.js for --frames ${expected}. Each frame is carried by ONE process: ${expected - gate.length} are missing, so that content will NEVER leave this gesture.`,
   }));
-
   // ── BANDWIDTH IS DECLARED IN A SINGLE PLACE (2026-08-07).
   // 🔴 ERROR CLASS ALREADY PAID FOR ON 2026-08-05: a setting written in a harness's wiring and NEVER
   //    READ BACK by the engine. Measured result: a skill delivered in 11 gestures instead of 1 —
@@ -261,7 +243,6 @@ function wiringFindings(input) {
       detail: `ctxroute-config.json asks for ${input.wantedFrames} frame(s), settings.json wires ${gate.length} (--frames ${expected}). The harness obeys settings.json: the REAL capacity is ${gate.length}, not ${input.wantedFrames}. Realign the two — this is exactly the silent divergence of 2026-08-05.`,
     }));
   }
-
   const indices = gate.map((c) => {
     const i = coord(c, 'frame');
     return i === null ? 0 : i;
@@ -274,7 +255,6 @@ function wiringFindings(input) {
     detail: `Declared --frame indices: [${indices.join(', ')}] instead of [${expectedOnes.join(', ')}]. A missing index = a frame never emitted; a duplicated index = content delivered twice. Both are SILENT.`,
   }));
   pushFiles(out, gate, GATE, input.repoDir);
-
   // ── The remaining hooks, in wiring order: session gate, write guard, turn counter, canary.
   // ⚠️ The `.filter` lives in `declsFor`, NOT inline in this loop: a traversal inside a traversal is
   //    a declared O(N²) here, and this one has no reason to be one.
@@ -284,16 +264,13 @@ function wiringFindings(input) {
     out.push(said({ name: hook.name, ok: decls.length >= 1, detail: hook.detail }));
     if (hook.file) pushFiles(out, decls, hook, input.repoDir);
   }
-
   laneCoherence(out, input, commands, gate);
   return out;
 }
-
 /** @param {string[]} commands @param {RegExp} re @returns {string[]} */
 function declsFor(commands, re) {
   return commands.filter((c) => re.test(c));
 }
-
 /** @param {Finding[]} out @param {string[]} decls @param {HookSpec} hook @param {string} repoDir */
 function pushFiles(out, decls, hook, repoDir) {
   for (const c of decls) {
@@ -310,7 +287,6 @@ function pushFiles(out, decls, hook, repoDir) {
     });
   }
 }
-
 // ── LANE COHERENCE — ALL THE CONSUMERS, OR NONE (2026-08-21) ────────────────
 //
 // 🔴 MEASURED IN PRODUCTION, THEN ROLLED BACK, THE SAME DAY. The injection state has FOUR
@@ -339,10 +315,8 @@ function laneCoherence(out, input, commands, gate) {
   const laneRe = flagReadable
     ? new RegExp(input.laneFlag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     : null;
-
   const consumers = input.consumers;
   const peers = new Set(consumers.filter((f) => f !== GATE_FILE));
-
   // ONE PASS over the declarations: a file name identifies the consumer (a `command` always carries
   // one), and the lane flag says which lane it reaches. A consumer declared SEVERAL times reaches
   // the daemon only if EVERY one of its declarations does — one disk-bound process is enough to
@@ -356,7 +330,6 @@ function laneCoherence(out, input, commands, gate) {
   }
   const diskSide = [...lanes.keys()].filter((n) => !lanes.get(n));
   const daemonSide = [...lanes.keys()].filter((n) => lanes.get(n));
-
   out.push(said({
     name: 'the lane-coherence check has something to judge (flag read, consumers derived, gate declared)',
     ok: flagReadable && consumers.includes(GATE_FILE) && peers.size >= 1 && gate.length >= 1,
@@ -364,7 +337,6 @@ function laneCoherence(out, input, commands, gate) {
       + `${consumers.length} consumer(s) derived from src/hooks/ (gate ${consumers.includes(GATE_FILE) ? 'found' : 'MISSING'}), `
       + `${gate.length} gate declaration(s) in settings.json. A check that examines nothing is not a check that passes.`,
   }));
-
   // The GATE reaches the daemon when ANY of its declarations does: `type:"http"` (recognised by the
   // `"url"` key — the http lane has no file name at all) or a lane flag on the spawn lane. One frame
   // on the daemon is enough: that frame's deliveries are recorded in a memory the disk-bound peers
@@ -382,7 +354,6 @@ function laneCoherence(out, input, commands, gate) {
       + 'back off the daemon lane. All the consumers, or none — a shared state migrates for ALL of them or for NONE.',
   }));
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // A REDUCED MEASUREMENT MUST DECLARE ITSELF REDUCED (2026-08-22)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -419,7 +390,6 @@ const OPTIONAL_GROUPS = Object.freeze([
     missing: 'the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)',
   }),
 ]);
-
 /**
  * The notice a reduced run owes its reader. Empty array = nothing was reduced, say nothing.
  *
@@ -436,12 +406,10 @@ function reducedNotice(input) {
   const given = new Set(input.flagsGiven);
   const skipped = OPTIONAL_GROUPS.filter((g) => !given.has(g.flag));
   if (skipped.length === 0) return [];
-
   const lines = [
     `⚠️ REDUCED MEASUREMENT — ${input.ranCount} check(s) ran, and that is NOT the whole framework.`,
   ];
   for (const g of skipped) lines.push(`   • \`${g.flag}\` not given ⇒ NOT MEASURED: ${g.missing}`);
-
   // ⚠️ The wiring lives OUTSIDE this repository, so NO test here can see it. When a settings.json is
   //    sitting at the conventional address and we did not read it, saying so is the difference
   //    between "nothing to check" and "something was there and we walked past it".
@@ -457,7 +425,6 @@ function reducedNotice(input) {
   lines.push('   🛑 "I could not measure" is never "it is healthy".');
   return lines;
 }
-
 module.exports = {
   GATE_FILE, GATE, DECL_RE, HOOKS, OPTIONAL_GROUPS,
   declarations, coord, filePath, wiringFindings, reducedNotice,

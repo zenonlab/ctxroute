@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
+import { withoutDeliveryNotice } from '../src/differential-normalize.js';
 
 const require_ = createRequire(import.meta.url);
 const HOOK = path.join(__dirname, '..', 'src', 'hooks', 'doc-inject.js');
@@ -120,6 +121,16 @@ function laneHttp(payload, frame, frames) {
 function normalize(answer) {
   if (answer === null) return null;
   if (answer && typeof answer === 'object' && Object.keys(answer).length === 0) return null;
+  // ⚠️ THE SECOND DECLARED TRANSLATION (2026-08-30), SINGLE SOURCE IN
+  //    `differential-normalize.js`, never a copy here. It strips the
+  //    completion/deferral notice `delivery-notice-pure.js` appends to the
+  //    HTTP lane's `systemMessage` — the spawn lane has no equivalent
+  //    observer and can NEVER emit it (see that module's header). A no-op on
+  //    the spawn side (nothing to strip) and on any single-frame action.
+  if (answer && typeof answer === 'object' && typeof answer.systemMessage === 'string') {
+    const cleaned = withoutDeliveryNotice(answer.systemMessage);
+    return cleaned === answer.systemMessage ? answer : { ...answer, systemMessage: cleaned };
+  }
   return answer;
 }
 
@@ -210,17 +221,47 @@ test('FAIL-OPEN: a body that is not JSON answers "nothing", it never takes the d
   expect(handle('{"tool_name":"Bash"}', '/pretool', boom)).toEqual({});
 });
 
-test('SEEN RED: the differential really detects a lane that answers the wrong frame', async () => {
-  // 🛑 A gate never seen failing is a gate ASSUMED to work. Here we hand the
-  //    HTTP lane a DIFFERENT frame index and require the comparison to reject
-  //    it — proving the identity assertions above are load-bearing and not
-  //    passing by accident.
-  const body = Array.from({ length: 900 }, (_, i) => `line ${i} — invariant to preserve`).join('\n');
-  writeDoc('gros.md', `---\nmatch: server.js\nmode: dumb\n---\n# Big\n${body}\n`);
-  const payload = { tool_name: 'Bash', tool_input: { command: 'cat C:/proj/server.js' }, session_id: 's5', tool_use_id: 'inv-5' };
-  const a = normalize(await laneSpawn(payload, 1, 4));
-  const wrong = normalize(await laneHttp(payload, 2, 4));
-  assert.notDeepStrictEqual(wrong, a, 'a wrong frame MUST be visible — otherwise the identity tests prove nothing');
+test('SEEN RED: the differential really detects a lane that answers the wrong CONTENT', async () => {
+  // 🛑 A gate never seen failing is a gate ASSUMED to work. This cell used to
+  //    lever "ask the HTTP lane for frame 2 while the spawn lane answered
+  //    frame 1" — that lever is now DEAD BY DESIGN (2026-08-28): the daemon no
+  //    longer attributes content to the URL's own `?frame=` number, it hands
+  //    a connecting request the NEXT UNDELIVERED index (see the block above
+  //    `/pretool`'s handling in `src/hooks/http-server.js`, and
+  //    `frame-sequencer-pure.js`). Asking for frame 2 on a FRESH invocation
+  //    now serves index 1 on the HTTP lane too, exactly like frame 1 does —
+  //    so the old lever produced two IDENTICAL answers and this cell rotted
+  //    silently green-by-luck until it was re-measured on 2026-08-29.
+  // ✅ WHAT STILL NEEDS PROVING, unchanged: that `assert.notDeepStrictEqual`
+  //    really rejects two DIFFERENT outputs, so the IDENTITY cells above are
+  //    load-bearing and not passing by accident (a comparison that always
+  //    says "equal" would pass every IDENTITY test too). The new lever keeps
+  //    the SAME frame (1) on both lanes and makes them answer on two
+  //    DIFFERENT payloads (distinct commands triggering distinct documents,
+  //    distinct `tool_use_id`) — the comparison must still tell them apart.
+  writeDoc('trap-a.md', '---\nmatch: alpha.js\nmode: dumb\n---\n# Trap A\nDO NOT touch ALPHA.\n');
+  writeDoc('trap-b.md', '---\nmatch: beta.js\nmode: dumb\n---\n# Trap B\nDO NOT touch BETA.\n');
+  const payloadA = { tool_name: 'Bash', tool_input: { command: 'cat C:/proj/alpha.js' }, session_id: 's5', tool_use_id: 'inv-5a' };
+  const payloadB = { tool_name: 'Bash', tool_input: { command: 'cat C:/proj/beta.js' }, session_id: 's5', tool_use_id: 'inv-5b' };
+  const a = normalize(await laneSpawn(payloadA, 1, 1));
+  const wrong = normalize(await laneHttp(payloadB, 1, 1));
+  assert.notDeepStrictEqual(wrong, a, 'two different payloads MUST produce two different outputs — otherwise the identity tests prove nothing');
+});
+
+test('SEEN RED (delivery notice filter): a DECOY divergence in systemMessage is NOT hidden by normalize()', async () => {
+  // 🛑 Mandatory negative-check of the 2026-08-30 addition to `normalize()`
+  //    (`withoutDeliveryNotice`, single source in `differential-normalize.js`).
+  //    Direction ① (the filter really removes OUR message, restoring green)
+  //    is already proven by 'IDENTITY PER FRAME' above, which reddened
+  //    without this filter and is green with it. This cell proves direction
+  //    ②: a foreign divergence that merely SHARES our `ctxroute: ` prefix but
+  //    is NOT one of the two exact wordings must stay VISIBLE to `toEqual` —
+  //    otherwise this filter would be wide enough to hide a real regression.
+  const clean = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' }, systemMessage: '📄 doc: gros (chunk 4/4)' };
+  const decoyNotYetKnown = { ...clean, systemMessage: clean.systemMessage + ' · ctxroute: 4 chunk(s) delivered — 4 of 4 declared frames reached the daemon' };
+  const decoyModifiedBadge = { ...clean, systemMessage: '📄 doc: AUTRE (chunk 4/4) · ctxroute: all 4 chunk(s) delivered — 4 of 4 declared frames reached the daemon' };
+  expect(normalize(decoyNotYetKnown)).not.toEqual(normalize(clean));
+  expect(normalize(decoyModifiedBadge)).not.toEqual(normalize({ ...clean, systemMessage: clean.systemMessage + ' · ctxroute: all 4 chunk(s) delivered — 4 of 4 declared frames reached the daemon' }));
 });
 
 test('FRAME COORDINATES: the URL says exactly what argv says', async () => {

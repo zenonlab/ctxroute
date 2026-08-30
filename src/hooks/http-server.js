@@ -101,6 +101,25 @@ const http = require('http');
 // The four route names of our own wire protocol, from their single owner.
 const { routes: protocolRoutes } = require('../protocol-routes-pure');
 const { run } = require('../pretool-core');
+// ⚠️ WHICH CONTENT INDEX A CONNECTING FRAME RECEIVES (2026-08-29). The daemon is
+//    the single process that sees every connecting request of ONE invocation —
+//    see the block above `/pretool`'s handling, below, for the defect this
+//    closes (Windows loopback ETIMEDOUT losing ~6% of frame connections).
+const frameSequencer = require('../frame-sequencer-pure');
+// -- THE HUMAN-FACING VERDICT DERIVED FROM THE SAME FACTS (2026-08-30): once
+//    `frame-sequencer-pure` has decided WHICH content index a connecting
+//    request receives, this PURE module decides whether that observation
+//    means the invocation is now COMPLETE or, on a later unrelated
+//    invocation's first observation, that an earlier one was DEFERRED
+//    (evicted before it ever reached its last piece). See its header and
+//    `delivery-notice.md` for the reasoning; this shell only calls it and
+//    turns its verdict into a `systemMessage`, exactly like the withholding
+//    notice and the capacity alarm already composed in `pretool-core.js`.
+//    DECLARED, PERMANENT gap with the spawn lane: `differential-normalize.js`
+//    strips this ONE known suffix before any HTTP <-> spawn comparison.
+const deliveryNotice = require('../delivery-notice-pure');
+const collectCore = require('../collect-core');
+const lib = require('../lib-pure');
 // ⚠️ THE OTHER THREE CONSUMERS OF THE ONE STATE (2026-08-21). The gate was wired
 //    to the daemon and the three others were left on the disk — MEASURED: after a
 //    real PreCompact the daemon still held its memory, so skills and `once`
@@ -553,6 +572,20 @@ function emitRoute(data, store) {
  *   backend. Absent/null ⇒ the historical disk store, byte-identical. A daemon
  *   passes its MEMORY store and, with it, an empty lock: the kernel already
  *   serialises its callers. The two always travel together.
+ * @property {Map<string, number>|null} frameSequencerState which content
+ *   index each connecting frame of an invocation has already received —
+ *   `frame-sequencer-pure.js`'s bookkeeping, DEFAULT-CREATED (never `null`
+ *   by default, unlike `store`): unlike the state backend, there is no
+ *   "historical behaviour" to fall back to for a table that did not exist
+ *   before this change, so every real daemon gets one. A test may still pass
+ *   `null` or omit it — `nextIndex` fails open to the URL's own frame number.
+
+ * @property {Map<string, {nbFrames: number, served: number}>|null} deliveryNoticeState
+ *   `delivery-notice-pure.js`'s own tracking table (completion/deferral),
+ *   DEFAULT-CREATED like `frameSequencerState` and for the same reason: there
+ *   is no historical behaviour to preserve for a notice that did not exist
+ *   before this change. A test may pass `null` or omit it -- `observe` then
+ *   returns no notice at all, never a fabricated one.
  */
 
 /**
@@ -581,7 +614,7 @@ function emitRoute(data, store) {
  * @returns {object} the JSON to send back
  */
 function handle(body, url, deps) {
-  const { runFn, outputFn, parseFrames, store } = deps;
+  const { runFn, outputFn, parseFrames, store, frameSequencerState, deliveryNoticeState } = deps;
   let data;
   try {
     data = JSON.parse(body);
@@ -610,19 +643,85 @@ function handle(body, url, deps) {
   }
 
   let answer = NO_OUTPUT;
-  // ⚠️ `run` EMITS through a callback and RETURNS when it has nothing to say —
-  //    the spawn lane's callback prints and exits, ours just captures. That is
-  //    the whole of the port: the lifecycle belongs to the shell, and this
-  //    shell's lifecycle is "answer the request and stay alive".
+  // ⚠️ CAPTURED, NEVER COMPOSED HERE (2026-08-30 fix). This shell used to build
+  //    `{ ...answer, systemMessage: existing + ' · ' + noticeText }` by hand
+  //    AFTER `outputFn` had already run — i.e. it learned the dialect's field
+  //    NAME and its join rule, exactly the reimplementation the header of this
+  //    file forbids ("the response JSON is produced by `doc-inject.output()`,
+  //    a second copy would be a TWIN that drifts"). `outputFn` is now called
+  //    EXACTLY ONCE, with the two fragments already combined by the SAME pure
+  //    join `pretool-core.js` uses for its own withholding notice
+  //    (`lib.joinSystemMessage`) — never a second ternary invented here.
+  let captured = false;
   const capture = (decision, fullDoc, systemMessage) => {
-    answer = outputFn(decision, fullDoc, systemMessage);
+    captured = true;
+    const combined = showNotice ? lib.joinSystemMessage(systemMessage, noticeText) : systemMessage;
+    answer = outputFn(decision, fullDoc, combined);
   };
   const frames = frameFromUrl(url, parseFrames);
+  const invocationId = typeof data.tool_use_id === 'string' ? data.tool_use_id : '';
+  // ═════════════════════════════════════════════════════════════════════
+  // 🔴 THE DEFECT THIS REMAP CLOSES, MEASURED 2026-08-28. Windows disables TCP
+  //    retransmission on loopback (`SIO_TCP_INITIAL_RTO`, libuv `src/win/tcp.c`)
+  //    ⇒ ~6% of the connections a declared frame opens against this daemon are
+  //    lost in silence (ETIMEDOUT — 1459 failures / 100% timeout / 0 refusal,
+  //    measured by ETW kernel trace; a naked Node server loses as much, a .NET
+  //    client on the SAME server loses 0%; neither our code nor Claude Code).
+  //    The OLD design attributed content chunk k to the frame whose URL said
+  //    `?frame=k`: when that connection never reaches us, chunk k is delivered
+  //    NOWHERE — other frames of the SAME action connect empty-handed, and the
+  //    document is still counted delivered. A silent bug on this house's own
+  //    doctrine ("zero SILENT bugs").
+  // ✅ THIS DAEMON IS A SINGLE PROCESS THAT SEES EVERY CONNECTING REQUEST OF ONE
+  //    INVOCATION (`tool_use_id`) — it already knows what it has served. So a
+  //    connecting frame receives the NEXT UNDELIVERED content index, never the
+  //    index its own URL happened to carry. As long as at least as many frames
+  //    CONNECT as there are real content chunks, every chunk reaches SOMEONE —
+  //    which physical frame carried it stops mattering, exactly as `CHUNK j/m`
+  //    already makes ONE document's reassembly independent of arrival order.
+  // 🛑 THE DECISION LIVES IN `frame-sequencer-pure.js`, NOT HERE — this shell
+  //    only owns the transport, never a decision (house rule, top of file).
+  //    `requestedFrame` is passed as the FALLBACK, never as an instruction: it
+  //    is what today's design would have served, returned verbatim whenever
+  //    tracking cannot apply (no state map, single frame, empty invocation id)
+  //    — that is what keeps every caller that supplies none of it (a test, a
+  //    future client) byte-identical to before this change.
+  const frame = frameSequencer.nextIndex(frameSequencerState, invocationId, frames.frame, frames.nbFrames);
+  // ═════════════════════════════════════════════════════════════════════
+  // THE DEFECT THIS CLOSES, MEASURED 2026-08-30. A transport that is
+  // CORRECT but says NOTHING gets mistaken for a transport that is
+  // BROKEN (skill section MULTI-FRAME TRANSPORT: "a correct but unreadable
+  // transport gets mistaken for an outage"). `frame-sequencer-pure.js`
+  // closed the silent LOSS; nothing yet told the human whether an
+  // invocation actually finished.
+  // ONLY THIS LANE CAN OBSERVE IT: only the daemon sees every connecting
+  // request of one invocation, so only it can tell "every declared frame
+  // reached me" from "some never did". `delivery-notice-pure.js` decides
+  // WHAT to say, from the SAME `frame`/`nbFrames` facts just computed above
+  // -- BOTH known BEFORE `runFn` runs, so this is computed HERE rather than
+  // after the core has already produced its own `systemMessage`, which is
+  // what used to force this shell to re-open and rewrite that field by hand.
+  // A NOTICE MUST NEVER DECIDE. It travels into `capture` as an ordinary
+  // PARAMETER, exactly the law `pretool-core.noticeOutput` already states:
+  // a warning that changed `permissionDecision` as a side effect would be
+  // a notice deciding.
+  // IT ANNOUNCES A COUNT, NEVER A CAUSE -- same law as the withholding
+  // notice: "N chunk(s) deferred", never "a connection was lost".
+  // FOLLOWS `showNotification` LIKE EVERY OTHER BADGE: that setting is a
+  // TOTAL silence by the maintainer's decision, never a partial one.
+  // DECLARED, PERMANENT DIVERGENCE FROM THE SPAWN LANE: the spawn lane has
+  // no equivalent observer and can never emit this text -- that gap is
+  // filtered explicitly in `differential-normalize.withoutDeliveryNotice`,
+  // never silently by loosening this shell's own behaviour.
+  // ═════════════════════════════════════════════════════════════════════
+  const notice = deliveryNotice.observe(deliveryNoticeState, invocationId, frame, frames.nbFrames);
+  const noticeText = deliveryNotice.messageFor(notice);
+  const showNotice = noticeText !== '' && lib.shouldShowNotification(collectCore.loadConfig());
   try {
     runFn(data, capture, {
-      frame: frames.frame,
+      frame,
       nbFrames: frames.nbFrames,
-      invocationId: typeof data.tool_use_id === 'string' ? data.tool_use_id : '',
+      invocationId,
       // 🔑 THE STATE OF A LIVING DAEMON LIVES IN MEMORY, AND THE LOCK GOES WITH
       //    IT. Sixteen short-lived processes had no common ground but the disk,
       //    so a FILE was made to carry a conversation between them — a lock to
@@ -652,6 +751,18 @@ function handle(body, url, deps) {
     //    Here it would take down the service for every agent at once.
     return NO_OUTPUT;
   }
+
+  // ⚠️ `capture` MAY NEVER RUN. `pretool-core.run` returns SILENTLY (no call
+  //    to its `emit` callback at all) when there is nothing to inject and no
+  //    withholding notice of its own — see its `if (avis) emit(...); return;`
+  //    guard. The delivery notice must still reach the human in that case,
+  //    exactly as `pretool-core.noticeOutput` speaks WITHOUT a decision when
+  //    everything else is silent: `outputFn('none', '', noticeText)` composes
+  //    the SAME envelope shape through the SAME single dialect function —
+  //    never a hand-built object bypassing it.
+  if (!captured && showNotice) {
+    answer = outputFn('none', '', noticeText);
+  }
   return answer;
 }
 
@@ -669,6 +780,18 @@ function createServer(deps = {}) {
     //    behaviour. Owning the state is a DECISION taken by whoever starts the
     //    daemon, never a silent default inherited by a test or a shell.
     store: deps.store || null,
+    // ⚠️ DEFAULT-CREATED, UNLIKE `store` ABOVE: there is no PREVIOUS behaviour
+    //    to preserve for a table that did not exist before this daemon feature
+    //    — a real `createServer()` call (production, `main` below) always gets
+    //    a working sequencer. Only a test that hands `handle()` its own bare
+    //    `deps` object (bypassing `createServer`) sees it absent, and
+    //    `frame-sequencer-pure.nextIndex` fails open to the URL's own number
+    //    in that case.
+    frameSequencerState: deps.frameSequencerState || frameSequencer.createState(),
+    // DEFAULT-CREATED, SAME REASON AS `frameSequencerState` ABOVE -- no
+    // previous behaviour to preserve for a notice table that did not exist
+    // before this change.
+    deliveryNoticeState: deps.deliveryNoticeState || deliveryNotice.createState(),
     onAddressInUse: deps.onAddressInUse || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
     // ⚠️ NO DEFAULT, EXACTLY LIKE `store`, AND FOR THE SAME REASON. Absent ⇒ the

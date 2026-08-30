@@ -31,6 +31,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CI_STEPS } from '../src/ci-steps-pure.js';
 
 const RACINE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WF = path.join(RACINE, '.github', 'workflows', 'mutation.yml');
@@ -160,20 +161,36 @@ test('NEGATIVE-CHECK: the static-import gate really DETECTS a module no suite im
 // 🛑 The fix (one more step in the YAML) WAS PROTECTED BY NOTHING: removing it
 //    would have made the floor inert AGAIN, in silence. Hence this part — the
 //    fleet rule is to seal the class in the SAME gesture.
+//
+// ⚠️ MOVED 2026-08-29 (CLAUDE.md §Tests&CI, "the CI is ONE local command"):
+//    `mutation.yml` no longer spells out `npx vitest run mutation-floor-gate
+//    .test.js` — it calls `npm run ci:mutation`, and THAT single source is
+//    `src/ci-steps-pure.js`. Reading the workflow TEXT for this literal would
+//    now always fail, not because the floor stopped running, but because the
+//    command moved to its single source (`test/ci-steps-gate.test.js` proves
+//    the workflow calls nothing else). So this cell reads CI_STEPS instead —
+//    it still fails the moment the floor step disappears from the `mutation`
+//    group, wherever that group is executed.
 test('GATE: the PER-FILE floor is run in the mutation job (where the report exists)', () => {
-  const yml = fs.readFileSync(path.join(import.meta.dirname, '..', '.github', 'workflows', 'mutation.yml'), 'utf8');
-  assert.ok(/mutation-floor-gate\.test\.js/.test(yml),
-    'The mutation job does NOT run `mutation-floor-gate.test.js`.\n' +
+  const mutationSteps = CI_STEPS.filter((s) => s.group === 'mutation');
+  const mutationCommands = mutationSteps.map((s) => s.command);
+  assert.ok(mutationCommands.length > 0, 'CI_STEPS has no `mutation` group — the harness proves nothing');
+  assert.ok(mutationCommands.some((c) => /mutation-floor-gate\.test\.js/.test(c)),
+    'The `mutation` group of CI_STEPS does NOT run `mutation-floor-gate.test.js`.\n' +
     '      Without it, the PER-FILE floor is INERT: it is mute without a report,\n' +
     '      and the report only exists in this job. A module can then collapse\n' +
     '      under the AVERAGE of `thresholds.break` without anything going red (measured:\n' +
     '      docfacts.js at 81.19 % with 15 survivors, CI green).');
-  // ⚠️ `if: always()`: without it, a red on the GLOBAL threshold short-circuits
-  //    the step and the PER-FILE verdict — the one that NAMES the offending
-  //    module — disappears precisely when it is most useful.
-  assert.ok(/if:\s*always\(\)/.test(yml),
-    'The floor step must be `if: always()`: a red on the GLOBAL threshold\n' +
-    '      would otherwise hide the PER-FILE verdict, the only one naming the culprit.');
+  // ⚠️ The old `if: always()` guaranteed the floor step still ran after a red
+  //    on the GLOBAL threshold. `tools/ci.mjs` now plays that role STRUCTURALLY
+  //    (it runs every step of a group to the end, never stopping at the first
+  //    red — see `tools/ci.mjs`) — so the guarantee is re-checked on the
+  //    RUNNER's source, not on a YAML flag that no longer exists.
+  const runner = fs.readFileSync(path.join(RACINE, 'tools', 'ci.mjs'), 'utf8');
+  assert.ok(/for \(const step of steps\)/.test(runner) && !/\bbreak\b/.test(runner),
+    'tools/ci.mjs must run every step of a group to the end (no early stop):\n' +
+    '      without that, a red on test:mutation would hide the PER-FILE verdict,\n' +
+    '      the only one naming the culprit.');
 });
 
 // ⚠️ Without this, a `paths:` could cite a file DELETED long ago: the filter

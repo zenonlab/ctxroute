@@ -24,6 +24,7 @@ import assert from 'node:assert/strict';
 
 import {
   GATE_FILE, GATE, HOOKS, OPTIONAL_GROUPS,
+
   declarations, coord, filePath, wiringFindings, reducedNotice,
 } from '../src/doctor-wiring-pure.js';
 

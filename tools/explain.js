@@ -47,7 +47,12 @@ const paths = require('../src/paths');
 
 // ── ARGUMENTS ──────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { toolName: '', toolInput: {}, doc: null, json: false, cwd: process.cwd() };
+  // 🛑 NEVER FABRICATE AN INPUT IN SILENCE. `cwd` is a declared path key (harness-profile
+  //    `pathKeys`) and TRIGGERS a skill alone. Defaulting it fits interactive use and is WRONG
+  //    when replaying a recorded payload: the verdict is true, the QUESTION is not the one asked.
+  //    Cost 2026-08-27: a session accusing this tool of diverging from production.
+  //    ⚠️ A `cwd` inside `--input` lands in `toolInput`, NOT here.
+  const a = { toolName: '', toolInput: {}, doc: null, json: false, cwd: process.cwd(), cwdFromFlag: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = argv[i + 1];
@@ -56,7 +61,7 @@ function parseArgs(argv) {
     // Shortcut for the most common case: "what does an agent opening this file receive?"
     else if (k === '--file') { a.toolName = a.toolName || 'Read'; a.toolInput = { file_path: v }; i++; }
     else if (k === '--doc') { a.doc = v; i++; }
-    else if (k === '--cwd') { a.cwd = v; i++; }
+    else if (k === '--cwd') { a.cwd = v; a.cwdFromFlag = true; i++; }
     else if (k === '--json') a.json = true;
   }
   return a;
@@ -226,6 +231,9 @@ function render(a, res, diag, config) {
   L.push('PAYLOAD');
   L.push('  tool   : ' + (a.toolName || '(none)'));
   L.push('  params : ' + JSON.stringify(a.toolInput));
+  // 🛑 ALWAYS printed WITH its origin: a reader who cannot see which directory was judged
+  //    cannot tell a real verdict from a verdict about another gesture.
+  L.push('  cwd    : ' + a.cwd + (a.cwdFromFlag ? '   (from --cwd)' : '   (DEFAULTED to process.cwd() — pass --cwd to replay a recorded payload)'));
   L.push('');
   if (diag) {
     L.push('DOC  ' + diag.doc);

@@ -5,7 +5,10 @@
   "mode": "smart",
   "defaultThreshold": 4,
   "frames": 12,
-  "http": { "host": "127.0.0.1", "port": 8787 },
+  "http": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
   "filterMode": "none",
   "filterList": [],
   "servers": {},
@@ -14,7 +17,13 @@
       "match": [
         "my-project"
       ],
-      "mode": "once"
+      "mode": "once",
+      "keys": {
+        "match": [
+          "-command",
+          "-commandPaths"
+        ]
+      }
     }
   },
   "skillsWithoutPerimeter": [

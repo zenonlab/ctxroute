@@ -36,7 +36,6 @@
     "src/gate.js",
     "src/deps-criticality-pure.js",
     "src/budget.js",
-    "src/leak-pure.js",
     "src/docfacts.js",
     "src/scope-reach-pure.js",
     "src/derived-observables.js",
@@ -61,7 +60,10 @@
     "src/model-twin-pure.js",
     "src/declared-paths-pure.js",
     "src/protocol-routes-pure.js",
-    "src/commit-msg-lang.js"
+    "src/frame-sequencer-pure.js",
+    "src/delivery-notice-pure.js",
+    "src/commit-msg-lang.js",
+    "src/commit-msg-leak.js"
   ],
   "incremental": true,
   "_concurrency_comment": "⚠️ BOUNDED CONCURRENCY — set 27/07/2026, DO NOT RAISE. By default Stryker opens 1 worker per logical thread (12 on a Ryzen 5 5600X): the machine saturates at 100%. DAMAGE MEASURED that day: under saturation, hook processes no longer reach the line that arms their deadline (deadline.js) ⇒ 502 zombies accumulated, machine unusable, `git log` over 60 s, suites in FALSE REDS. Mutation is BACKGROUND work, not a race: 3 workers = ~50% load, usable machine, identical result. Fleet rule: incremental + perTest + timeoutMS + bounded concurrency, on ALL projects.",

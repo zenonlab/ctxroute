@@ -1,7 +1,7 @@
 ---
-rules: [{"pattern":"explain.js","scope":["ctxroute"]},{"pattern":"explain.test.js","scope":["ctxroute"]},{"pattern":"collect-core.js","scope":["ctxroute"]}]
+rules: [{"pattern":"explain.js","scope":["ctxroute"]},{"pattern":"explain.test.js","scope":["ctxroute"]},{"pattern":"explain-payload-parity.test.js","scope":["ctxroute"]},{"pattern":"explain-reason-coverage.test.js","scope":["ctxroute"]},{"pattern":"collect-core.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 6
+threshold: 15
 ---
 # explain.js / collect-core.js — "why does this inject (or not)?"
 
@@ -16,3 +16,4 @@ threshold: 6
 ⚠️ **FAIL-LOUD** (exit 2 + "TOOL FAILURE"), unlike the fail-open hooks: a diagnostic mute about its own failure reads as "nothing injects" = a false engine verdict.
 ⚠️ `collect-core.js` = collection SHARED between gate and explain. Duplicating it reopens the divergence this tool exists to kill.
 ⚠️ `explain.test.js`: the 2 FOUNDING CASES replay the false greens of 07-31. **NEVER delete them** — if the behavior changes, we INVERT the expected verdict (done for the wildcard), the case stays. A founding case deleted is the bug class becoming invisible again.
+🛑 **PASS `--cwd` WHEN REPLAYING A RECORDED PAYLOAD (2026-08-27).** `cwd` is a declared path key (`harness-profile.pathKeys`), so it triggers a skill ALONE; absent the flag the tool DEFAULTS it to `process.cwd()` and answers, truthfully, about a gesture that never happened. ⚠️ A `cwd` written inside `--input` lands in `toolInput`, NOT in the payload cwd. The `cwd` line of the PAYLOAD block always states its origin — read it before believing a verdict. Cost of not doing so: a session, and a false cause written into the backlog.

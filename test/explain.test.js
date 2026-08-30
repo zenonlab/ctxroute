@@ -222,3 +222,28 @@ test('㊵.a NEGATIVE — payload within the bounds: NO mention of truncation', (
   assert.match(output, /scope. NOT SATISFIED/);
   assert.doesNotMatch(output, /TRUNCAT/, 'a message displayed even without truncation would be permanent noise');
 });
+
+// ── `cwd` IS ALWAYS SHOWN, WITH ITS ORIGIN (2026-08-27) ──────────────────
+// FOUNDING CASE. `cwd` is a declared path key: it triggers a skill ALONE. The tool defaults it to
+// `process.cwd()`, so replaying a recorded payload without `--cwd` yields a TRUE verdict about a
+// gesture that never happened — and nothing said so. Cost: a session, plus a false cause written
+// into the backlog. NEVER delete: if the display changes, invert the expectation, keep the case.
+test('CWD: printed with (from --cwd) when the flag is given', () => {
+  const fleetRoot = fleetWith({ 'x.md': '---\nmatch: nowhere\nmode: dumb\n---\nBody.\n' });
+  const out = launch(['--tool', 'Bash', '--cwd', 'C:/somewhere', '--input', '{"command":"x"}'], fleetRoot);
+  assert.match(out, /cwd\s+: C:\/somewhere\s+\(from --cwd\)/);
+});
+
+test('CWD: a DEFAULTED value is announced as such — silence here is the defect', () => {
+  const fleetRoot = fleetWith({ 'x.md': '---\nmatch: nowhere\nmode: dumb\n---\nBody.\n' });
+  const out = launch(['--tool', 'Bash', '--input', '{"command":"x"}'], fleetRoot);
+  assert.match(out, /DEFAULTED to process\.cwd\(\)/);
+  assert.match(out, /--cwd/);
+});
+
+test('CWD: a `cwd` inside --input does NOT feed the payload cwd (the 2026-08-27 trap)', () => {
+  const fleetRoot = fleetWith({ 'x.md': '---\nmatch: nowhere\nmode: dumb\n---\nBody.\n' });
+  const out = launch(['--tool', 'Bash', '--input', '{"command":"x","cwd":"C:/decoy"}'], fleetRoot);
+  assert.ok(!/cwd\s+: C:\/decoy/.test(out), 'an --input cwd must not be taken for the payload cwd');
+  assert.match(out, /DEFAULTED/);
+});

@@ -35,7 +35,11 @@ jobs:
       #    FAST lane of the edit loop (~2 s) — using it here would deprive CI of
       #    the spawning suites, i.e. the only ones proving the hooks REALLY run.
       #    The staging is in TIME, never in the proof.
-      - run: npm run test:all
+      # ⚠️ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
+      #    §Tests&CI, 2026-08-29): the real steps live in `src/ci-steps-pure.js`
+      #    (group `unit`), executed by `tools/ci.mjs`. Never edit the command
+      #    here — edit CI_STEPS, `test/ci-steps-gate.test.js` reddens on drift.
+      - run: npm run ci:unit
 
   coupling:
     runs-on: ubuntu-latest
@@ -48,8 +52,12 @@ jobs:
       - run: npm ci
       # ㉑ (16/08/2026): tsc --checkJs — the checker, never the syntax.
       # Binary ratchet: 0 errors, reached on 16/08/2026 (95 fixed, 0 runtime bugs).
-      - run: npm run check:types
-      - run: npm run check:coupling
+      # ⚠️ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
+      #    §Tests&CI, 2026-08-29): the real steps (check:types then
+      #    check:coupling) live in `src/ci-steps-pure.js` (group `coupling`),
+      #    executed by `tools/ci.mjs`. Never edit the command here — edit
+      #    CI_STEPS, `test/ci-steps-gate.test.js` reddens on drift.
+      - run: npm run ci:coupling
 
 # ⚠️ MUTATION LIVES IN `.github/workflows/mutation.yml`, NOT HERE.
 #    Reason: `paths:` applies to the WHOLE workflow, never to a job — keeping

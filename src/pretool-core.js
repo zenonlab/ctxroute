@@ -494,7 +494,7 @@ function run(data, emit, options) {
     //    is appended LAST — it is the only one that speaks about what is NOT
     //    there, so it must not be read as a comment on what is.
     const suffix = badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarm + filter;
-    emit(res.decision, fullDoc, suffix === '' ? avis : suffix + (avis ? ' · ' + avis : ''));
+    emit(res.decision, fullDoc, lib.joinSystemMessage(suffix, avis));
   } catch {
     // fail-open: we ANSWER "nothing to inject", we do not kill the process.
   }

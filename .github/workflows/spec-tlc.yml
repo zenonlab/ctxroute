@@ -71,4 +71,12 @@ jobs:
           java-version: '21'
       # ⚠️ No `npm ci`: the gate is zero-dependency on purpose (node + java only).
       #    Adding an install here would make the proof depend on the npm registry.
-      - run: npm run spec:tlc
+      #    `tools/ci.mjs` and `src/ci-steps-pure.js` are ZERO-DEP themselves (node
+      #    builtins only), so routing through the local command changes nothing
+      #    about that guarantee.
+      # ⚠️ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
+      #    §Tests&CI, 2026-08-29): the real step (`npm run spec:tlc`) lives in
+      #    `src/ci-steps-pure.js` (group `spec`), executed by `tools/ci.mjs`.
+      #    Never edit the command here — edit CI_STEPS, `test/ci-steps-gate.test.js`
+      #    reddens on drift.
+      - run: npm run ci:spec

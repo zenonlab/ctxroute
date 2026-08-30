@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, normalizePath } from '../src/leak-pure.js';
+import { forbiddenPatterns, scan, escapeLiteral, lastSegment, forgottenRoots, normalizePath } from '@zenon-lab/personal-data-guard';
 
 // 🔴 THE ROOT IS MEASURED, NOT SUPPOSED — and getting it wrong made this gate scan a QUARTER
 //    of the repository for weeks. `path.dirname(import.meta.url)` is the `test/` FOLDER, and

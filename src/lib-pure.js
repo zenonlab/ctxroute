@@ -165,6 +165,32 @@ function formatSystemMessage(server, levels) {
   return `📄 [ctxroute] ${server}${suffix}`;
 }
 
+// ⚠️ THE ONE PLACE THAT KNOWS HOW TWO `systemMessage` FRAGMENTS BECOME ONE
+//    (2026-08-30). `pretool-core.js` already had this exact decision inline
+//    (`suffix === '' ? avis : suffix + (avis ? ' · ' + avis : '')`) to append its
+//    withholding notice after the source badges; the http shell had grown a
+//    SECOND, slightly different copy to append the delivery notice
+//    (`existing ? existing + ' · ' + noticeText : noticeText`). Two copies of one
+//    join is exactly the twin-that-drifts class this repo exists to fight —
+//    composing a dialect field is a DECISION, so it lives here, PURE, and both
+//    callers reuse it instead of inventing their own ternary.
+// 🛑 `base` FIRST, `addition` LAST — every existing badge in this fleet is
+//    built by appending, never prepending (source badges, capacity alarm,
+//    withholding notice, filter count): a later caller expects to find its own
+//    text at the front, unchanged, with the addition trailing behind ' · '.
+/**
+ * @param {string|undefined|null} base the message so far (possibly empty)
+ * @param {string|undefined|null} addition the fragment to append (possibly empty)
+ * @returns {string} `base` alone, `addition` alone, or both joined by ' · '
+ */
+function joinSystemMessage(base, addition) {
+  const b = typeof base === 'string' ? base : '';
+  const a = typeof addition === 'string' ? addition : '';
+  if (a === '') return b;
+  if (b === '') return a;
+  return b + ' · ' + a;
+}
+
 // Is the server covered by the framework according to filterMode/filterList?
 // ⚠️ "whitelist" and "blacklist" are symmetrical: whitelist = the list of the ONLY
 // allowed ones, blacklist = the list of the ONLY excluded ones. "none"/unknown value = everything covered
@@ -425,6 +451,7 @@ module.exports = {
   isFrameworkEnabled,
   shouldShowNotification,
   formatSystemMessage,
+  joinSystemMessage,
   shouldInjectFor,
   docCandidatePaths,
 };

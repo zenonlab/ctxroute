@@ -1,0 +1,14 @@
+---
+match: ci-steps-pure
+mode: dumb
+---
+
+# ci-steps-pure.js / tools/ci.mjs — the CI is ONE local command (CLAUDE.md §Tests&CI, 2026-08-29)
+
+🔑 **SINGLE SOURCE of what each group (unit/coupling/mutation/spec) runs = `CI_STEPS` in `src/ci-steps-pure.js`.** `tools/ci.mjs` executes it for real (`npm run ci` / `npm run ci:<group>`); `test.yml`/`mutation.yml`/`spec-tlc.yml` call NOTHING but `npm ci` and `npm run ci:<group>` — never a bare `npm run test:all` again in a `run:` line.
+⚠️ **SCOPE = exactly 3 workflows.** `service-units.yml` is EXCLUDED BY NAME, in `test/ci-steps-gate.test.js`: it installs REAL systemd/launchd services on Linux AND macOS runners with real supervisors — a Windows station cannot prove that job, and routing it through the local command would fabricate a false green. Never fold it in.
+🛑 **`test/ci-steps-gate.test.js` checks TWO directions**: ① no workflow step escapes `npm ci`/`npm run ci`/`npm run ci:<KNOWN group>` (a bare `npm test`, a third-party command, an invented group = NAMED red) ② every group of `CI_STEPS` is called by at least one job (a job silently removed must not leave a group orphaned). Scope is DERIVED from disk (`readdirSync` on `.github/workflows/`), never a hand-written list — a 4th workflow enters the net by itself.
+⚠️ **`tools/ci.mjs` NEVER stops at the first red** — it runs every step of the active group(s) to the end, `stdio:"inherit"` (zero pipe before reading an exit code), and reports ONE final exit code + a per-step summary. That is what plays the role the old `if: always()` GitHub Actions flag used to play for the mutation job's per-file floor step — the guarantee moved from a YAML flag to the runner's own control flow, checked on `tools/ci.mjs`'s source in `test/mutation-workflow-gate.test.js`.
+⚠️ **Binaries are called LOCALLY, never through `npx`**, except the mutation-floor-gate step's LOGICAL command (`command`) which stays `npx vitest run mutation-floor-gate.test.js` — the TEXT compared against the workflow never changes; only its LOCAL execution (`localBinary: ./node_modules/.bin/vitest run ...`) avoids `npx` reaching the network when a package is absent (measured, paid for elsewhere in this repo).
+🛑 **Never wired into the permanent Stryker `mutate`/`mutation.yml` `paths:`** — this module's mutation coverage is proven by a ONE-OFF targeted `--mutate src/ci-steps-pure.js` run (never the exhaustive), because the 3 workflows' `paths:` blocks are DELIBERATELY untouched by this mission (CLAUDE.md instruction: only their `run:` lines move). Its dedicated suite is `test/ci-steps-pure.test.js`.
+⚠️ **`test/mutation-workflow-gate.test.js`'s per-file-floor cell now reads `CI_STEPS`, not the workflow text** — the literal `mutation-floor-gate.test.js` string moved OUT of `mutation.yml` (which now only calls `npm run ci:mutation`) and INTO `CI_STEPS`. Reading the old workflow text for that literal would always fail after this migration, not because the floor stopped running.

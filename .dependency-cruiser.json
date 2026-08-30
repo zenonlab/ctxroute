@@ -246,20 +246,6 @@
       }
     },
     {
-      "name": "leak-pure-must-stay-pure",
-      "comment": "⚠️ leak-pure.js must NEVER import fs/path/child_process: it DECIDES whether a text contains personal data, it reads NOTHING. The I/O (git ls-files, private list) lives in leak-gate.test.js. A dependency here would make the decision non-mutable and the gate untestable outside the real repository.",
-      "severity": "error",
-      "from": {
-        "path": "^src/leak-pure\\.js$"
-      },
-      "to": {
-        "path": "^(fs|path|child_process)$",
-        "dependencyTypes": [
-          "core"
-        ]
-      }
-    },
-    {
       "name": "state-eviction-pure-must-stay-pure",
       "comment": "⚠️ state-eviction-pure.js must NEVER import fs/path/child_process. It DECIDES which state files disappear; the readdir, the stat and the unlink live in `state-eviction.js`. A dependency here would make the rule non-mutable — and an UNMUTATED deletion rule is the worst of both worlds: it can silently select NOTHING (the cleaner that matched `*.tar.gz` while the producer wrote `*.sql.gz`: 0 bytes removed since forever) or silently select a DURABLE key and erase the fleet's memory. Same reason as disk-writers-pure.js, one step further: this one does not judge, it deletes.",
       "severity": "error",
@@ -388,7 +374,7 @@
     "doNotFollow": {
       "path": "node_modules"
     },
-    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-pure|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/rendezvous-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/hooks/http-daemon|src/stale-code|src/stale-code-pure|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/declared-paths-pure|src/protocol-routes-pure|tools/commit-msg-check)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/rendezvous-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/hooks/http-daemon|src/stale-code|src/stale-code-pure|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/commit-msg-leak|src/declared-paths-pure|src/protocol-routes-pure|src/frame-sequencer-pure|src/delivery-notice-pure|tools/commit-msg-check|tools/matcher-suite-check|src/ci-steps-pure)\\.js$|^(fs|path|child_process|os|crypto)$)",
     "tsPreCompilationDeps": false
   }
 }
