@@ -581,6 +581,67 @@ The ENGINE is portable BY CONSTRUCTION (gate `sources-must-not-know-the-harness`
 5. A harness WITHOUT an event (e.g. no SessionStart) = we skip THAT path and note it — never a bodged workaround.
 6. Done = `npm test` green + mutation green + doctor green on the real wiring + journal/skill updated. A port without those 4 proofs IS NOT done.
 
+## 🛑 WHAT THIS FRAMEWORK CAN AND CANNOT GUARANTEE — SETTLED 2026-08-30, NEVER RE-LITIGATE
+
+**ROUTING IS GUARANTEED. TRANSPORT IS NOT, AND CANNOT BE — BY ANYONE, EVER.** Confusing the two
+cost a whole session and produced a promise this project cannot keep. Read this before answering
+any question about reliability, and say it PLAINLY the moment someone assumes otherwise.
+
+🔑 **ROUTING — 100 % DETERMINISTIC, and nothing found on 2026-08-30 touches it**: which document,
+for which action, at which moment, and why. Proven on 400,000+ exhaustive cases. That IS the
+product's promise. It stands.
+
+🛑 **TRANSPORT — GUARANTEED DELIVERY IS MATHEMATICALLY IMPOSSIBLE.** This is the **Two Generals
+Problem**: over a channel that may drop messages, no protocol can guarantee a message ARRIVED.
+Not "hard in 2026" — **impossible, permanently**. No future technology changes it, and dropping to
+a lower-level language changes NOTHING: both limits sit ABOVE us (the 10,000 c per-output cap is
+Claude Code's; a lost loopback connection is the Windows kernel's). What TCP actually provides is
+RETRANSMISSION plus NOTIFICATION, never delivery — hence the industry's own vocabulary:
+*at-least-once*, *exactly-once with acknowledgement*. Nobody writes *always*.
+
+🔴 **AND WE CANNOT EVEN DO WHAT TCP DOES — THE CLIENT IS NOT OURS.** Claude Code opens the N frame
+connections and receives the failures; the daemon is the SERVER. **There is no retry inside one
+action, and there cannot be one.** An action's capacity is therefore FIXED at
+`frames that arrived × 10,000 c`. Whatever exceeds it can only reach the NEXT action — and by then
+the agent has already acted. ⇒ **Deferral is a consolation, never a repair.**
+
+✅ **THE GUARANTEE THAT IS REACHABLE, and it is the one safety engineering actually uses**:
+*the agent never works without the knowledge it is owed.* A railway brake does not guarantee the
+signal arrives; it guarantees that a missing signal STOPS the train. Here the equivalent exists
+already (`enforce` ⇒ `deny`): an invocation observed CLOSED-INCOMPLETE refuses the next action
+until the missing content is served. Total guarantee, on BEHAVIOUR, never on the channel.
+⚠️ **ORDER MATTERS: lower the LOSS RATE first, arm the brake second.** A brake on a 50 % loss rate
+blocks every other action and gets unplugged — which is worse than no brake at all.
+
+⚠️ **HOW TO TALK ABOUT THIS.** Never sell "nothing is ever lost": it is false and it will be
+measured false. Say what is true — *routing is exact, transport can drop, and we detect it*. The
+thing that would actually kill this project is not a drop, it is a SILENT one.
+
+
+🔒 **ONE INJECTION WINDOW PER TOOL CALL — SETTLED 2026-08-30 AGAINST THE OFFICIAL DOCS OF ALL
+THREE HARNESSES. NEVER RE-RESEARCH THIS, NEVER LOOK FOR A WORKAROUND.**
+**A frame whose connection never arrives is an occasion LOST FOR THAT TOOL CALL, permanently, and
+there is NOTHING WE CAN DO ABOUT IT FROM THIS SIDE.**
+- ⚠️ **STRUCTURAL, not a version detail**: the harness is the CLIENT (it POSTs to `type:"http"`),
+  the daemon is the SERVER. A server cannot call back a client that is not calling. We can neither
+  re-open a lost connection, nor create an extra one, nor ask to be contacted again. No release of
+  any product changes this.
+- 📐 **Claude Code, hooks reference, read 2026-08-30**: *"Claude Code cancels a `command`, `http`,
+  or `mcp_tool` hook that reaches its `timeout`, discarding the hook's output"* and *"A timed-out
+  `command`, `http`, or `mcp_tool` hook doesn't block the tool call. The call continues through the
+  normal permission flow, so don't count on a stalled hook to act as a gate."* ⇒ failure is
+  TERMINAL for that call. **Codex** (learn.chatgpt.com/docs/hooks) and **Gemini CLI**
+  (geminicli.com/docs/hooks/reference, *Last updated Apr 10 2026*) document no retry either.
+- 📐 **No other channel exists** between a hook firing and the tool executing — no server retry, no
+  partial response, no streaming, no second round trip. Undocumented in all three: an ABSENCE
+  measured, not a gap in the search.
+- ⚠️ `PermissionDenied` + `hookSpecificOutput.retry: true` is Claude Code's AUTO-MODE PERMISSION
+  system, a DIFFERENT event from a `PreToolUse` hook returning `deny`. Do not read it as a hook
+  retry.
+⇒ **An action's capacity is FIXED before it starts: `frames that arrived x 10,000 c`.** Everything
+else can only reach the NEXT action, i.e. after the agent has already acted. Design accordingly —
+the reachable guarantee is *never act without the knowledge owed*, never *never lose a frame*.
+
 ## MULTI-FRAME TRANSPORT — the framework DELIVERS EVERYTHING (03/08/2026, LIVE in prod)
 
 **THE RULE, TWO PATHS AND NOT THREE** — that is the whole mechanism:
