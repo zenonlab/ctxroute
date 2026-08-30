@@ -61,7 +61,7 @@ function withoutOrdinal(ctx) {
 //    our own tail must also remove the separator that introduced it --
 //    otherwise a real badge would come back with a dangling ' . ' and LOOK
 //    unequal for a reason that has nothing to do with a real regression.
-const DELIVERY_NOTICE_TAIL = / ?· ?ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action|only \d+ of \d+ frames reached the daemon)$|^ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action|only \d+ of \d+ frames reached the daemon)$/;
+const DELIVERY_NOTICE_TAIL = / ?· ?ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action)$|^ctxroute: (?:all \d+ chunk\(s\) delivered — \d+ of \d+ declared frames reached the daemon|\d+ chunk\(s\) deferred to the next action)$/;
 
 /**
  * Removes the delivery-completion/deferral notice `delivery-notice-pure.js`

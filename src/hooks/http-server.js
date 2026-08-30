@@ -580,12 +580,12 @@ function emitRoute(data, store) {
  *   before this change, so every real daemon gets one. A test may still pass
  *   `null` or omit it — `nextIndex` fails open to the URL's own frame number.
 
- * @property {{invocations: Map<string, {nbFrames: number, served: number}>, scopes: Map<string, string>}|null} deliveryNoticeState
- *   `delivery-notice-pure.js`'s own tracking state (completion/deferral/
- *   incomplete), DEFAULT-CREATED like `frameSequencerState` and for the same
- *   reason: there is no historical behaviour to preserve for a notice that
- *   did not exist before this change. A test may pass `null` or omit it --
- *   `observe` then returns no notice at all, never a fabricated one.
+ * @property {Map<string, {nbFrames: number, served: number}>|null} deliveryNoticeState
+ *   `delivery-notice-pure.js`'s own tracking table (completion/deferral),
+ *   DEFAULT-CREATED like `frameSequencerState` and for the same reason: there
+ *   is no historical behaviour to preserve for a notice that did not exist
+ *   before this change. A test may pass `null` or omit it -- `observe` then
+ *   returns no notice at all, never a fabricated one.
  */
 
 /**
@@ -714,8 +714,7 @@ function handle(body, url, deps) {
   // filtered explicitly in `differential-normalize.withoutDeliveryNotice`,
   // never silently by loosening this shell's own behaviour.
   // ═════════════════════════════════════════════════════════════════════
-  const scopeId = lib.scopeId(data.session_id, data.agent_id);
-  const notice = deliveryNotice.observe(deliveryNoticeState, scopeId, invocationId, frame, frames.nbFrames);
+  const notice = deliveryNotice.observe(deliveryNoticeState, invocationId, frame, frames.nbFrames);
   const noticeText = deliveryNotice.messageFor(notice);
   const showNotice = noticeText !== '' && lib.shouldShowNotification(collectCore.loadConfig());
   try {

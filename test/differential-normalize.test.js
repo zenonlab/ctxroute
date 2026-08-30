@@ -68,7 +68,6 @@ test('withoutOrdinal: TOTAL — a non-string input is returned as is, never a th
 
 const COMPLETE = 'ctxroute: all 32 chunk(s) delivered — 32 of 32 declared frames reached the daemon';
 const DEFERRED = 'ctxroute: 5 chunk(s) deferred to the next action';
-const INCOMPLETE = 'ctxroute: only 3 of 8 frames reached the daemon';
 
 // ① THE FILTER REMOVES OUR OWN MESSAGE, ANCHORED, WITH ITS SEPARATOR.
 test('withoutDeliveryNotice (1): removes the COMPLETE notice, badge + separator included', () => {
@@ -79,20 +78,15 @@ test('withoutDeliveryNotice (1): removes the DEFERRED notice, badge + separator 
   assert.strictEqual(withoutDeliveryNotice('📄 doc: gros (chunk 1/4) · ' + DEFERRED), '📄 doc: gros (chunk 1/4)');
 });
 
-test('withoutDeliveryNotice (1): removes the INCOMPLETE notice, badge + separator included', () => {
-  assert.strictEqual(withoutDeliveryNotice('📄 doc: gros (chunk 1/4) · ' + INCOMPLETE), '📄 doc: gros (chunk 1/4)');
-});
-
 test('withoutDeliveryNotice (1): removes a STANDALONE notice (no preceding badge)', () => {
   assert.strictEqual(withoutDeliveryNotice(COMPLETE), '');
   assert.strictEqual(withoutDeliveryNotice(DEFERRED), '');
-  assert.strictEqual(withoutDeliveryNotice(INCOMPLETE), '');
 });
 
 // ② THE PART THAT COUNTS — without it, a widened filter would swallow a REAL
 //    divergence and BOTH the http-lane differential and this filter would
 //    stay green while hiding a genuine regression.
-test('withoutDeliveryNotice (2): a DECOY — our own prefix, NOT one of the three exact forms — SURVIVES', () => {
+test('withoutDeliveryNotice (2): a DECOY — our own prefix, NOT one of the two exact forms — SURVIVES', () => {
   const decoy = '📄 doc: gros (chunk 4/4) · ctxroute: something else entirely';
   assert.strictEqual(withoutDeliveryNotice(decoy), decoy,
     'a filter that strips this would also strip a REAL regression sharing our prefix by accident');

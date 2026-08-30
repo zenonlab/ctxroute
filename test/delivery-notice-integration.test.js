@@ -169,11 +169,11 @@ test('DEFERRED: an invocation evicted before completion is announced with the co
   // the table reached the cap is synthetic; the eviction/announcement code
   // path itself is exercised end to end, exactly as production runs it.
   const victimId = 'victim-invocation';
-  deliveryNotice.observe(deps.deliveryNoticeState, '', victimId, 1, 5); // declares 5, serves 1 -> owes 4
+  deliveryNotice.observe(deps.deliveryNoticeState, victimId, 1, 5); // declares 5, serves 1 -> owes 4
   for (let i = 0; i < deliveryNotice.MAX_INVOCATIONS - 1; i += 1) {
-    deliveryNotice.observe(deps.deliveryNoticeState, '', 'filler-' + i, 1, 5);
+    deliveryNotice.observe(deps.deliveryNoticeState, 'filler-' + i, 1, 5);
   }
-  assert.equal(deps.deliveryNoticeState.invocations.size, deliveryNotice.MAX_INVOCATIONS, 'table must sit exactly at the cap before the real request');
+  assert.equal(deps.deliveryNoticeState.size, deliveryNotice.MAX_INVOCATIONS, 'table must sit exactly at the cap before the real request');
 
   const pl = payload(); // a DIFFERENT invocation, itself incomplete (frame 1 of 4)
   const answer = callFrame(handle, deps, pl, 1, 4);
@@ -190,9 +190,9 @@ test('SEEN RED (DEFERRED): sabotaging messageFor() to go silent on deferral is C
   try {
     const { handle, deps } = realDeps();
     const victimId = 'victim-invocation-2';
-    deliveryNotice.observe(deps.deliveryNoticeState, '', victimId, 1, 5);
+    deliveryNotice.observe(deps.deliveryNoticeState, victimId, 1, 5);
     for (let i = 0; i < deliveryNotice.MAX_INVOCATIONS - 1; i += 1) {
-      deliveryNotice.observe(deps.deliveryNoticeState, '', 'filler2-' + i, 1, 5);
+      deliveryNotice.observe(deps.deliveryNoticeState, 'filler2-' + i, 1, 5);
     }
     const pl = payload();
     const answer = callFrame(handle, deps, pl, 1, 4);
@@ -206,9 +206,9 @@ test('SEEN RED (DEFERRED): sabotaging messageFor() to go silent on deferral is C
   // RESTORED.
   const { handle, deps } = realDeps();
   const victimId = 'victim-invocation-3';
-  deliveryNotice.observe(deps.deliveryNoticeState, '', victimId, 1, 5);
+  deliveryNotice.observe(deps.deliveryNoticeState, victimId, 1, 5);
   for (let i = 0; i < deliveryNotice.MAX_INVOCATIONS - 1; i += 1) {
-    deliveryNotice.observe(deps.deliveryNoticeState, '', 'filler3-' + i, 1, 5);
+    deliveryNotice.observe(deps.deliveryNoticeState, 'filler3-' + i, 1, 5);
   }
   const pl = payload();
   const answer = callFrame(handle, deps, pl, 1, 4);
