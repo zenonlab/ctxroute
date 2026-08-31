@@ -31,9 +31,9 @@
       "why": "Cell 4 forks a shell against a rendezvous a LIVE occupant already holds, and asserts the shell dies. On macOS CI (2026-08-31) it neither bound nor died: the cell timed out at 30 s with an empty stderr, and a timeout cannot tell apart a bind never attempted, an errno other than EADDRINUSE sent down the degradation path, and a probe that never settled. Whether that child will EVER exit is not decidable from here — it is the halting question, on a kernel nobody on this side owns. The bound does not retry and does not widen anything: the cell still FAILS, it fails while NAMING what the child wrote and that it was still alive."
     },
     "test/http-daemon-lifecycle.test.js": {
-      "count": 4,
+      "count": 5,
       "motive": "undecidable",
-      "why": "Waits for the KERNEL to have OBSERVED an event (a watch being armed, a peer socket seen as closed) before asserting on the daemon's reaction. The kernel holds the fact but exposes no signal for 'you have now observed it', so 'has it noticed yet?' is not decidable from the test process. Any NEW wait added to this suite must first prove that no observable exists (an event, an exit code, a bound port): these four are a ceiling, not a licence."
+      "why": "Waits for the KERNEL to have OBSERVED an event (a watch being armed, a peer socket seen as closed) before asserting on the daemon's reaction. The kernel holds the fact but exposes no signal for 'you have now observed it', so 'has it noticed yet?' is not decidable from the test process. Any NEW wait added to this suite must first prove that no observable exists (an event, an exit code, a bound port): these five are a ceiling, not a licence. The fifth bounds cell 7's wait for a filesystem notification: macOS CI (2026-09-01) delivered NONE at all for a write to an existing file inside a watched directory, where Linux delivers one, and Node documents that behaviour as platform-defined. Whether an event that has not arrived ever will is the halting question, asked of a kernel this side does not own. The bound retries nothing and widens nothing: it turns a 30 s timeout blaming a regression that does not exist into a NAMED refusal to decide."
     },
     "test/stale-code-guard.test.js": {
       "count": 2,

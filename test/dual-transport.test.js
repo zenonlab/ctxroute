@@ -370,9 +370,28 @@ test('A REFUSED RENDEZVOUS DEGRADES ONE LANE: the port still ANSWERS, and the lo
 test('EADDRINUSE ON THE RENDEZVOUS KILLS: the kernel refuses a SECOND instance and the shell obeys',
   async () => {
     const port = await portLibre();
-    const address = endpoint({ stateDir: path.join(TMP, 'occupee', 'state') });
+    // 🔴 MEASURED ON macOS CI, 2026-09-01, AFTER THREE RUNS THAT SAID NOTHING:
+    //    the cause was in this cell, never in the shell it accuses. The OCCUPANT
+    //    bound into a `state/` that had never been created, and macOS answers
+    //    EACCES where Linux answers ENOENT for a socket whose parent directory
+    //    is missing. So the occupant never took the address, the forked shell
+    //    found it FREE, bound it, and had no reason on earth to die.
+    // 🛑 THE DIRECTORY IS THE OCCUPANT'S TO CREATE, never the daemon's: here the
+    //    test IS the first instance. Cell ⑤ below deliberately leaves its tree
+    //    without one, because there the DAEMON is what must create it.
+    const stateDir = path.join(TMP, 'occupee', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    const address = endpoint({ stateDir });
     const occupant = net.createServer(() => {});
-    await new Promise((r) => occupant.listen(kernelAddress(address), r));
+    // ⚠️ A BIND THAT FAILS MUST SAY SO, NOT HANG. `listen`'s callback fires only
+    //    on success, so the earlier form left this promise pending for ever and
+    //    the suite's own bound reported "it timed out" — an unusable red that
+    //    hid a one-line cause for a whole day, and that swallowed the diagnostic
+    //    written just below before it could print a word. The error is the verdict.
+    await new Promise((resolve, reject) => {
+      occupant.once('error', reject);
+      occupant.listen(kernelAddress(address), resolve);
+    });
     try {
       assert.ok(occupant.listening, 'the occupant never took the address — the cell would prove nothing');
       const tracked = lancer('occupee', port, { CTXROUTE_TEST_ENDPOINT: address });

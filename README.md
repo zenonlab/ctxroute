@@ -12,6 +12,24 @@ tool call — where it matters. Predictable, explainable, harness-agnostic.
   engine's constants — a gate fails if it drifts).
 - **Harness contract & conformity test:** [`HARNESS-CONTRACT.md`](HARNESS-CONTRACT.md).
 
+## Platform status — what is PROVEN, and what is not
+
+🔴 **The badge above is red, and this section says exactly why rather than leaving you to guess.** The engine is platform-agnostic by construction — a CI gate forbids any source from knowing a harness or an OS dialect. What differs is the plumbing around it, and only a run on the real machine proves that.
+
+| Platform | Suite | What that means |
+|---|---|---|
+| **Linux** | green | the full suite passes on a clean CI clone |
+| **Windows** | green locally, verdict missing on CI | it is the maintainer machine, exercised daily; the CI job is cancelled the moment another OS fails, so its own run has not completed recently |
+| **macOS** | **one test fails** | `dual-transport`, the cell asserting the daemon REFUSES a second instance |
+
+⚠️ **The macOS failure, stated plainly — including the fact that its CAUSE is not established.** The cell forks a daemon against an address a live occupant already holds and requires it to die; on macOS it neither binds nor dies. Three explanations fit that silence equally well — a bind never attempted, an errno other than the fatal one sent down the degradation path, or a liveness probe that never settles — and reading the code from a machine that does not reproduce it cannot separate them. The cell now FAILS while quoting what the child wrote, so the next run says which one it is. **Naming a cause before that would be a guess, and this project does not ship those.**
+
+⚠️ **Whether it affects a real installation is equally unknown**: it has never been reproduced outside CI, and the supervision unit shipped for macOS is socket-activated — there the OS itself owns the listening socket, so a duplicate cannot arise by this path at all.
+
+🛑 **So this repository does not claim macOS is proven.** Running it there is reasonable and probably fine; being told it is verified would be false. A framework whose entire purpose is to refuse silent defects cannot begin by hiding one of its own.
+
+---
+
 ## Why
 
 Prose instructions ("remember to…") decay: they rely on the agent's vigilance.

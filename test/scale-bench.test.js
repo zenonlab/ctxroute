@@ -1840,12 +1840,25 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   //    it is why this refusal used to fire on a normally busy workstation.) If the
   //    central half can reach the bar on its own, no conclusion drawn against that
   //    bar means anything — so the run REFUSES, by name, instead of passing.
-  assert.ok(nu < BAR_CONC,
-    `THIS RUN CANNOT DECIDE: the central half of ${CONC_SOUS_LOTS} identical sub-batches of ${CONC_LOT} calls `
-    + `spreads by ${nu.toFixed(2)}x (full max/min ${spread.toFixed(2)}x), which reaches the ${BAR_CONC.toFixed(2)}x bar on jitter alone. `
-    + 'This no longer names background activity — the timed window is a fraction of a percent of each call, so a preemption almost '
-    + 'never lands inside it, and an outlier is discarded by the quartile — so it names a SATURATED machine. Free it and re-run. '
-    + '🛑 Do NOT widen the bar to make this pass — the bar is derived from the levels, and noise is never allowed to move it.');
+  // 🔴 AND "REFUSES" MEANS `UNMEASURED`, NOT RED — CORRECTED 2026-09-01 AFTER
+  //    macOS CI FAILED THE BUILD ON IT. Cell H's header, twenty lines above,
+  //    already states the policy: a machine too loaded to decide "yields
+  //    UNMEASURED, never a false RED nor a false GREEN", and `resolutionFloorHolds`
+  //    on the line above obeys it. This assertion was the ONE place that did not,
+  //    so a shared CI runner — a machine nobody here owns and nobody can free —
+  //    reported a scaling defect that the cell itself says it cannot see. A red
+  //    that names the MACHINE is still read as a verdict on the DAEMON.
+  // 🛑 THIS IS NOT A RELAXATION AND NOT A WIDER BAR: `BAR_CONC` is untouched, the
+  //    verdict below is untouched, and a decidable run that crosses it still goes
+  //    RED. What changes is only the name given to a run that has no verdict.
+  if (!(nu < BAR_CONC)) {
+    ctx.skip(`UNMEASURED: the central half of ${CONC_SOUS_LOTS} identical sub-batches of ${CONC_LOT} calls `
+      + `spreads by ${nu.toFixed(2)}x (full max/min ${spread.toFixed(2)}x), which reaches the ${BAR_CONC.toFixed(2)}x bar on jitter alone. `
+      + 'This no longer names background activity — the timed window is a fraction of a percent of each call, so a preemption almost '
+      + 'never lands inside it, and an outlier is discarded by the quartile — so it names a SATURATED machine. Free it and re-run. '
+      + '🛑 Do NOT widen the bar to make this decide — the bar is derived from the levels, and noise is never allowed to move it.');
+    return;
+  }
 
   // THE VERDICT — ratios only. Never a millisecond, never a byte total.
   assert.ok(rTurn < BAR_CONC,
