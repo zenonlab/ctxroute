@@ -1,5 +1,23 @@
 # ctxroute — knowledge delivered at the action (declarative context injection, multi-harness)
 
+## 🔒 PUBLIC REPOSITORY: A RED SUITE NEVER SHIPS — OPERATOR RULE, 2026-08-31
+
+🛑 **THIS REPOSITORY IS PUBLIC, SO THE FULL SUITE IS A CONDITION OF PUBLISHING, NOT A RECOMMENDATION.** Nothing reaches the public remote while `npm run test:all` is red. No judgement call, no « it was already red before », no « this commit is unrelated ».
+
+⚠️ **DECIDABLE BY ONE QUESTION, AND IT IS NOT « is this important? »** — it is **is the repository PUBLIC?**
+- **PRIVATE repo ⇒ pushing without the full suite is ALLOWED, and it is the faster way to work** (operator decision: velocity wins there, a bad push costs only a fix).
+- **PUBLIC repo ⇒ FORBIDDEN.** A published history cannot be taken back, and a fork reads the CI badge before it reads the code.
+🛑 **DO NOT GENERALISE THIS TO THE FLEET.** It is a property of PUBLICATION, never a blanket rule about testing.
+
+🔴 **BORN OF A FAULT COMMITTED HERE ON 2026-08-31, IN FULL KNOWLEDGE.** The CI was READ before publishing (`test`, `mutation` and `service-units` all failing) and the version shipped anyway, on the reasoning « it was already red before my commits, so I am not making it worse ». **That is a REASONING, not a measurement** — the exact shape of decision this repository refuses everywhere else.
+
+🛑 **AND PROSE CANNOT HOLD IT — the hooks do NOT cover the publishing gesture.** `.githooks/` carries only `pre-commit` (anti-leak) and `commit-msg` (English + personal data); the documented publishing form is `git commit-tree` then `git push`, which **bypasses both** — the message checker had to be run BY HAND. There is no `pre-push`, and a local hook would be one `--no-verify` away anyway.
+⇒ **THE RULE LIVES SERVER-SIDE: GitHub branch protection with required status checks.** Not bypassable by `commit-tree`, not by `--no-verify`, not by an agent that decides it knows better.
+⚠️ **REQUIRED CHECKS = `test` + `coupling` ONLY.** NEVER `mutation` (~34 min) nor `service-units` (hours): a lock that makes every publication unbearable gets switched off, and an unplugged lock protects nothing.
+⚠️ **ARM IT ONLY ONCE THE CI IS GREEN, never before** — same doctrine as everywhere here: lower the failure rate first, arm the brake second.
+⚠️ **CONSEQUENCE TO KNOW**: publishing becomes push a branch → wait for the checks → merge. The direct `commit-tree` push stops working, and that is the point.
+
+---
 ## ⚠️ LIVE PRODUCTION — BREAK NOTHING (rule #1, before any other)
 ⚠️ **PUBLIC PROJECT (open source)**: treat the repo as ALREADY public, even before publication. ZERO personal information in tracked files — never a first name (say "the maintainer"), never a real user path (fixtures = `C:/Users/dev/...`), never a real IP (use the documentation range 203.0.113.x), never an email/secret/client name. Personal docs (`docs/mcp/*.md`, `docs/session/*.md`) stay GITIGNORED — only the generic `.md.example` files get pushed. Before effective publication: squash the history (old commits contain personal data) AND ship `ctxroute-config.json` as a generic `.example` (the shipped config carries the maintainer's skill/project NAMES = personal data; the user creates their own, the gates validate it).
 ⚠️ **The maintainer's personal hooks and everything wired in `settings.json` are IN PRODUCTION PERMANENTLY**: OTHER agents (Claude Code, Codex) run in parallel with you and use them on every tool call. Modifying them breaks THEIR work in progress and burns the maintainer's tokens — real money.
