@@ -47,10 +47,24 @@
 //    and `require()` throwing means the assignment on the next line never completed — so an
 //    explicit `personalDataGuard = null;` here would be a no-op, i.e. dead code a mutation
 //    test cannot ever tell apart from an empty catch. Removed at the source, never test-frozen.
+// Stryker disable BlockStatement: EQUIVALENT mutant, and the assignment below STAYS.
+//    `personalDataGuard` is already `null` and a throwing `require` never completes its
+//    assignment, so the catch writes null over null and no test can tell it from an empty one.
+//    🛑 KEPT ON PURPOSE rather than deleted: emptying that catch becomes a REAL defect the day
+//    the declaration stops being `null`, and this module is the anti-leak gate of a PUBLIC
+//    repository — the one place where a silent regression cannot be taken back. A mutation
+//    score never buys the removal of a guard on that path.
+//    ⚠️ REGION form, never `next-line`, and the placement is MEASURED, not guessed: Stryker
+//    reads its directives from a node's LEADING comments and anchors `next-line` on THAT
+//    node's line, while the mutated node here is the catch BLOCK — a different line. Read in
+//    `directive-bookkeeper.js` of the installed 9.6.1, after three placements failed by trial.
 let personalDataGuard = null;
 try {
   personalDataGuard = require('@zenon-lab/personal-data-guard');
-} catch {}
+} catch {
+  personalDataGuard = null;
+}
+// Stryker restore BlockStatement
 
 /** Named, loud reason shown whenever the matcher could not be loaded. */
 const UNAVAILABLE_REASON =

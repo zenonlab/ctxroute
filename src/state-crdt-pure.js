@@ -445,7 +445,13 @@ function remaining(r) {
     // For any x !== y, `x <= y` and `x < y` return the identical boolean, so
     // this mutant produces byte-identical output on every reachable input —
     // there is no test that could ever kill it without pinning dead ground.
-    return x < y ? -1 : 1;
+    // Stryker disable next-line ConditionalExpression,EqualityOperator: the third branch STAYS.
+    //    `x === y` cannot occur today (ids come from `Object.keys`, unique by construction), so
+    //    no test can distinguish a two-way comparator from this one. 🛑 It is kept anyway: a
+    //    comparator is a PRIMITIVE with its own contract, and one that answers `1` for two equal
+    //    keys is simply WRONG — silently unstable the day these ids stop coming from `Object.keys`.
+    //    Correctness of the function, never the reachability of its callers, decides what lives here.
+    return x < y ? -1 : x > y ? 1 : 0;
   });
   return ids.map((id) => ({ id, text: r.decided[id].text }));
 }
