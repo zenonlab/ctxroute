@@ -2039,11 +2039,11 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
   // 🛑 NOTHING IS RELAXED: the deadline is untouched, `lock.js` is untouched, and
   //    a single drop below the deadline still fails. What changes is only the
   //    name given to a run that measured the machine instead of the lock.
-  const maxAttenteMs = Math.max(...out.readings.map((r) => r.maxAttenteNs)) / 1e6;
+  const longestWaitMs = Math.max(...out.readings.map((r) => r.maxAttenteNs)) / 1e6;
   const LOCK_DEADLINE_MS = 2000;
-  if (perdues > 0 && maxAttenteMs >= LOCK_DEADLINE_MS) {
+  if (perdues > 0 && longestWaitMs >= LOCK_DEADLINE_MS) {
     ctx.skip(`UNMEASURED: ${perdues} critical sections were dropped, but the longest acquisition ran to `
-      + `${round(maxAttenteMs)} ms against the ${LOCK_DEADLINE_MS} ms fail-open deadline — these drops are the `
+      + `${round(longestWaitMs)} ms against the ${LOCK_DEADLINE_MS} ms fail-open deadline — these drops are the `
       + 'DECLARED fail-open on a machine too contended to hand the lock over in time, not a lock that gave up '
       + 'early. This cell judges the lock, and it cannot free the runner it runs on. 🛑 Do NOT raise the '
       + 'deadline to make this decide: the deadline is the production value, and a longer one would trade a '
@@ -2052,7 +2052,7 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
   }
   assert.equal(perdues, 0,
     `${perdues} critical sections were DROPPED while the longest acquisition took only `
-    + `${round(maxAttenteMs)} ms, i.e. it never reached the ${LOCK_DEADLINE_MS} ms deadline: the lock failed open `
+    + `${round(longestWaitMs)} ms, i.e. it never reached the ${LOCK_DEADLINE_MS} ms deadline: the lock failed open `
     + 'WITHOUT timing out. Previously measured cause: `fs.mkdirSync` answers EPERM while the previous holder\'s '
     + 'directory is still being deleted, and `lock.js` used to treat every code but EEXIST as unrecoverable — that '
     + 'one is FIXED, so a red here names a NEW way to give up early. In production every drop is a recorded '
