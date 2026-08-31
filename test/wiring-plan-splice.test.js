@@ -299,3 +299,37 @@ test('every unusable input is a NAMED refusal, never a wiring written half-way',
   expect(() => splice({ hooks: [] }, declarations, ROOT())).toThrow(/the target declares no `hooks` section/);
   expect(() => splice({ hooks: 'not a section' }, declarations, ROOT())).toThrow(/the target declares no `hooks` section/);
 });
+
+test('a NEIGHBOURING project whose name merely STARTS with ours is not a suspect', () => {
+  // 🔴 MEASURED IN PRODUCTION 2026-08-31, and it made the generator unusable.
+  //    The suspect test read `text.includes(root) || text.includes(token)`, so
+  //    `…/Desktop/ctxroute-policies/bin/check.js` — a SEPARATE project sitting
+  //    beside this repository — contained both as PREFIXES and was accused.
+  //    `--write` then refused, on a machine whose wiring was perfectly sound:
+  //    the operator could no longer change `frames` at all.
+  // 🛑 THE BOUNDARY IS THE POINT. Ownership already demanded `node ${root}/`
+  //    (trailing slash); the MENTION compared raw text. Two questions about the
+  //    same boundary answered by two different rules is the whole defect.
+  // ⚠️ The cell asserts BOTH directions in one gesture: the sibling survives
+  //    UNACCUSED, while a REAL second copy under a genuine `…/ctxroute/…` path
+  //    is still reported. A fix that simply stopped suspecting would pass the
+  //    first half and hand back the split brain this test exists to prevent.
+  const declarations = plan(manifest(), machine());
+  const before = {
+    hooks: {
+      SessionStart: [{
+        hooks: [
+          { type: 'command', command: 'node C:/elsewhere/ctxroute-policies/bin/check.js', timeout: 20 },
+          { type: 'command', command: 'node C:/elsewhere/ctxroute_old/src/hooks/session-inject.js', timeout: 20 },
+          { type: 'command', command: 'node C:/other/ctxroute/src/hooks/session-inject.js', timeout: 20 },
+        ],
+      }],
+    },
+  };
+
+  const out = splice(before, declarations, ROOT());
+
+  assert.deepStrictEqual(out.suspects, [
+    { type: 'command', command: 'node C:/other/ctxroute/src/hooks/session-inject.js', timeout: 20 },
+  ], 'A sibling directory (`-policies`, `_old`) was accused of being this framework, or a REAL second copy stopped being reported. The mention must end on a segment boundary — and it must still catch a genuine copy.');
+});

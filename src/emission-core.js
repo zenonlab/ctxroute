@@ -157,8 +157,21 @@ function split(segments, budgetMax, nbFrames) {
  *   splitting (to be memoized for the following frames); `plan` = the frame of
  *   the requested index, or `undefined` if the index does not exist.
  */
-function emit({ fresh, budgetMax, nbFrames, index, scopeId, store: st = null }) {
-  const segments = budget.orderSegments(loadQueue(scopeId, st), fresh);
+function emit({ fresh, budgetMax, nbFrames, index, scopeId, store: st = null, carried = [] }) {
+  // 🔑 `carried` = SEGMENTS RECLAIMED FROM AN INVOCATION WHOSE FRAMES NEVER
+  //    CONNECTED (`carryover-pure.js`, 2026-08-31). They belong on the QUEUE
+  //    side, never with `fresh`: they were decided BEFORE this action, so they
+  //    keep priority over anything newly matched — the same rank the queue has
+  //    always had, for the same reason (what is already owed goes out first).
+  // ⚠️ ABSENT ⇒ `[]` ⇒ byte-for-byte the behaviour before this parameter
+  //    existed. Every caller that supplies none of it is untouched, which is
+  //    what keeps the spawn lane and every differential green: only a daemon
+  //    can observe a connection that never arrived, so only a daemon supplies
+  //    this.
+  const inherited = Array.isArray(carried) && carried.length > 0
+    ? loadQueue(scopeId, st).concat(carried)
+    : loadQueue(scopeId, st);
+  const segments = budget.orderSegments(inherited, fresh);
   const frames = split(segments, budgetMax, nbFrames);
   // ⚠️ THE COUNTER TRAVELS IN THE WRITE THAT ALREADY EXISTED — zero extra I/O,
   //    zero extra lock. That is what makes the canary's denominator FREE;

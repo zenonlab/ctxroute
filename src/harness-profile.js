@@ -162,4 +162,60 @@ const HOOK_TIMEOUT_DEFAULTS = {
   },
 };
 
-module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, ABSENT, UNMEASURED };
+// ═══════════════════════════════════════════════════════════════════════
+// HOW MANY CHARACTERS ONE HOOK OUTPUT MAY CARRY — a MEASURED harness fact
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE NUMBER THAT WAS TRUE AND STOPPED BEING TRUE. Claude Code truncated a
+//    hook's output at ~10,000 characters: DOCUMENTED by a user in issue #70460
+//    (2026-06-23, v2.1.181 — "silently truncated to 10KB", closed NOT PLANNED),
+//    and `budget.md` recorded it as re-verified on 2026-08-08. The whole
+//    32-frame architecture exists to work AROUND it.
+// ✅ MEASURED AGAIN 2026-08-31 ON THE REAL HARNESS (v2.1.251): ONE `type:"http"`
+//    PreToolUse hook returned **1,500,000 characters** and the agent quoted the
+//    LAST of the markers planted every ~1,000 characters. 400,000 passed the
+//    same way. **No truncation, no preview, no spill.** The cap is gone from
+//    the product AND absent from its documentation — so it has no contract at
+//    all, in either direction.
+//
+// 🛑 THEREFORE THIS VALUE IS A CEILING WE CHOSE, NOT ONE THEY PROMISE.
+//    `budget.md` states the law this obeys: *"do NOT peg a constant to the
+//    harness limit: it can change without notice"*. 400,000 is FOUR TIMES under
+//    what was measured to pass and THREE TIMES above the largest real payload
+//    (the biggest skill of this fleet is ~139,000 characters) — margin on both
+//    sides, and it costs nothing to lower.
+// 🛑 NEVER `Infinity`, AND THIS IS THE LOAD-BEARING PART. `budget.md`: an
+//    infinite budget yields *"one frame, NO SEAL and no chunking"* — so the end
+//    marker disappears, and the end marker is the ONLY thing that makes a
+//    returning limit AUDIBLE instead of silent. Declaring infinity would remove
+//    the detector at exactly the moment it becomes necessary. A large FINITE
+//    budget keeps the seal on every frame: the mechanism assumes no threshold
+//    value, it holds at 10,000 as at 400,000.
+// ⚠️ CODEX IS NOT TOUCHED: it negotiates its own limit in our wiring
+//    (`additionalContextLimit: 0` = full delivery), so it needs nothing here —
+//    and `UNMEASURED` would be a lie, while a number would be an invention.
+// 🔴🔴 AND 400,000 WAS WRONG — CAUGHT IN PRODUCTION MINUTES LATER, SAME DAY.
+//    Wired at 400,000 with `frames: 1`, the very FIRST injection came back as
+//    **"Output too large (14.8KB). Full output saved to <file>. Preview (first
+//    2KB)"** — the harness did not truncate, it SPILLED the document to disk and
+//    handed the agent a 2 KB preview. The knowledge did not arrive.
+// 🛑 SO THE CAP IS NOT GONE, IT CHANGED SHAPE, and the 1,500,000-character
+//    measurement did NOT refute it: the agent quoted the last marker because it
+//    could still REACH the spilled file, not because the text reached its
+//    context. **A payload that arrives as a file path is a payload that did not
+//    arrive.** The measurement asked "did the bytes survive?" when the only
+//    question that matters is "did the AGENT receive them?".
+// ⇒ THE FLOOR STANDS: this value goes back to what `budget.DEFAULT_BUDGET`
+//    already was, and the shells keep declaring it EXPLICITLY so the number has
+//    ONE owner and both lanes read it — that part of the change was sound and
+//    is kept. What was wrong was the VALUE, never the plumbing.
+// ⚠️ WHOEVER RAISES IT AGAIN MEASURES THE RIGHT THING: not "how many characters
+//    can a hook return" but "above which size does the harness stop putting the
+//    text in the agent's context". Those are two different numbers, and only the
+//    second one is ours to respect. Observed spill at ~14.8 KB.
+const HOOK_OUTPUT_BUDGET = {
+  claudeCode: 8000,
+  codex: UNMEASURED,
+};
+
+module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, HOOK_OUTPUT_BUDGET, ABSENT, UNMEASURED };

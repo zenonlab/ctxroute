@@ -372,7 +372,7 @@ test('FRAMES ④ PARITY: nothing to evict ⇒ frame 1 = plan(), the others empty
       const budget = 1000000; // everything fits easily
       const frames = planFrames(segments, budget, n);
       expect(frames[0]).toEqual(plan(segments, budget));
-      for (let i = 1; i < n; i++) expect(frames[i]).toEqual({ text: '', emitted: [], deferred: [], marker: '' });
+      for (let i = 1; i < n; i++) expect(frames[i]).toEqual({ text: '', emitted: [], deferred: [], segments: [], marker: '' });
     }),
     { numRuns: 100 }
   );

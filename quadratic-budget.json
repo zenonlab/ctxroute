@@ -520,6 +520,16 @@
       "max": 7,
       "class": "O(N)",
       "why": "Cells E/F/G/H drive a REAL http daemon under simulated connection loss: the outer walk is over a FIXED, hand-written set of test levels (K-levels, burst counts, disputant counts — 4 to 32 items, chosen for the bench, never for a client) and the inner one over a FIXED chunk/tag count (m = 4 or 6) or over the K/32 connections of ONE simulated action. None of these bounds is client data: a fleet with more sites never grows the number of frames in one tool call, the number of loss levels this bench probes, or the number of chunks one test document is split into."
+    },
+    "test/carryover-pure.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "Test scaffolding only: the fixture builder maps a fixed list of chunk ids inside a fixed list of frame groups, both written literally in the file. Neither is a client collection, so the product is a constant of this suite and cannot grow with a fleet's sites or pages."
+    },
+    "test/http-carryover.test.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "Test scaffolding only: the absorbers walk the frames returned by ONE action (8 declared) and split each frame's text into lines, so the work is linear in the bytes this suite itself wrote. Bounded by the corpus written a few lines above, never by client volume."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

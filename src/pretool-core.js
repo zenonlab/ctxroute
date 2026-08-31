@@ -60,6 +60,10 @@ const budget = require('./budget');
 //    bring the queue or the splitting back into this orchestration — the gate
 //    `emission-core-gate.test.js` requires every emitter to go through the module.
 const emission = require('./emission-core');
+// 🔑 THE DECISION "WHICH SEGMENTS DID NO FRAME EVER CARRY" — pure, mutated.
+//    The orchestration below only READS a memoized plan and re-splits it; what
+//    counts as unserved is decided there, never here (2026-08-31).
+const carryover = require('./carryover-pure');
 const lockModule = require('./lock');
 // ⚠️ `paths` LEFT WITH `path` (2026-08-23): the only thing this file built from
 //    the state directory was the lock's name, and that name has an owner now.
@@ -286,6 +290,57 @@ function run(data, emit, options) {
       //    HERE until 05/08/2026 — hence invisible and not reusable for
       //    the other emitters. NEVER reinstall it in this function:
       //    that would recreate the copy that ⑯ has just removed.
+      // 🔑 CARRYOVER — CONTENT AN EARLIER INVOCATION NEVER MANAGED TO SEND
+      //    (2026-08-31). Supplied by the SHELL as a thunk, exactly like
+      //    `invocationId` and the budget: only an observer that sees EVERY
+      //    connecting request of an invocation can tell "this frame arrived"
+      //    from "this frame never will", and that observer is the daemon. A
+      //    shell that has none supplies nothing ⇒ `[]` ⇒ today's behaviour to
+      //    the byte (extension contract §6), which is what keeps the spawn
+      //    lane and every differential untouched.
+      // ⚠️ CALLED HERE AND NOWHERE ELSE: inside the lock, on the DECIDING
+      //    frame only. Frames 2..N return above on the memoized plan, so the
+      //    harvest happens exactly once per invocation — placing it outside
+      //    would harvest N times and hand the same segments back N times.
+      // 🛑 THE CORE READS NO HARNESS FIELD AND TAKES NO DECISION HERE: it
+      //    hands over the two numbers the harvest needs to re-split a plan,
+      //    and receives segments. The decision (which invocations owe
+      //    content, which frames of theirs went out) lives in
+      //    `carryover-pure.js`.
+      // ⚠️ GROUPS THEN `flat()`, NEVER A LOOP INSIDE A LOOP — `quadratic-gate`
+      //    refuses the nesting and it is RIGHT to: the work here is LINEAR in
+      //    the content owed (each segment is visited once), and written as a
+      //    nested traversal it would be indistinguishable from an O(N²) at a
+      //    glance. `flat()` is also stack-safe where `push(...segments)` is not.
+      const harvested = [];
+      // 🛑 `options` MAY BE ABSENT — `run(data, emit)` is a supported call shape
+      //    (three suites use it). Reading a field off it unguarded THREW, and
+      //    this core is FAIL-OPEN: the exception became "no document at all",
+      //    silently, on every caller that passes no options. Caught by
+      //    `cascade-source-gate` within the hour; written here because the
+      //    failure mode is exactly the one this project refuses.
+      if (options && typeof options.pending === 'function') {
+        const owed = options.pending();
+        for (const item of Array.isArray(owed) ? owed : []) {
+          if (!item || typeof item.invocationId !== 'string' || item.invocationId === '') continue;
+          // ⚠️ THE PLAN IS RE-READ, NEVER RE-DECIDED. `gate.decide` has already
+          //    consumed that invocation's `once` documents; calling it again
+          //    would either return nothing (the doc is recorded seen) or, worse,
+          //    consume a second one. The memoized plan holds the SEGMENTS —
+          //    frozen TEXT, so a doc edited since cannot glue two versions
+          //    together, which is the very reason the queue stores text too.
+          const owedPlan = st.loadState(PLAN_PREFIX, sessionId + '--inv-' + item.invocationId);
+          if (!Array.isArray(owedPlan.segments)) continue;
+          // ⚠️ RE-SPLIT WITH **THIS** ACTION'S NUMBERS, and that is correct:
+          //    splitting is PURE and deterministic, and the frame count is the
+          //    same declaration for every action of one wiring. Should it ever
+          //    differ, the re-split is still a partition of the SAME segments —
+          //    never an invention.
+          harvested.push(carryover.unserved(split(owedPlan.segments), item.served));
+          if (typeof options.onHarvested === 'function') options.onHarvested(item.invocationId);
+        }
+      }
+      const carried = harvested.flat();
       const em = emission.emit({
         fresh: segmentsPour(r.inject),
         budgetMax,
@@ -293,6 +348,7 @@ function run(data, emit, options) {
         index,
         scopeId: sessionId,
         store: st,
+        carried: Array.isArray(carried) ? carried : [],
       });
       const segments = em.segments;
       const frames = em.frames;
@@ -549,4 +605,8 @@ function noticeOutput(systemMessage) {
   return { systemMessage };
 }
 
-module.exports = { run, denyOutput, noticeOutput };
+// ⚠️ `PLAN_PREFIX` IS EXPORTED SO NOBODY RE-SPELLS IT. The daemon needs to
+//    reason about memoized plans; a literal copied into the shell would be a
+//    second truth for one store key, and this repository has paid that bill
+//    (two spellings of a lock address are two locks, i.e. no lock).
+module.exports = { run, denyOutput, noticeOutput, PLAN_PREFIX };

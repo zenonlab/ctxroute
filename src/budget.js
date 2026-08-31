@@ -197,7 +197,7 @@ function effectiveBudget(budget) {
  *
  * @param {{id:string,text:string,label:string}[]} segments — ordered by decreasing priority.
  * @param {number} budget — characters. Provided by the SHELL (never guessed here).
- * @returns {{text:string, emitted:string[], deferred:{id:string,label:string}[], marker:string}}
+ * @returns {{text:string, emitted:string[], deferred:{id:string,label:string}[], segments:{id:string,text:string}[], marker:string}}
  *
  * ⚠️ CONSERVATION INVARIANT (proven with property-based testing): every segment
  *    that comes in goes out EITHER in `emitted` OR in `deferred`. Never lost, never
@@ -224,7 +224,7 @@ function plan(segments, budget) {
   //    exposed.
   const bareBody = list.map((s) => s.text).join(SEPARATOR);
   if (bareBody.length <= max * SEAL_THRESHOLD_RATIO) {
-    return { text: bareBody, emitted: list.map((s) => s.id), deferred: [], marker: '' };
+    return { text: bareBody, emitted: list.map((s) => s.id), deferred: [], segments: list, marker: '' };
   }
 
   // We start from EVERYTHING and remove the least prioritary until it fits.
@@ -234,7 +234,7 @@ function plan(segments, budget) {
   for (let k = list.length; k >= 1; k--) {
     const r = compose(list, k);
     if (r.text.length <= max) {
-      return { text: r.text, emitted: r.kept.map((s) => s.id), deferred: r.deferred, marker: r.marker };
+      return { text: r.text, emitted: r.kept.map((s) => s.id), deferred: r.deferred, segments: r.kept, marker: r.marker };
     }
   }
 
@@ -256,7 +256,7 @@ function plan(segments, budget) {
   //    depending on its net means building on what it can remove tomorrow
   //    without deprecation (cf CONTRACT, budget.md).
   const r = compose(list, 0);
-  return { text: r.text, emitted: [], deferred: r.deferred, marker: r.marker };
+  return { text: r.text, emitted: [], deferred: r.deferred, segments: [], marker: r.marker };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -451,13 +451,13 @@ function fragment(segments, capability) {
 }
 
 function emptyFrame() {
-  return { text: '', emitted: [], deferred: [], marker: '' };
+  return { text: '', emitted: [], deferred: [], segments: [], marker: '' };
 }
 
 /**
  * Splits into `nbFrames` frames. Each caller (process) takes ITS index.
  *
- * @returns {{text:string, emitted:string[], deferred:{id,label}[], marker:string}[]}
+ * @returns {{text:string, emitted:string[], deferred:{id,label}[], segments:{id:string,text:string}[], marker:string}[]}
  *          Array of length `nbFrames` (index 0 = frame 1/N).
  *
  * ⚠️ CONSERVATION INVARIANT, REINFORCED: every segment that comes in is in
@@ -627,6 +627,16 @@ function planFrames(segments, budget, nbFrames) {
       text: composeFrame(kept, aCiter, i + 1, n, marker, sealed),
       emitted: kept.map((s) => s.id),
       deferred,
+      // 🔑 THE SEGMENTS THIS FRAME COMPOSED, NOT ONLY THEIR IDS (2026-08-31).
+      //    `emitted` carries CHUNK ids produced by `fragment()`, which exist
+      //    nowhere upstream: from an id alone the text cannot be recovered, so a
+      //    frame that never reached the harness could not be re-queued. Exposing
+      //    what was composed is what lets `carryover-pure.js` hand the content
+      //    of a SILENT frame back to the queue instead of dropping it.
+      // ⚠️ ADDITIVE AND DERIVED — `emitted` is literally `segments.map(s => s.id)`.
+      //    It creates no second truth: whoever changes what a frame carries
+      //    changes both at once, because both read `kept`.
+      segments: kept,
       // ⚠️ Unsealed ⇒ EMPTY marker: announcing a seal that is absent from the text
       //    would be exactly the "green that lies". What the gate reports must
       //    always describe what ACTUALLY went out.

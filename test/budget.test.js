@@ -243,7 +243,7 @@ test('PARITY: everything fits in one frame → frame 1 identical to plan, the ot
   const p = planFrames(s(), 1000, 4);
   assert.strictEqual(p.length, 4);
   assert.deepStrictEqual(p[0], plan(s(), 1000));
-  for (let i = 1; i < 4; i++) assert.deepStrictEqual(p[i], { text: '', emitted: [], deferred: [], marker: '' });
+  for (let i = 1; i < 4; i++) assert.deepStrictEqual(p[i], { text: '', emitted: [], deferred: [], segments: [], marker: '' });
 });
 
 test('CONSERVATION: each segment is in EXACTLY one frame, or announced', () => {
@@ -523,7 +523,7 @@ test('DEFERRALS: only the LAST frame carries them (the others have an empty list
 test('EMPTY FRAME: neither content nor announcement ⇒ EMPTY rendering (never a hollow envelope)', () => {
   // Emitting an envelope to announce nothingness would cost tokens on every action.
   const p = planFrames(trois400(), 1200, 3);
-  assert.deepStrictEqual(p[2], { text: '', emitted: [], deferred: [], marker: '' });
+  assert.deepStrictEqual(p[2], { text: '', emitted: [], deferred: [], segments: [], marker: '' });
   assert.notStrictEqual(p[1].text, '', 'the frame that carries content, itself, is indeed rendered');
 });
 
@@ -575,7 +575,7 @@ test('FRAMES — absurd budget ⇒ FRAMEWORK default (cascade authority ①)', (
   for (const wrong of [undefined, null, 0, -1, NaN, Infinity, 'x']) {
     const p = planFrames(trois400(), wrong, 3);
     assert.deepStrictEqual(p[0].emitted, ['a', 'b', 'c'], 'budget ' + String(wrong));
-    assert.deepStrictEqual(p[1], { text: '', emitted: [], deferred: [], marker: '' });
+    assert.deepStrictEqual(p[1], { text: '', emitted: [], deferred: [], segments: [], marker: '' });
   }
 });
 
@@ -584,7 +584,7 @@ test('FRAMES — non-array input ⇒ treated as empty (fail-soft, never a throw)
   for (const wrong of [undefined, null, 'text', 42, {}]) {
     const p = planFrames(wrong, 1000, 3);
     assert.strictEqual(p.length, 3);
-    for (const x of p) assert.deepStrictEqual(x, { text: '', emitted: [], deferred: [], marker: '' });
+    for (const x of p) assert.deepStrictEqual(x, { text: '', emitted: [], deferred: [], segments: [], marker: '' });
   }
 });
 
@@ -761,7 +761,7 @@ test('EMPTY FRAME: neither content nor remainder ⇒ STRICTLY empty rendering (s
   const emptyOnes = p.filter((x) => x.emitted.length === 0 && x.deferred.length === 0);
   assert.ok(emptyOnes.length > 0, 'with 4 frames for a small corpus, empty ones remain');
   for (const v of emptyOnes) {
-    assert.deepStrictEqual(v, { text: '', emitted: [], deferred: [], marker: '' });
+    assert.deepStrictEqual(v, { text: '', emitted: [], deferred: [], segments: [], marker: '' });
   }
 });
 

@@ -1,22 +1,22 @@
-# ═══════════════════════════════════════════════════════════════════════
-# MUTATION — SEPARATE workflow, STRICT paths
-# ═══════════════════════════════════════════════════════════════════════
+﻿# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# MUTATION â€” SEPARATE workflow, STRICT paths
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #
-# ⚠️ WHY SEPARATE FROM test.yml: `paths:` applies to the WHOLE workflow,
+# âš ï¸ WHY SEPARATE FROM test.yml: `paths:` applies to the WHOLE workflow,
 #    never to a job. Mutation (235-296 s measured) therefore ran on EVERY
-#    push — including doc or README commits. Doctrine: "HEAVY job (> ~3 min)
-#    AND non-incremental → NEVER per-push under a wide path → SEPARATE
+#    push â€” including doc or README commits. Doctrine: "HEAVY job (> ~3 min)
+#    AND non-incremental â†’ NEVER per-push under a wide path â†’ SEPARATE
 #    workflow with strict paths". Private repo = 2000 min/month.
 #
-# ⚠️ `paths` MUST remain the EXACT MIRROR of `stryker.conf.json`:
-#      - a `mutate` file missing here  → it is mutated but the job NEVER
+# âš ï¸ `paths` MUST remain the EXACT MIRROR of `stryker.conf.json`:
+#      - a `mutate` file missing here  â†’ it is mutated but the job NEVER
 #        triggers for it = SILENT loss of coverage;
-#      - a covering suite missing → a test change that breaks the score
+#      - a covering suite missing â†’ a test change that breaks the score
 #        would be seen by nobody.
-#    ⚠️ TWO TRUTHS TO KEEP IN SYNC = the very bug class this repo fights.
+#    âš ï¸ TWO TRUTHS TO KEEP IN SYNC = the very bug class this repo fights.
 #    Hence the `mutation-workflow-gate.test.js` gate: it reddens on the first
 #    drift. NEVER edit this `paths` block without re-running it.
-# ═══════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 name: mutation
 
@@ -24,7 +24,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      # ── mutated modules (mirror of stryker.conf.json `mutate`) ──
+      # â”€â”€ mutated modules (mirror of stryker.conf.json `mutate`) â”€â”€
       - 'src/lib-pure.js'
       - 'src/canary.js'
       - 'src/commit-msg-lang.js'
@@ -67,7 +67,9 @@ on:
       - 'src/lifecycle-log-pure.js'
       - 'src/frame-sequencer-pure.js'
       - 'src/delivery-notice-pure.js'
-      # ── deterministic suites covering the mutated modules (vitest perTest runner) ──
+      - 'src/freshness-scope-pure.js'
+      - 'src/carryover-pure.js'
+      # â”€â”€ deterministic suites covering the mutated modules (vitest perTest runner) â”€â”€
       - 'test/harness-conformance.test.js'
       - 'test/lib-pure.test.js'
       - 'test/canary.test.js'
@@ -75,7 +77,7 @@ on:
       - 'test/commit-msg-leak.test.js'
       - 'test/sources-file.test.js'
       # `keys` operator (19/08/2026): launched by Stryker, so a change to it can move the
-      # score — the workflow must therefore see it. Sealed by mutation-workflow-gate.
+      # score â€” the workflow must therefore see it. Sealed by mutation-workflow-gate.
       - 'test/keys-operator.test.js'
       - 'test/operator-consumption-gate.test.js'
       - 'test/observable-reach-gate.test.js'
@@ -110,6 +112,8 @@ on:
       - 'test/protocol-routes-pure.test.js'
       - 'test/frame-sequencer-pure.test.js'
       - 'test/delivery-notice-pure.test.js'
+      - 'test/freshness-scope.test.js'
+      - 'test/carryover-pure.test.js'
       - 'test/memory-store.test.js'
       - 'test/state-eviction-pure.test.js'
       - 'test/state-crdt-pure.test.js'
@@ -120,14 +124,14 @@ on:
       - 'test/wiring-dialect.test.js'
       - 'test/corpus-cache.test.js'
       - 'test/lifecycle-log-pure.test.js'
-      # ── the mutation config itself + the deps ──
+      # â”€â”€ the mutation config itself + the deps â”€â”€
       - 'stryker.conf.json'
       - 'vitest.stryker.config.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/mutation.yml'
   pull_request:
-  # ⚠️ Safety net: allows a manual re-run when in doubt (e.g. after a tooling
+  # âš ï¸ Safety net: allows a manual re-run when in doubt (e.g. after a tooling
   #    change that touches none of the paths above).
   workflow_dispatch:
 
@@ -142,28 +146,28 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          # ⚠️ Node ≥22 required (dependency-cruiser demands it). A mismatch
+          # âš ï¸ Node â‰¥22 required (dependency-cruiser demands it). A mismatch
           #    with the dev machine IS the most likely bug if this job fails
           #    in CI but passes locally (already lived through on 15/07/2026).
           node-version: 22
           cache: npm
       - run: npm ci
-      # ⚠️ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
-      #    §Tests&CI, 2026-08-29): the real steps (test:mutation THEN the
+      # âš ï¸ THE COMMAND BELOW IS THE ONLY LOGIC THIS JOB CARRIES (CLAUDE.md
+      #    Â§Tests&CI, 2026-08-29): the real steps (test:mutation THEN the
       #    per-file mutation floor) live in `src/ci-steps-pure.js` (group
-      #    `mutation`), executed by `tools/ci.mjs`. Never edit them here —
+      #    `mutation`), executed by `tools/ci.mjs`. Never edit them here â€”
       #    edit CI_STEPS, `test/ci-steps-gate.test.js` reddens on drift.
-      # ⚠️ THE PER-FILE FLOOR MUST RUN **HERE**, never only in the `test` job
+      # âš ï¸ THE PER-FILE FLOOR MUST RUN **HERE**, never only in the `test` job
       #    (14/08/2026). `mutation-floor-gate` is SILENT without
-      #    `reports/mutation.json` — INTENDED behavior locally, but the report
+      #    `reports/mutation.json` â€” INTENDED behavior locally, but the report
       #    only exists in THIS job: anywhere else the gate was INERT.
-      # 🔴 MEASURED: `docfacts.js` at 81.19% with 15 survivors, GREEN CI, because
+      # ðŸ”´ MEASURED: `docfacts.js` at 81.19% with 15 survivors, GREEN CI, because
       #    `thresholds.break` is an AVERAGE (99.05 global). That is the exact
-      #    collapse this gate exists to prevent — invisible for a month.
-      # ⚠️ `tools/ci.mjs` runs EVERY step of a group to the end regardless of an
-      #    earlier failure (never stops at the first red) — that is what plays
+      #    collapse this gate exists to prevent â€” invisible for a month.
+      # âš ï¸ `tools/ci.mjs` runs EVERY step of a group to the end regardless of an
+      #    earlier failure (never stops at the first red) â€” that is what plays
       #    the role the old `if: always()` played here: a Stryker red on the
       #    GLOBAL threshold must not mask the PER-FILE verdict, both
-      #    diagnostics, never one instead of the other. 🛑 NEVER "fix" a red
+      #    diagnostics, never one instead of the other. ðŸ›‘ NEVER "fix" a red
       #    here by lowering the floor: a survivor gets KILLED or ELIMINATED.
       - run: npm run ci:mutation

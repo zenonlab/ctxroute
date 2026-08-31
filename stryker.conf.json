@@ -62,6 +62,8 @@
     "src/protocol-routes-pure.js",
     "src/frame-sequencer-pure.js",
     "src/delivery-notice-pure.js",
+    "src/freshness-scope-pure.js",
+    "src/carryover-pure.js",
     "src/commit-msg-lang.js",
     "src/commit-msg-leak.js"
   ],

@@ -638,9 +638,173 @@ there is NOTHING WE CAN DO ABOUT IT FROM THIS SIDE.**
 - ⚠️ `PermissionDenied` + `hookSpecificOutput.retry: true` is Claude Code's AUTO-MODE PERMISSION
   system, a DIFFERENT event from a `PreToolUse` hook returning `deny`. Do not read it as a hook
   retry.
+
+✅ **AND THE LOSS IS NO LONGER PERMANENT — CLOSED 2026-08-31, `carryover-pure.js`.** The paragraph
+above stays TRUE (a frame that never connects is an occasion lost FOR THAT TOOL CALL, and nothing on
+this side can re-open it), but until this date the CONTENT promised to that frame was **DROPPED**:
+`emission-core.emit` persists only what overflows the LAST frame of a plan and runs ONCE per
+invocation, while `doc-seen-` already recorded the document delivered — so no later action re-decided
+it. **MEASURED: 10 of 32 connections on one action, chunks 11..19 of 19 never seen again, ever.**
+🔑 **THE MECHANISM, and it invents no fact**: when an invocation decides its plan it HARVESTS the
+not-yet-served segments of the other pending invocations of its scope and carries them itself.
+🛑 **A HARVESTED INVOCATION SERVES NOTHING MORE — that half is not optional**, or a late frame would
+deliver text the harvester has just taken over. **Ownership MOVES, it is never shared.** The transfer
+is atomic because the daemon is single-threaded: no lock, no timer, no liveness probe.
+🛑 **NOTHING ASKS WHETHER AN INVOCATION IS FINISHED** — the paragraph below says why that is not an
+available fact. Only two facts are used: a frame arrived, and a new invocation is deciding.
+⚠️ **THE HTTP LANE ONLY**: the spawn lane's N processes really do all run, so nothing is ever owed
+there, and it must stay byte-identical. Only a daemon can tell "this frame arrived" from "this frame
+never will" — the same reason `frame-sequencer-pure.js` is daemon-only.
+✅ **THE MOST RELIABLE CONFIGURATION THAT EXISTS HERE, AND IT SHOULD BE THE RECOMMENDED ONE
+(operator, 2026-08-31).** It is not "the `command` lane" — it is a **PAIR**, and quoting half of it
+will break whoever applies it:
+**ONE single `command` declaration** + **a harness with NO output cap**.
+- ✅ **Codex satisfies both.** `additionalContextLimit = 0` means *"pass the handler's complete
+  additional context directly to the model"* (measured IN the 0.146.0 binary), so nothing needs
+  fragmenting: **one declaration, one process, zero chunking, zero simultaneous connections**. The
+  whole transport-defect class is ABSENT BY CONSTRUCTION, not mitigated. Price: ~330 ms of process
+  start, once per action.
+- 🛑 **Claude Code does NOT.** Its cap is ~10,000 characters PER OUTPUT, so a single declaration
+  there makes the content SPILL to a file with a 2 KB preview — measured, shipped and reverted the
+  same day. On that harness N declarations stay REQUIRED, and the `http` lane's burst comes with
+  them. **Never read "one declaration" as advice for Claude Code.**
+🔑 **WHY THIS MATTERS BEYOND US**: it means the framework's reliability is a property of the
+DEPLOYMENT, not of the framework. Where an error is catastrophic, one picks the pair above and the
+class does not exist; where speed matters more, one takes the `http` lane and accepts a bounded,
+measured, NON-SILENT loss. **Say it that way to any evaluator** — a system that knows which of its
+configurations is safe is stronger than one that claims all of them are.
+⚠️ **AND THE WINDOWS-ONLY PART IS THE OTHER HALF OF THE ANSWER**: the loopback loss comes from
+`SIO_TCP_INITIAL_RTO`, a WINDOWS behaviour. On Linux the client retransmits on its own. So the
+`http` lane may well be reliable on Linux/macOS — **NOT MEASURED, and the cheapest decisive
+measurement left in this file.** Do not claim it either way until someone runs the burst there.
+⚠️ **WHAT THIS BUYS AND WHAT IT DOES NOT**: the agent may still act ONCE without knowledge it was
+owed — deferral is a consolation, never a repair. What ends is the SILENCE: the content comes back
+instead of disappearing. Say it that way; never sell "nothing is ever lost".
+🛑 **CAN IT BE FIXED? NO ON THIS LANE, AND THE ANSWER IS BINARY — SETTLED 2026-08-31, NEVER ASK
+AGAIN.** The operator asked for a yes/no and deserves one, so it is written once, here.
+- **Can we remove the `hook error / ECONNREFUSED` lines on the `http` lane? NO.** Not "hard": not
+  possible from this side. The harness OPENS the connections and we are the SERVER; a server cannot
+  re-open a connection that never reached it, cannot create an extra one, and cannot ask to be
+  called again. `anthropics/claude-code` **#29963** describes this exact failure, asks for ONE
+  retry, and is **CLOSED `NOT_PLANNED`**.
+- **Can we make them RARER? YES, and we did** — the daemon was doing 1,152 file reads per action
+  and could not accept fast enough: 30 lost of 384, then 0 on the same burst once fixed. 🛑 **A
+  MEASURED ZERO IS NOT A GUARANTEED ZERO.** Never quote one as the other; the operator was told "0"
+  and legitimately read it as "solved".
+- 🔑 **AND THE DEFECT IS NOT OURS, NOR EVEN CLAUDE CODE'S — IT IS THE NODE CLIENT ON WINDOWS.**
+  Measured by ETW kernel trace: Windows disables TCP retransmission on loopback
+  (`SIO_TCP_INITIAL_RTO`, libuv `src/win/tcp.c`); **a .NET client against the SAME server of ours
+  loses 0 %**, a bare 10-line Node server loses as much as we do. ⇒ **A harness that retried once,
+  or that did not connect through libuv, would work perfectly against this daemon WITHOUT ONE LINE
+  OF OUR CODE CHANGING.** State it that way: the framework is sound, the transport of one client on
+  one OS is not.
+- ✅ **THE ONE EXIT THAT REMOVES THE CLASS BY CONSTRUCTION, and it is a CHOICE, not a fix**: the
+  `command` lane — ONE process, no network burst, which is how **Codex** already runs and why Codex
+  never sees this. There the lines cannot exist at all. **Price: ~330 ms of process start PER
+  DECLARATION** (measured 2026-08-22), i.e. seconds per action instead of ~180 ms. **NOT measured on
+  our corpus.** Switching is a config decision, reversible, and it is the operator's to make: live
+  with the red lines, or pay the latency and never see one again.
+- ⚠️ **WHAT THE CARRYOVER CHANGED, said exactly**: it does NOT make the lost frames arrive. It makes
+  the CONTENT they carried come back at the next action instead of being dropped for ever. Red lines
+  stay; the silent loss is gone. 🛑 Never sell it as "nothing is lost any more".
+
+
 ⇒ **An action's capacity is FIXED before it starts: `frames that arrived x 10,000 c`.** Everything
 else can only reach the NEXT action, i.e. after the agent has already acted. Design accordingly —
 the reachable guarantee is *never act without the knowledge owed*, never *never lose a frame*.
+
+
+🔴 **AN AGENT RUNS SEVERAL TOOL CALLS AT ONCE — MEASURED 2026-08-30, AND ASSUMING OTHERWISE COST A
+SHIPPED-AND-REVERTED FEATURE THE SAME DAY.** Claude Code issues independent tool calls IN PARALLEL
+(its own hooks documentation, and the harness repeats it to every agent on every turn). So at any
+instant ONE agent can have N invocations in flight, their frames interleaved at the daemon.
+⇒ **NOTHING may be inferred from "a new invocation appeared"**: it does NOT mean the previous one
+ended. A notice built on that premise fired **31 false alarms out of 32** on two interleaved
+32-frame calls, while every frame had arrived.
+🛑 **AND NO HARNESS EVER SAYS A TOOL CALL IS OVER.** There is no closing event, so "this invocation
+is finished" is NOT AN AVAILABLE FACT — only "this many frames have arrived so far" is. Any design
+needing the former is blocked on something that does not exist, not on more code.
+⚠️ **WHAT HOLDS INSTEAD**: key every per-invocation table by `tool_use_id` (`frame-sequencer-pure`
+does) — parallel invocations then never share a counter. PROVEN: eight tool calls of one agent all
+in flight, 256 interleaved connections, 8/8 served with no missing chunk and no duplicate.
+🔑 **THE GENERAL LESSON, worth more than the bug**: a premise about HOW AN AGENT BEHAVES is an
+empirical fact about a third party, exactly like a harness dialect. **Measure it before building on
+it** — here, two interleaved calls would have taken two minutes. Nobody did, and the doctrine
+already says it: facing our own engine the CODE is the authority; facing a harness, the MEASUREMENT is.
+
+
+
+🔴 **THE OUTPUT CAP IS ALIVE, AND IT SPILLS RATHER THAN TRUNCATES — MEASURED THE HARD WAY
+2026-08-31, BY SHIPPING THE WRONG CONCLUSION TO PRODUCTION AND WATCHING IT FAIL.** A first
+measurement said the cap was GONE: one `type:"http"` hook returned **1,500,000 characters** and the
+agent quoted the LAST marker planted every ~1,000. That measurement was REAL and its conclusion was
+FALSE. Wired at a 400,000-character budget with `frames: 1`, the very first real injection came back
+as **"Output too large (14.8KB). Full output saved to <file>. Preview (first 2KB)"** — the harness
+did not cut the text, it **SPILLED the document to disk and handed the agent a 2 KB preview**.
+🛑 **THE AGENT QUOTED THE MARKER BECAUSE IT COULD STILL REACH THE FILE, NOT BECAUSE THE TEXT REACHED
+ITS CONTEXT.** ⇒ **A payload that arrives as a file path DID NOT ARRIVE.** The probe asked *did the
+bytes survive?* when the only question that matters is *did the AGENT receive them?* — two different
+numbers, and only the second one is ours to respect.
+⚠️ **SO THE ~10,000 FLOOR STANDS, AND N DECLARATIONS REMAIN REQUIRED.** Observed spill at ~14.8 KB.
+What changed since June is the SHAPE of the failure (spill + preview instead of silent truncation),
+never its existence. 🛑 Do NOT reopen this on a byte-survival measurement: measure the size above
+which the harness stops putting the text IN THE CONTEXT, and measure it through a REAL injection,
+never through a probe that only proves the response left the server.
+⚠️ **WHAT THE EPISODE LEFT BEHIND, AND IT IS WORTH KEEPING**: the budget is now DECLARED
+(`HOOK_OUTPUT_BUDGET` in `harness-profile.js`) and **both shells read the same key** — the spawn lane
+and the daemon can no longer drift onto two capacities for one harness. Only the FIGURE was wrong;
+it is back at the floor. 🔑 And the general lesson, which cost a whole night: **a measurement that
+confirms what you hoped is the one to distrust** — this one was rushed into an architecture decision
+within the hour, and production refuted it in minutes.
+
+🛑 **THE HTTP LANE HAS A CEILING WE DID NOT CHOOSE, AND IT CANNOT BE LIFTED FROM HERE — CLOSED
+2026-08-31 AFTER A FULL NIGHT OF MEASUREMENT. DO NOT REOPEN THIS HUNT.** The chain is sealed at
+every link: knowledge must land in ONE gesture ⇒ N chunks ⇒ N hook declarations ⇒ **N SIMULTANEOUS
+CONNECTIONS**, because the harness fires every matching hook in parallel (its own doc) and caps each
+hook OUTPUT at ~10 000 characters (MEASURED here; **NOT documented anywhere** — treat it as a
+harness dialect that may move without notice).
+**WHAT BREAKS, REPRODUCIBLE ON DEMAND**: a burst of ~38 simultaneous hook connections from an
+INTERACTIVE session loses connections — 30, 22 and 32 `ECONNREFUSED` in three one-second bursts,
+triggered by 12 parallel tool calls and by spawning a subagent. Normal use (1-5 parallel calls)
+is clean.
+⚠️ **ELIMINATED BY MEASUREMENT — never re-test these**: the daemon (a FRESH copy served 384/384
+with REAL delivery, and production logged **zero deaths, same pid, 382 `code-unchanged`**) · a bare
+10-line Node server (384/384 — so the harness client is fine at this load) · accumulated state (2,9
+MB `daemon-state.json` copied in: 384/384) · two concurrent clients (384/384) · daemon uptime (79 MB
+after 12 h vs 104 MB for a one-minute copy) · client age (the failing session was **2 MINUTES old**)
+· socket leak (old sessions hold **0** sockets to the port) · the statusline · the frozen release
+code (identical to the repo). **Six of my own hypotheses died in one night; the operator’s first
+sentence — « it gets worse with load » — was the only one left standing.**
+🔑 **AND UPSTREAM WILL NOT FIX IT**: `anthropics/claude-code` issue #29963 describes this exact
+failure (Windows, `type:"http"` to `127.0.0.1`, server PROVEN healthy, request never arrives, ~1 in
+10-20), asks for one retry, and is **CLOSED `NOT_PLANNED`**. There is no retry and there will be
+none. We are the SERVER: no line of ours can retry a connection that never existed.
+💸 **AND EACH FAILURE COSTS MONEY, not just knowledge**: the failure text differs from the success
+text, so the prompt prefix changes, so **the cache key changes and the whole turn is recomputed**.
+The reporter measured **~$45 for ONE failure** on a 1M context.
+🛑 **THE OBVIOUS FIXES ARE ALL REFUSED, WITH THEIR REASON** — do not propose them again:
+· *fewer declarations* ⇒ a large skill no longer lands in one gesture, which BREAKS the product’s
+  one promise (knowledge AT the action). Rejected by the maintainer, correctly.
+· *deliver over several gestures via the deferred queue* ⇒ same breakage: the agent acts once
+  without the knowledge, which is the very defect this framework exists to remove.
+· *make the burst independent of payload size* ⇒ same thing said differently. There is no way to
+  keep the promise AND shrink the burst on this lane.
+⇒ **WHAT IS TRUE, STATED PLAINLY**: on Claude Code the framework is sound within a BOUNDED REGIME,
+and the bound belongs to the harness. That is a documented limitation, not a defect we can close.
+⚠️ **THE ONE UNEXPLORED WAY OUT, AND IT IS NOT MEASURED**: a lane that does not fan out into N
+simultaneous connections — the `command` lane (one process, no network burst; this is how Codex
+runs, `type:"command"` being the only handler it supports) or possibly `type:"mcp_tool"`, whose
+output cap is UNKNOWN. If ONE call can carry the whole payload, the entire class disappears by
+construction. 🛑 Measure the cap FIRST — the 10 000 figure above is ours, not theirs, and the
+command lane costs a ~330 ms process start per declaration (measured 2026-08-22), so it is a
+different trade, not a free win.
+🔎 **HOW TO SEE ANY OF THIS AT ALL**: the `hook error` lines are written NOWHERE — absent from the
+`.jsonl` transcript, visible only on screen. `--debug hooks --debug-file <path>` is the ONLY way an
+agent can count them; `/debug` arms it mid-session without losing context. `claude-core.bat` now
+does it for every session, one file per launch, purged past 2 days. **Never ask the operator to
+read their screen: a whole night was spent measuring blind that way.**
+⚠️ **AND READ A LOG ONLY AFTER IT IS FLUSHED**: a premature read returned ZERO where 30 failures
+had just occurred, and that false zero was announced as a result.
 
 ## MULTI-FRAME TRANSPORT — the framework DELIVERS EVERYTHING (03/08/2026, LIVE in prod)
 

@@ -598,6 +598,36 @@ function tokenOf(root) {
 }
 
 /**
+ * Does `text` mention `needle` AS A PATH SEGMENT, rather than as a bare
+ * substring?
+ *
+ * 🔴 WHY THIS EXISTS — MEASURED IN PRODUCTION 2026-08-31. The suspect test read
+ *    `text.includes(root) || text.includes(token)`, and a NEIGHBOURING project
+ *    called `ctxroute-policies` sits beside this repository. Its declaration
+ *    (`node .../Desktop/ctxroute-policies/bin/check.js`) CONTAINS both the root
+ *    and the token as prefixes, so the splice accused a hook it does not own
+ *    and REFUSED to write — the generator became unusable on the operator's own
+ *    machine, for a file it had no business claiming.
+ * 🛑 THE OWNERSHIP TEST WAS ALREADY RIGHT (`node ${root}/`, trailing slash
+ *    mandatory): only the MENTION test compared raw text. Two questions about
+ *    the same boundary must not be answered by two different rules — that gap
+ *    is the whole defect.
+ * ⚠️ A MENTION STAYS DELIBERATELY BROAD (it must catch a second copy of this
+ *    framework whatever spells it), it simply may not run past a segment: the
+ *    match counts only when what FOLLOWS cannot continue a name. Sibling
+ *    directories (`-policies`, `_old`, `2`) stop being accused; a real
+ *    `…/ctxroute/…` or a bare `"ctxroute"` still is.
+ */
+function mentionsSegment(text, needle) {
+  if (needle === '') return false;
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) {
+    const next = text[i + needle.length];
+    if (next === undefined || !/[A-Za-z0-9_-]/.test(next)) return true;
+  }
+  return false;
+}
+
+/**
  * Ownership is decided by the command's ROOT, never by a file name: two copies
  * of the framework must not look alike.
  * ⚠️ A URL HAS NO ROOT — it names a port, never a directory — so a declaration
@@ -698,7 +728,7 @@ function splice(settings, declarations, root, shape) {
         // we just wrote — two wirings of one framework, which is the split
         // brain of 2026-08-22 wearing a different coat.
         const text = JSON.stringify(entry);
-        if (text.includes(root) || text.includes(token)) suspects.push(entry);
+        if (mentionsSegment(text, root) || mentionsSegment(text, token)) suspects.push(entry);
         kept.push(entry);
       }
       // ⚠️ NO GUARD HERE, AND ITS ABSENCE IS PROVEN, NOT ASSUMED. The `continue`

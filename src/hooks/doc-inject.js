@@ -43,6 +43,8 @@
 //    Any orchestration change is made IN pretool-core.js, never here.
 const { run, denyOutput, noticeOutput } = require('../pretool-core');
 const { parseFrameArgs } = require('../lib-pure');
+// ⚠️ THE HARNESS'S OWN NUMBER, READ AS DATA — never a literal in a shell.
+const { HOOK_OUTPUT_BUDGET } = require('../harness-profile');
 const { readStdinJson } = require('../stdin-json');
 // ⚠️ THE CLIENT LANE, OPT-IN BY ARGUMENT (2026-08-21). With `--client` in the
 //    wiring this shell ASKS the daemon that owns the state instead of opening the
@@ -137,8 +139,18 @@ if (require.main === module) {
       //    there is nothing to emit — it no longer kills the process (layer leak,
       //    same family as ⑯: the life cycle is a shell decision).
       //    When it emits, `emit` terminates the process before this line.
+      // 🛑 THE HARNESS LIMIT IS DECLARED BY THE SHELL, NEVER BY THE ENGINE —
+      //    `pretool-core.budgetFor` says so in as many words, and it is why no
+      //    number lives there. It is read from `harness-profile.js`, the ONE
+      //    place this repository keeps a third party's facts, so the daemon
+      //    shell and this one cannot drift: they read the same key.
+      // ⚠️ WITHOUT THIS LINE THE SHELL FELL BACK TO `budget.DEFAULT_BUDGET`
+      //    (8,000 — the conservative FLOOR, chosen when the harness truncated at
+      //    ~10,000). That floor stopped matching the harness on 2026-08-31, so
+      //    leaving it would keep chopping a payload the pipe carries whole.
       const options = {
         ...parseFrameArgs(process.argv),
+        budget: HOOK_OUTPUT_BUDGET.claudeCode,
         invocationId: typeof data.tool_use_id === 'string' ? data.tool_use_id : '',
       };
       // 🛑 ONE LINE PER HARNESS, NEVER A SECOND SHELL. The only difference

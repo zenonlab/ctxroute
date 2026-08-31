@@ -106,6 +106,12 @@ const { run } = require('../pretool-core');
 //    see the block above `/pretool`'s handling, below, for the defect this
 //    closes (Windows loopback ETIMEDOUT losing ~6% of frame connections).
 const frameSequencer = require('../frame-sequencer-pure');
+// 🔑 THE OTHER HALF OF THE SAME GUARANTEE (2026-08-31). The sequencer makes the
+//    frames that DO connect carry the next undelivered chunk; `carryover-pure`
+//    hands back the chunks that no connection ever came to fetch. Only this
+//    daemon can tell the two apart — it alone sees every connecting request of
+//    one invocation.
+const carryover = require('../carryover-pure');
 // -- THE HUMAN-FACING VERDICT DERIVED FROM THE SAME FACTS (2026-08-30): once
 //    `frame-sequencer-pure` has decided WHICH content index a connecting
 //    request receives, this PURE module decides whether that observation
@@ -174,6 +180,8 @@ const lifecycle = require('../lifecycle-log');
 // ⚠️ THE NAMESPACE IS KEPT, NEVER DESTRUCTURED: `staleCode.check` must stay
 //    replaceable in memory, because the SEEN RED of this guard is a driver that
 //    sabotages the comparison so it always answers "identical".
+// ⚠️ THE HARNESS'S OWN NUMBERS, READ AS DATA — never a literal in this shell.
+const harnessProfile = require('../harness-profile');
 const staleCode = require('../stale-code');
 const staleCodePure = require('../stale-code-pure');
 
@@ -285,6 +293,31 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 //    not parse at all. 🛑 This is the ONE guess in this file: it must be
 //    CONFIRMED on a throwaway wiring before anything is switched over.
 const NO_OUTPUT = {};
+
+// ═══════════════════════════════════════════════════════════════════════
+// WHICH INVOCATIONS HAVE ALREADY HAD THEIR CODE VERIFIED THIS ACTION
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 Read the full rationale at the call site (`freshnessDoneFor` below the
+//    request body): profiled 2026-08-31, `readFileSync` was 30 % of the
+//    daemon's real work because the 32 frames of ONE tool call each re-read
+//    the same 36 modules.
+// 🛑 A MAP, NEVER A PLAIN OBJECT — an invocation id is arbitrary harness text,
+//    and `__proto__` on a plain object writes the prototype, not a key. Same
+//    law as `frame-sequencer-pure.js`.
+// 🛑 BOUNDED FOR LIFE: a daemon runs for weeks. Eviction is LRU by
+//    re-insertion, and the ceiling mirrors the sequencer's for the same sizing
+//    reason (one entry is a string key, nothing else).
+// ⚠️ AN EVICTED ENTRY COSTS ONE EXTRA VERIFICATION, NEVER A WRONG ANSWER: the
+//    forgotten invocation simply verifies again. Fail-SAFE by construction —
+//    the failure mode of this table is doing MORE work, never serving stale
+//    code, which is why no alarm is needed when it evicts.
+// 🛑 THE DECISION LIVES IN A PURE MODULE, NEVER HERE — house law, and it was
+//    briefly broken: this logic first shipped INSIDE this I/O shell, where
+//    Stryker never looks, so an inverted condition would have passed green and
+//    silently restored the per-frame verification this exists to remove.
+//    `src/freshness-scope-pure.js` carries the rationale and the measurements.
+const freshnessScope = require('../freshness-scope-pure');
+const freshnessVerified = freshnessScope.createState();
 
 /**
  * Reads the request body, bounded.
@@ -580,6 +613,13 @@ function emitRoute(data, store) {
  *   before this change, so every real daemon gets one. A test may still pass
  *   `null` or omit it — `nextIndex` fails open to the URL's own frame number.
 
+ * @property {Map<string, {scopeId: string, served: number, nbFrames: number, harvested: boolean}>|null} carryoverState
+ *   `carryover-pure.js`'s bookkeeping: which invocations of which scope still
+ *   owe content, and which have been harvested. DEFAULT-CREATED like the two
+ *   below and for the same reason — there is no historical behaviour to
+ *   preserve for a table that did not exist. A test may pass `null` or omit
+ *   it: every entry point then answers "nothing to carry", which IS the
+ *   behaviour from before the carryover existed.
  * @property {Map<string, {nbFrames: number, served: number}>|null} deliveryNoticeState
  *   `delivery-notice-pure.js`'s own tracking table (completion/deferral),
  *   DEFAULT-CREATED like `frameSequencerState` and for the same reason: there
@@ -614,7 +654,7 @@ function emitRoute(data, store) {
  * @returns {object} the JSON to send back
  */
 function handle(body, url, deps) {
-  const { runFn, outputFn, parseFrames, store, frameSequencerState, deliveryNoticeState } = deps;
+  const { runFn, outputFn, parseFrames, store, frameSequencerState, deliveryNoticeState, carryoverState } = deps;
   let data;
   try {
     data = JSON.parse(body);
@@ -714,6 +754,29 @@ function handle(body, url, deps) {
   // filtered explicitly in `differential-normalize.withoutDeliveryNotice`,
   // never silently by loosening this shell's own behaviour.
   // ═════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════
+  // 🔴 THE LAST SILENT LOSS, CLOSED 2026-08-31. `frame-sequencer-pure` made the
+  //    frames that ARRIVE carry the next undelivered chunk — but when FEWER
+  //    frames connect than the plan has chunks, the leftovers were neither
+  //    delivered nor queued (`emission-core` persists only what overflows the
+  //    LAST frame), while `doc-seen-` already recorded the document delivered.
+  //    Chunks 11..19 of 19 measured lost in production, on every later action.
+  // 🛑 A HARVESTED INVOCATION SERVES NOTHING MORE, AND THAT IS NOT OPTIONAL.
+  //    Another invocation has taken ownership of its remaining chunks; a late
+  //    frame answering here would deliver the same text twice. Ownership MOVES,
+  //    it is never shared — and the transfer is atomic because this daemon is
+  //    single-threaded, so it needs no lock, no timer and no liveness probe.
+  // ⚠️ NOTHING HERE ASKS WHETHER AN INVOCATION IS "FINISHED": that is not an
+  //    available fact (no harness emits a closing event, and one agent runs
+  //    several tool calls at once — 31 false alarms out of 32 were paid for
+  //    assuming otherwise on 2026-08-30). Only two FACTS are used: a frame
+  //    arrived, and a new invocation is deciding its plan.
+  if (carryover.isHarvested(carryoverState, invocationId)) return NO_OUTPUT;
+  // 🛑 THE SCOPE IS COMPOSED BY ITS OWNER, `lib.scopeId` — never `session_id`
+  //    alone: master and sub-agents share it, and two spellings of one scope
+  //    would harvest across agents. Same single source the core uses.
+  const scopeId = lib.scopeId(data.session_id, data.agent_id);
+  carryover.observe(carryoverState, scopeId, invocationId, frame, frames.nbFrames);
   const notice = deliveryNotice.observe(deliveryNoticeState, invocationId, frame, frames.nbFrames);
   const noticeText = deliveryNotice.messageFor(notice);
   const showNotice = noticeText !== '' && lib.shouldShowNotification(collectCore.loadConfig());
@@ -722,6 +785,16 @@ function handle(body, url, deps) {
       frame,
       nbFrames: frames.nbFrames,
       invocationId,
+      // 🔑 FACTS IN, SEGMENTS OUT — the shell OBSERVES, the core READS the plan.
+      //    This daemon knows which invocations of this scope still owe content
+      //    and how many of their frames connected; it does NOT know what a plan
+      //    contains, and it must not (the plan store and the splitting belong to
+      //    the core). So it hands over the two numbers and nothing else.
+      // ⚠️ `pending` IS CALLED ONLY ON THE DECIDING FRAME, inside the core's
+      //    lock: frames 2..N return on the memoized plan before reaching it, so
+      //    one invocation harvests exactly once.
+      pending: () => carryover.pendingFor(carryoverState, scopeId, invocationId),
+      onHarvested: (id) => carryover.markHarvested(carryoverState, id),
       // 🔑 THE STATE OF A LIVING DAEMON LIVES IN MEMORY, AND THE LOCK GOES WITH
       //    IT. Sixteen short-lived processes had no common ground but the disk,
       //    so a FILE was made to carry a conversation between them — a lock to
@@ -744,6 +817,14 @@ function handle(body, url, deps) {
       //    unserialised against each other, and an interleaved read-modify-write
       //    loses a recorded delivery in silence.
       ...(store ? { store, withLock: lockModule.withLock } : {}),
+      // 🛑 THE SAME HARNESS NUMBER AS THE SPAWN SHELL, READ FROM THE SAME KEY.
+      //    `pretool-core.budgetFor` takes the limit from the SHELL and this
+      //    daemon IS a shell — the one that actually serves production. Omitting
+      //    it here while `doc-inject.js` declares it would put the two lanes on
+      //    DIFFERENT capacities for one harness: the spawn lane whole, the http
+      //    lane chopped at the 8,000 floor, and nothing comparing them. That is
+      //    the "one truth, two places" class this repository keeps paying for.
+      budget: harnessProfile.HOOK_OUTPUT_BUDGET.claudeCode,
     });
   } catch {
     // ⚠️ FAIL-OPEN, and it matters MORE here than on the spawn lane: there, a
@@ -792,6 +873,12 @@ function createServer(deps = {}) {
     // previous behaviour to preserve for a notice table that did not exist
     // before this change.
     deliveryNoticeState: deps.deliveryNoticeState || deliveryNotice.createState(),
+    // ⚠️ DEFAULT-CREATED like the two tables above and for the same reason:
+    //    there is no "historical behaviour" to preserve for bookkeeping that
+    //    did not exist before. A test may pass `null` or omit it — every
+    //    `carryover-pure` entry point then answers "nothing to carry", which
+    //    IS the behaviour from before this change.
+    carryoverState: deps.carryoverState || carryover.createState(),
     onAddressInUse: deps.onAddressInUse || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
     // ⚠️ NO DEFAULT, EXACTLY LIKE `store`, AND FOR THE SAME REASON. Absent ⇒ the
@@ -822,14 +909,80 @@ function createServer(deps = {}) {
     //    RETURNS; the shell's `onStaleCode` is what exits. The request is never
     //    answered either way: a socket left unanswered is a loud, fast failure,
     //    and a wrong answer is a silent one.
-    if (wired.freshness) {
-      const freshness = wired.freshness();
-      if (freshness.stale) {
-        if (typeof wired.onStaleCode === 'function') wired.onStaleCode(freshness);
-        return;
-      }
-    }
+    // ═════════════════════════════════════════════════════════════════════
+    // ONE VERIFICATION PER ACTION, NOT PER FRAME — PROFILED 2026-08-31
+    // ═════════════════════════════════════════════════════════════════════
+    // 📐 THE MEASUREMENT THAT SETTLED IT, and it had been an open question since
+    //    2026-08-24 for want of one. `node --cpu-prof` on this very daemon, driven
+    //    by a REAL Claude Code burst: of 7.5 s of actual work, **2,232 ms (30 %)
+    //    is `readFileSync`** — the single largest consumer, far ahead of parsing
+    //    (14 %). `stale-code.md` already carried the arithmetic (36 modules,
+    //    ~3.7 ms per verification, +34 % per request on a resident corpus) and
+    //    named this exact fix as a CANDIDATE — *"verify once per ACTION rather
+    //    than per frame, keyed by `tool_use_id`?"* — under the condition that
+    //    whoever reopened it MEASURE FIRST. This is that measurement.
+    // 🔑 WHY IT IS PURE WASTE: the 32 frames of one tool call ask the SAME
+    //    question, milliseconds apart, and the answer cannot differ between them
+    //    in any way that matters. 32 × 36 = **1,152 file reads to answer once**.
+    // 🛑 THE GUARANTEE IS NOT WEAKENED WHERE IT COUNTS. The check exists because
+    //    kernel notifications lie BOTH ways: spurious ones killed the daemon 258
+    //    times a day (an `atime` is enough), and all three vendors document event
+    //    LOSS, which is what would let stale code be served in SILENCE. Verifying
+    //    once per ACTION still catches every change that happens BETWEEN actions
+    //    — which is when code actually changes, since a delivery is a human
+    //    gesture, not something that lands mid-tool-call.
+    // ⚠️ THE RESIDUAL WINDOW, DECLARED RATHER THAN HIDDEN: a change landing
+    //    between frame 1 and frame N of the SAME action is served by the
+    //    remaining frames of that action. Bounded by one tool call, and the
+    //    daemon exits on the very next one. That is the trade, in writing.
+    // 🛑 IT IS NOT A CACHE OF THE DISK — the thing `stale-code.md` bans by name,
+    //    because caching the disk side rebuilds the baseline-by-re-read defect.
+    //    Nothing is remembered ABOUT THE FILES: we only remember that THIS
+    //    invocation was already verified, and the memory dies with the entry.
+    // 🛑 BOUNDED FOR LIFE, same reason and same shape as the frame sequencer's
+    //    own table: a daemon runs for weeks, so an invocation whose frames never
+    //    complete must never sit here for ever. LRU by re-insertion.
+    // ⚠️ IT MOVED ONE STEP LATER, AND THE STEP IS THE WHOLE POINT (2026-08-31).
+    //    It used to run BEFORE the body was read, justified by "nothing to gain
+    //    by parsing a request we have already decided not to answer" — an
+    //    OPTIMISATION argument, never a correctness one, and it cost one JSON
+    //    parse exactly twice in a daemon's life (the two deliveries of a day).
+    //    The action's identity lives IN that body, so asking "have I already
+    //    verified for THIS action?" is impossible before reading it.
+    // 🛑 IT STILL RUNS BEFORE ANY WORK: `handle` is what reads the corpus,
+    //    takes the lock and writes state, and it is called on the next line.
+    //    A stale daemon answers nothing, exactly as before.
     readBody(req).then((body) => {
+      // ⚠️ `readBody` HANDS BACK A STRING, NEVER AN OBJECT — the payload is only
+      //    parsed later, inside `handle`. A first version of this read
+      //    `body.tool_use_id` straight off that string: `undefined` every time,
+      //    so the guard below never fired and the verification still ran on
+      //    every frame. **The profile is what caught it** — the fix measured
+      //    ZERO gain, 2,342 ms of disk reads before and 2,454 ms after, and a
+      //    fix that changes nothing looks exactly like a fix that works.
+      // 🛑 PARSING TWICE IS THE CHEAP SIDE OF THIS TRADE, and it is deliberate:
+      //    a JSON parse of this payload is microseconds, one verification is
+      //    ~3.7 ms of `readFileSync`. Handing the parsed object down to `handle`
+      //    would change a signature every suite drives, for a gain of nothing.
+      // 🛑 AND THE CHECK STAYS HERE, BEFORE `handle`, so a stale daemon still
+      //    answers NOTHING AT ALL: "a socket left unanswered is a loud, fast
+      //    failure, and a wrong answer is a silent one". Moving it inside
+      //    `handle` would turn that loud failure into a polite empty answer.
+      let invocationId = '';
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed && typeof parsed.tool_use_id === 'string') invocationId = parsed.tool_use_id;
+      } catch {
+        // Unparseable ⇒ no identity ⇒ verify, exactly as before. `handle` is the
+        // one that decides what an unreadable payload means.
+      }
+      if (wired.freshness && !freshnessScope.alreadyVerified(freshnessVerified, invocationId)) {
+        const freshness = wired.freshness();
+        if (freshness.stale) {
+          if (typeof wired.onStaleCode === 'function') wired.onStaleCode(freshness);
+          return;
+        }
+      }
       const answer = body === null ? NO_OUTPUT : handle(body, req.url, wired);
       const payload = JSON.stringify(answer);
       // ⚠️ Answering a socket the client already closed is pointless work, and

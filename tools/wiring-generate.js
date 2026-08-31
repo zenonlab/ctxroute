@@ -209,10 +209,22 @@ function main() {
   // `frames` has ONE source — the user's config — and it is CONFRONTED with the
   // wiring by `doctor --settings`. Re-declaring it in the manifest would put
   // the same number in two places, which is the divergence of 2026-08-05.
+  // 🔴 THE ADDRESS IS ASKED FOR, NEVER COMPOSED — FIXED 2026-08-31, and it had
+  //    been DEAD since 2026-08-24. This line read `path.join(ROOT,
+  //    'ctxroute-config.json')`, i.e. the repo-local config, and that file was
+  //    REMOVED the day the configuration moved to the OS-conventional address
+  //    (two configs would be two truths). The generator therefore refused
+  //    `frames is not declared` on a machine whose config declares it plainly —
+  //    a NAMED refusal, which is why it never became silent damage, but the
+  //    tool was UNRUNNABLE for a week and nothing said so.
+  // 🛑 `paths.configPath()` is the ONE resolution point and it carries the WHOLE
+  //    precedence (`CTXROUTE_CONFIG_PATH` > `--ctxroute-config` > the
+  //    OS-conventional file if it exists > the repo). Re-composing any part of
+  //    it here is the very class this repository names: a component addressed
+  //    by a guessed path instead of by the authority that KNOWS.
   let frames = null;
   try {
-    const cfgPath = process.env.CTXROUTE_CONFIG_PATH || path.join(ROOT, 'ctxroute-config.json');
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(paths.configPath(), 'utf8'));
     if (Number.isInteger(cfg.frames) && cfg.frames >= 1) frames = cfg.frames;
   } catch { /* refused just below, with its reason */ }
   if (frames === null) refuse('`frames` is not declared in ctxroute-config.json — the bandwidth of one action has no default here: a guessed frame count silently changes what a gesture can deliver');
