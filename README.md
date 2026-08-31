@@ -32,6 +32,49 @@ All sources share one closed boolean base — `match` (∃) · `scope` (∃, AND
 ORs) · `exclude` (∀¬) — plus a global `filterMode`/`filterList` target filter.
 Details and proofs: `LANGUAGE.md`.
 
+## Choosing a harness
+
+Routing is deterministic on every harness. Transport is not — and the gap between
+harnesses is **structural**, not a question of maturity.
+
+**The most reliable configuration that exists here is a PAIR**, and quoting half of
+it will mislead whoever applies it: *one single `command` declaration* **and** *a
+harness with no output cap*.
+
+- **Codex CLI satisfies both.** `additionalContextLimit = 0` passes the handler's
+  complete additional context to the model, so nothing needs fragmenting: one
+  declaration, one process, zero simultaneous connections. The whole class of
+  transport loss is **absent by construction**, not mitigated. Price: one process
+  start per action (~330 ms measured).
+- **Claude Code does not.** Its per-output cap is undocumented and real (the engine
+  works to a conservative 8,000-character floor; beyond it the harness files the
+  text away and hands the agent a short preview), so several hook declarations stay
+  required, and the harness fires them in parallel. Under load — around 38
+  simultaneous connections, produced by ~12 parallel tool calls or by spawning a
+  subagent — connections are lost. Normal use (1 to 5 parallel calls) is clean.
+
+**What is measured, and what is not:**
+
+- The loss is a Node client behaviour **on Windows**: the kernel disables TCP
+  retransmission on loopback, and a .NET client against the same server loses
+  nothing. On Linux and macOS the client retransmits on its own, so this may well be
+  clean there — **not measured**, and it is the cheapest decisive measurement left.
+- Upstream will not fix it: `anthropics/claude-code#29963` describes this exact
+  failure and is closed as *not planned*. We are the server; no line of our code can
+  retry a connection that never arrived.
+- **Nothing is lost silently**: content promised to a frame that never connects is
+  harvested and carried by the next invocation (`src/carryover-pure.js`). A lost
+  frame is still an occasion lost for *that* tool call — a consolation, never a
+  repair.
+
+⇒ **Where an error is costly, pick Codex** (or the `command` lane). Where speed
+matters more, take Claude Code's `http` lane and accept a bounded, measured,
+non-silent loss. Reliability here is a property of the **deployment**, not of the
+framework.
+
+Gemini CLI is not a candidate today: its `PreToolUse` does not expose the injection
+channel at all — a capability hole, not a size one.
+
 ## Install (Claude Code)
 
 1. Clone this folder anywhere.
