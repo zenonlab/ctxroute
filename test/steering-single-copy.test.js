@@ -59,16 +59,30 @@ function buildRepoWithWorktree() {
 }
 
 /**
- * Resolves a steering-journal path to the kernel's canonical form, so two
- * spellings of the SAME directory (e.g. `/var/...` vs `/private/var/...` on
- * macOS) compare equal while two ACTUALLY different directories never do.
- * The journal file itself may not exist yet, so only its PARENT directory
- * (the git common dir, which always exists) is resolved.
+ * Identifies a steering journal by the KERNEL'S OWN IDENTITY for its parent
+ * directory, so any two spellings of the SAME directory compare equal while two
+ * ACTUALLY different directories never do. The journal file itself may not
+ * exist yet, so only its PARENT (the git common dir, which always exists) is
+ * asked about, and the basename is carried alongside.
+ *
+ * 🔴 `fs.realpathSync` WAS NOT ENOUGH, AND WINDOWS CI PROVED IT ON 2026-09-01:
+ *    it resolves symlinks (`/var` -> `/private/var` on macOS, the case this was
+ *    written for) but it does NOT expand an 8.3 SHORT NAME, so `RUNNER~1` and
+ *    `runneradmin` — one directory, two spellings — compared as a divergence and
+ *    the cell reported a defect that did not exist.
+ * 🛑 THE ANSWER IS TO STOP CANONICALISING STRINGS AND ASK THE AUTHORITY. A
+ *    device plus an inode is what the OS itself calls "the same directory";
+ *    spelling, case, symlinks and short names all stop mattering at once,
+ *    instead of one class of them being patched per platform. The comment below
+ *    already said "compare by real file identity" — this is that, actually done.
+ * ⚠️ ANTI-VACUITY IS INTACT: two genuinely different directories carry different
+ *    inodes, so this can never make a real divergence compare equal.
  * @param {string} p
  * @returns {string}
  */
 function realSteeringPath(p) {
-  return path.join(fs.realpathSync(path.dirname(p)), path.basename(p));
+  const st = fs.statSync(path.dirname(p));
+  return `${st.dev}:${st.ino}:${path.basename(p)}`;
 }
 
 test('TWO WORKTREES, ONE JOURNAL — both resolve to the same absolute path', () => {
