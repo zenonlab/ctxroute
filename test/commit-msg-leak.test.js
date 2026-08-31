@@ -56,9 +56,22 @@ const require_ = createRequire(import.meta.url);
 //    and the caches are restored in `finally`, unconditionally.
 function requireLeakModuleWithGuardAbsent() {
   const srcPath = require_.resolve('../src/commit-msg-leak.js');
-  const guardPath = require_.resolve('@zenon-lab/personal-data-guard');
+  // 🔴 THE PACKAGE MAY ALREADY BE ABSENT, AND RESOLVING IT THEN THROWS.
+  //    `resolve` was called unguarded here and passed on the maintainer's
+  //    machine, where the sibling checkout exists — and failed on EVERY clean
+  //    clone, i.e. on CI, which is the only place this branch is reachable
+  //    naturally. Measured 2026-08-31 on ubuntu-latest: `Cannot find module`,
+  //    a suite-level crash rather than an assertion. Absent is not an error
+  //    here: it is the state this helper exists to produce, so there is simply
+  //    nothing to evict.
+  let guardPath = null;
+  try {
+    guardPath = require_.resolve('@zenon-lab/personal-data-guard');
+  } catch {
+    guardPath = null;
+  }
   delete require_.cache[srcPath];
-  delete require_.cache[guardPath];
+  if (guardPath !== null) delete require_.cache[guardPath];
   const originalLoad = Module._load;
   Module._load = function (request, parent, isMain) {
     if (request === '@zenon-lab/personal-data-guard') {
