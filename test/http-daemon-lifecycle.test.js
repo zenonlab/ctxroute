@@ -533,7 +533,18 @@ test('REAL EVENT: the stale-code line NAMES the file and the kind of event', asy
     fields: staleCodeFields(change, 4242, 224000),
   });
 
-  assert.ok(line.includes(' file=module.js'),
+  // ⚠️ PORTABILITY (macOS): assert against what the KERNEL actually reported,
+  //    never a hardcoded 'module.js'. `fs.watch`'s `filename` argument is
+  //    platform-defined — Node documents it may differ across OSes and even be
+  //    `null` — and on macOS a directory-level FSEvents coalescing can name the
+  //    watched directory itself rather than the file inside it. What this test
+  //    verifies is TRANSPORT (whatever the kernel said reaches the line
+  //    unchanged), never the OS's own choice of filename. Anti-vacuity is kept:
+  //    the kernel must have named SOMETHING real on this run, or the line's
+  //    `file=` field must never be silently trusted.
+  assert.ok(typeof change.filename === 'string' && change.filename.length > 0,
+    `anti-vacuity: the kernel must really have named a file on this run — got change=${JSON.stringify(change)}`);
+  assert.ok(line.includes(' file=' + change.filename),
     `the line must NAME the file the kernel reported — got: ${line}`);
   assert.ok(/ kernelEvent=(rename|change)\b/.test(line),
     `the line must carry the KIND of event the kernel reported — got: ${line}`);

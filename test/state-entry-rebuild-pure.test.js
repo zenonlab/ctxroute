@@ -99,6 +99,14 @@ test('DEBT with both a why and an impact is silent, and the impact bound is incl
   const tooShort = 'x'.repeat(MIN_IMPACT - 1);
   assert.ok(verdict([occ('src/a.js')], { 'src/a.js': { max: 1, class: 'DEBT', why: why(), impact: tooShort } })
     .some((f) => f.includes('without a NUMERIC `impact`')));
+  // ⚠️ boundary strictly AT the bound: exactly MIN_IMPACT characters must be SILENT
+  //    (the check is `< MIN_IMPACT`, never `<= MIN_IMPACT`) — without this case a
+  //    mutant loosening `<` into `<=` survives, since every other fixture sits
+  //    either well above or exactly one character below the bound.
+  const exact = 'x'.repeat(MIN_IMPACT);
+  assert.deepStrictEqual(
+    verdict([occ('src/a.js')], { 'src/a.js': { max: 1, class: 'DEBT', why: why(), impact: exact } }),
+    []);
 });
 
 test('INHERITED_DEBT is EXEMPT from justification, and only it', () => {

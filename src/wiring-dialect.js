@@ -310,7 +310,14 @@ function render(declarations, d) {
   // ── THE BRANCHES, IN FIRST-APPEARANCE ORDER (determinism is a contract) ──
   const branches = new Map();
   for (const x of kept) {
-    const branch = layout.perEvent ? d.events[x.event] : '';
+    // ⚠️ `null`, NOT A STRING LITERAL. When `!perEvent` every declaration
+    //    shares ONE bucket regardless of its real event (the container has no
+    //    `{event}` segment to write it into, and `entryOf` already names the
+    //    event via `eventKey`) — the exact VALUE used as that bucket's Map key
+    //    is unobservable in the rendered document, so any distinct constant is
+    //    equally correct. `null` says "no per-event branch" without inventing
+    //    a string nothing ever reads.
+    const branch = layout.perEvent ? d.events[x.event] : null;
     if (!branches.has(branch)) branches.set(branch, []);
     branches.get(branch).push(x);
   }
@@ -367,8 +374,11 @@ function place(doc, path, value) {
 function serialize(document, format) {
   if (format === 'json') return `${JSON.stringify(document, null, 2)}\n`;
   if (format === 'toml') return toml(document);
+  // ⚠️ NO `return` AFTER THIS — `fail()` always throws, so any statement past
+  //    it is unreachable: dead code Stryker cannot even schedule a test
+  //    against, which is exactly why it is removed here instead of frozen
+  //    under one.
   fail(`no writer for format ${JSON.stringify(format)} — the format was accepted and nothing can write it, which is an accepted-and-inert capability, the shape of defect this framework refuses`);
-  return '';
 }
 
 // ── TOML, THE SUBSET WE GENERATE AND NOTHING ELSE ────────────────────
@@ -401,8 +411,9 @@ function tomlValue(v, where) {
     }
     return `"${v}"`;
   }
+  // ⚠️ NO `return` AFTER THIS — same reason as `serialize()` above: `fail()`
+  //    always throws, so anything past it is unreachable.
   fail(`\`${where}\` holds a value of type ${v === null ? 'null' : typeof v}, which this writer does not produce and will not invent`);
-  return '';
 }
 
 function isPlainObject(v) {

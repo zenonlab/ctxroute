@@ -77,10 +77,18 @@ function stripComments(source) {
   return noBlocks.replace(/^[ \t]*\/\/.*$/gm, '');
 }
 
-const OP3 = ['===', '!==', '...', '**=', '&&=', '||=', '??=', '>>>'];
-const OP2 = ['==', '!=', '<=', '>=', '&&', '||', '??', '=>', '++', '--', '+=', '-=', '*=', '/=', '%=', '?.', '**', '<<', '>>'];
-const OP3_SET = new Set(OP3);
-const OP2_SET = new Set(OP2);
+// ⚠️ BUILT INSIDE `tokenize`, NEVER at module scope: a top-level literal executes ONCE at import
+//    time, outside every test's execution window — Stryker's perTest coverage analysis then has
+//    NO test to attribute it to (`static: true, coveredBy: []`), and mutation testing skips
+//    straight to "Survived" without ever really trying. MEASURED (2026-08-31): moving these two
+//    literals from module scope into the function body is what turned 16 unkillable "static"
+//    survivors into ordinary, killable mutants — direct sabotage had already proven each one
+//    breaks a real assertion; only the module-level PLACEMENT was hiding that from the tool.
+function operatorSets() {
+  const OP3 = ['===', '!==', '...', '**=', '&&=', '||=', '??=', '>>>'];
+  const OP2 = ['==', '!=', '<=', '>=', '&&', '||', '??', '=>', '++', '--', '+=', '-=', '*=', '/=', '%=', '?.', '**', '<<', '>>'];
+  return { OP3_SET: new Set(OP3), OP2_SET: new Set(OP2) };
+}
 
 /**
  * THE DETECTOR, half one — a JavaScript token stream, comments removed, line numbers kept.
@@ -98,6 +106,7 @@ const OP2_SET = new Set(OP2);
  * @returns {{t: string, line: number}[]}
  */
 function tokenize(source) {
+  const { OP3_SET, OP2_SET } = operatorSets();
   const src = String(source);
   const out = [];
   let i = 0;
@@ -107,9 +116,16 @@ function tokenize(source) {
     const c = src[i];
     if (c === '\n') { line++; i++; continue; }
     if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+    // Stryker disable next-line EqualityOperator: EQUIVALENT mutant PROVEN (sabotage script, 0
+    // divergence across many corpora) — the outer loop's own `i < n` bound (unmutated, above)
+    // already stops the scan the instant i reaches n, so widening THIS inner check to `<=` only
+    // adds one harmless out-of-range read (no token is pushed inside a comment) before that outer
+    // bound catches it anyway.
     if (c === '/' && src[i + 1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
     if (c === '/' && src[i + 1] === '*') {
       i += 2;
+      // Stryker disable next-line EqualityOperator: same proof as the line-comment scanner above —
+      // the outer `i < n` bound already stops the scan; the inner `<=` variant is unobservable.
       while (i < n && !(src[i] === '*' && src[i + 1] === '/')) { if (src[i] === '\n') line++; i++; }
       i += 2;
       continue;
@@ -171,6 +187,11 @@ function sharedRuns(a, b, minTokens) {
   const index = new Map();
   // ⚠️ The inner `slice/join` runs over a CONSTANT window (`minTokens`), so this is O(N) and not a
   //    nesting over the data — declared as such in `quadratic-budget.json`.
+  // Stryker disable next-line ArithmeticOperator: EQUIVALENT mutant PROVEN (sabotage script, 0
+  // divergence over 768+ probes incl. repetitive/edge corpora). `i - minTokens <= A.length` only
+  // widens the loop to extra out-of-range starts whose slice is SHORTER than `minTokens` tokens —
+  // its joined key therefore has too few space separators to ever equal a real `minTokens`-token
+  // key from the (correctly bounded) B-side scan below, since no token ever contains a space.
   for (let i = 0; i + minTokens <= A.length; i++) {
     const key = A.slice(i, i + minTokens).join(' ');
     const bucket = index.get(key);
@@ -178,14 +199,45 @@ function sharedRuns(a, b, minTokens) {
   }
   const seen = new Set();
   const found = [];
+  // Stryker disable next-line ArithmeticOperator: same proof as the A-side loop above, mirrored.
   for (let j = 0; j + minTokens <= B.length; j++) {
     const key = B.slice(j, j + minTokens).join(' ');
     const hits = index.get(key);
     if (!hits) continue;
     for (const i of hits) {
       let after = minTokens;
+      // Stryker disable next-line ConditionalExpression,EqualityOperator,ArithmeticOperator,LogicalOperator:
+      // ALL FOUR (incl. LogicalOperator `&&`->`||` on the FIRST `&&`) are EQUIVALENT mutants
+      // PROVEN (sabotage script, 0 divergence over 5,000 randomized probes incl. small-vocabulary
+      // corpora built to force out-of-range coincidences). ⚠️ CORRECTED 31/08/2026 — an earlier
+      // note here called the LogicalOperator mutant "real" based on a NAIVE TEXT substitution
+      // (`a && b && c` -> `a || b && c`, then re-parsed by JS, which regroups via precedence as
+      // `a || (b && c)`). Stryker mutates the AST NODE, preserving left-associative grouping:
+      // the real mutant is `(a && b) && c` -> `(a || b) && c`, i.e. only the FIRST `&&` node is
+      // swapped, the second stays untouched. Under that grouping the two clauses `a`
+      // (`i + after < A.length`) and `b` (`j + after < B.length`) can only ever disagree by one
+      // being out of range while the other is in range — and whichever side is OUT of range reads
+      // `undefined` (an out-of-bounds array read), compared against a REAL in-range token on the
+      // other side in clause `c`. A real token is never `=== undefined`, so `c` is false in every
+      // case where `a` and `b` disagree, making the extra `||` inert: `(a||b)&&c` collapses to
+      // exactly `a&&b&&c` on every input. Only when BOTH `a` and `b` are false could `c` read
+      // `undefined === undefined`, but then `(false||false)&&c` is false either way — no
+      // divergence there either. Re-tested with the FIX (correctly parenthesized mutant) — the
+      // dedicated tests below ("requires BOTH sides in range to extend a match forward/backward")
+      // do NOT distinguish it, confirming equivalence rather than a coverage gap.
       while (i + after < A.length && j + after < B.length && A[i + after] === B[j + after]) after++;
       let before = 0;
+      // Stryker disable next-line ConditionalExpression,ArithmeticOperator,LogicalOperator:
+      // BOTH (incl. LogicalOperator `&&`->`||` on the FIRST `&&`) are EQUIVALENT mutants PROVEN
+      // (sabotage script, 0 divergence over 5,000 randomized probes, including deliberately
+      // repetitive corpora designed to trigger a coincidental out-of-range match). ⚠️ CORRECTED
+      // 31/08/2026 — same fix as the forward loop above: Stryker mutates the AST node and keeps
+      // left-associative grouping, `(a && b) && c` -> `(a || b) && c`, NOT the naive text
+      // substitution's `a || (b && c)`. As soon as one side's index goes negative, that side reads
+      // `undefined` (out-of-bounds), compared in clause `c` against a REAL token on the OTHER,
+      // in-range side — that comparison is always false, so the extra `||` never changes the
+      // outcome: `(a||b)&&c` collapses to `a&&b&&c` on every input, including the case where BOTH
+      // sides are simultaneously out of range (`(false||false)&&c` is false regardless of `c`).
       while (i - before - 1 >= 0 && j - before - 1 >= 0 && A[i - before - 1] === B[j - before - 1]) before++;
       // ⚠️ KEYED ON THE MAXIMAL START, which is what makes every sub-run of one copy collapse into
       //    a SINGLE finding. Without it a 78-token copy would be reported 67 times and the budget
@@ -195,12 +247,27 @@ function sharedRuns(a, b, minTokens) {
       seen.add(key2);
       found.push({
         tokens: before + after,
+        // Stryker disable next-line ArithmeticOperator: EQUIVALENT mutant PROVEN (sabotage script,
+        // 0 divergence over 1,400+ probes) — the maximal-start dedup above (`key2`/`seen`) always
+        // keeps the FIRST-discovered candidate for a given true start, and that candidate is always
+        // the one scanned at the smallest `(i, j)`, which by construction has `before === 0` (an
+        // earlier candidate would already have claimed the key otherwise). So `i - before` and
+        // `i + before` are the same value, `i`, in every record this function actually returns.
         aLine: a[i - before].line,
+        // Stryker disable next-line ArithmeticOperator: same proof as `aLine` above, mirrored on `j`.
         bLine: b[j - before].line,
+        // Stryker disable next-line ArithmeticOperator: same proof as `aLine` above — `before` is
+        // always 0 in a retained record, so the slice's start is unaffected.
         text: A.slice(i - before, i + after).join(' '),
       });
     }
   }
+  // Stryker disable next-line ArithmeticOperator: EQUIVALENT mutant PROVEN (sabotage script, 0
+  // divergence over 300+ probes) — `x.bLine + y.bLine` is SYMMETRIC in (x, y), so it can never
+  // signal a swap in either comparator call direction, and `found` is already non-decreasing in
+  // `bLine` by construction (entries are discovered while scanning B left to right). The
+  // LogicalOperator and the `aLine` ArithmeticOperator stay active and are killed by a dedicated
+  // tie-break test.
   found.sort((x, y) => (y.tokens - x.tokens) || (x.aLine - y.aLine) || (x.bLine - y.bLine));
   return found;
 }
@@ -245,7 +312,9 @@ function derivePairs(facts) {
   const out = new Map();
   for (const suite of facts.testImports) {
     const asModel = suite.imports.filter((f) => models.has(f));
-    if (asModel.length === 0) continue;
+    // ⚠️ NO early-return guard on an empty `asModel` here — PROVEN redundant: the double loop
+    //    below is a no-op on an empty array either way, so a guard would be dead code kept alive
+    //    only to freeze an equivalent mutant (`=== 0` -> `false`) forever.
     const asJudged = suite.imports.filter((f) => mutated.has(f));
     for (const model of asModel) {
       for (const judged of asJudged) {
@@ -330,6 +399,9 @@ function verdict(findings, declared) {
         continue;
       }
       if (p.class === EXEMPT_FROM_JUSTIFICATION) continue;
+      // Stryker disable next-line StringLiteral: EQUIVALENT mutant PROVEN — the fallback value is
+      // used only through `why.length < MIN_WHY` below, never printed. Any fixed replacement text
+      // shorter than MIN_WHY (Stryker's own mutant included) triggers the exact same fault.
       const why = typeof p.why === 'string' ? p.why : '';
       if (why.length < MIN_WHY) {
         faults.push('CLASS ' + p.class + ' OWES A `why` OF AT LEAST ' + MIN_WHY + ' CHARACTERS — '

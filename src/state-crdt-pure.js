@@ -430,11 +430,22 @@ function emissionValue(r) {
  */
 function remaining(r) {
   const ids = Object.keys(r.decided).filter((id) => r.emitted[id] !== true);
+  // 🛑 EQUIVALENT-MUTANT NOTE, resolved by REMOVAL, never by a pinning test:
+  //    `ids` comes from `Object.keys`, whose entries are UNIQUE by construction
+  //    — `x === y` can never fire, so a third ("equal") branch on the id
+  //    tie-break is DEAD CODE, indistinguishable from a two-way comparator on
+  //    every reachable input. The two-way form below is the whole comparator.
   ids.sort((x, y) => {
     const dx = r.decided[x];
     const dy = r.decided[y];
     if (dx.seq !== dy.seq) return dx.seq - dy.seq;
-    return x < y ? -1 : x > y ? 1 : 0;
+    // Stryker disable next-line EqualityOperator: EQUIVALENT mutant, PROVEN —
+    // `x <= y` vs `x < y` differ ONLY when `x === y`, which never happens here
+    // (ids are Object.keys entries, unique by construction, re-proven above).
+    // For any x !== y, `x <= y` and `x < y` return the identical boolean, so
+    // this mutant produces byte-identical output on every reachable input —
+    // there is no test that could ever kill it without pinning dead ground.
+    return x < y ? -1 : 1;
   });
   return ids.map((id) => ({ id, text: r.decided[id].text }));
 }

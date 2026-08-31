@@ -114,6 +114,16 @@ ok('formatSystemMessage: 3 levels (server+tool+subTool) → the 2 additional lev
 ok('formatSystemMessage: levels absent/empty → no crash, no suffix', () => lib.formatSystemMessage('stripe', []) === '📄 [ctxroute] stripe');
 ok('formatSystemMessage: non-array levels → no crash, no suffix', () => lib.formatSystemMessage('stripe', undefined) === '📄 [ctxroute] stripe');
 
+// ── joinSystemMessage ──
+ok('joinSystemMessage: base + addition both present → joined by " · "', () => lib.joinSystemMessage('foo', 'bar') === 'foo · bar');
+ok('joinSystemMessage: empty base → addition alone (base never leaks into the join)', () => lib.joinSystemMessage('', 'bar') === 'bar');
+ok('joinSystemMessage: empty addition → base alone (addition never leaks into the join)', () => lib.joinSystemMessage('foo', '') === 'foo');
+ok('joinSystemMessage: both empty → empty string', () => lib.joinSystemMessage('', '') === '');
+ok('joinSystemMessage: non-string base coerced to empty, non-string addition too → empty', () => lib.joinSystemMessage(123, '') === '' && lib.joinSystemMessage('', 123) === '');
+ok('joinSystemMessage: non-string base + empty result in the addition alone via undefined/undefined', () => lib.joinSystemMessage(undefined, undefined) === '');
+ok('joinSystemMessage: non-string addition falls back to empty → base alone', () => lib.joinSystemMessage('foo', 123) === 'foo');
+ok('joinSystemMessage: non-string base falls back to empty → addition alone', () => lib.joinSystemMessage(123, 'bar') === 'bar');
+
 // ── shouldInjectFor ──
 ok('shouldInjectFor: dumb mode → always true', () => lib.shouldInjectFor('dumb', true, 999, 1) === true);
 ok('shouldInjectFor: 1st call (entrySeen=false) → true, all modes', () => lib.shouldInjectFor('once', false, 0, 4) === true);

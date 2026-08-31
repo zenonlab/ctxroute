@@ -31,7 +31,7 @@ import assert from 'node:assert';
 //    what Stryker can see: the two read the graph differently.
 import {
   plan, byBlock, splice, gateBound, gateTransport, gateFrames, framesMissingBound, frameCoordinates,
-  boundCeiling,
+  boundCeiling, mentionsSegment,
 } from '../src/wiring-plan.js';
 
 /** Machine facts, as the shell measures them. A thunk, never a shared object. */
@@ -183,6 +183,58 @@ test('the gate ROUTE is a machine fact, and re-declaring an endpoint in the mani
     { kind: 'http', statusMessage: 'ctxroute' },
     'The http transport must come back carrying its kind and its declared status line, and nothing else.',
   );
+});
+
+// 🛑 THE ADDRESS/ROUTE VALIDATION EARLIER ONLY CHECKS THE FIRST LINE OF EACH
+//    REFUSAL. THE KEY NAME AND THE FILE IT LIVES IN ARE PART OF THE MESSAGE
+//    TOO — a refusal that stops naming WHERE to write the value sends the
+//    operator hunting through `ctxroute-config.json` and `wiring.json` both.
+test('the address and route refusals name where each value is DECLARED, literally', () => {
+  expect(() => plan(manifest({ transport: { kind: 'http' } }), machine({ host: undefined })))
+    .toThrow('it is DECLARED ONCE (`http.host` in ctxroute-config.json) and read by BOTH the daemon that binds it and this generator, so no manifest ever re-types it');
+  expect(() => plan(manifest({ transport: { kind: 'http' } }), machine({ port: undefined })))
+    .toThrow('it is DECLARED ONCE (`http.port` in ctxroute-config.json) and read by BOTH the daemon that binds it and this generator, so no manifest ever re-types it');
+  expect(() => plan(manifest({ transport: { kind: 'http' } }), machine({ routePath: undefined })))
+    .toThrow('it is DECLARED ONCE (`src/protocol-routes-pure.js`) and read by BOTH the daemon that serves it and this generator, so no manifest ever re-types it');
+});
+
+// 🛑 THE COMMAND TRANSPORT NAMES NO ROUTE AT ALL — the query/fragment refusal
+//    a few lines above belongs to the http lane alone. A spawn wiring must not
+//    inspect a `routePath` it never sends, however it is spelled.
+test('the command transport ignores a routePath it never uses, even a malformed one', () => {
+  assert.strictEqual(plan(manifest(), machine({ routePath: '/pretool?x=1#f' })).length, 5,
+    'A spawn wiring was refused for a route it never sends: the query/fragment refusal must bite the http transport and nothing else.');
+});
+
+// 🛑 `t.kind === 'command'` IS THE ONLY BRANCH THAT SKIPS THE UNKNOWN-KEY
+//    REFUSAL BELOW IT — that refusal exists for the http shape (address/route
+//    re-declared), never for the command shape, which never had one to begin
+//    with. An extra key on a `command` transport must be silently accepted.
+test('a `command` transport with an unrelated extra key is accepted, unlike `http`', () => {
+  assert.deepStrictEqual(gateTransport({ transport: { kind: 'command', extra: 'x' } }), { kind: 'command' },
+    'An unknown key on the command transport was refused: that check belongs to the http shape, which alone re-declares an address or a route.');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// mentionsSegment — the boundary the splice's suspect check is built on
+// ═══════════════════════════════════════════════════════════════════════
+test('mentionsSegment: an empty needle names nothing and never matches', () => {
+  // The needle is `tokenOf(root)`, which is '' only if `root` ends with a
+  // slash — a malformed machine fact the splice does not otherwise refuse.
+  // Without this guard an empty needle matches at position 0 of ANY text,
+  // turning every foreign hook of a settings.json into a suspect.
+  assert.strictEqual(mentionsSegment('anything at all', ''), false,
+    'An empty needle matched. Every foreign hook in the file becomes a suspect the moment the token cannot be derived.');
+});
+
+test('mentionsSegment: a needle occupying the very end of the text still counts as a boundary', () => {
+  // The splice's only caller (`JSON.stringify(entry)`) always ends in `}`, so
+  // this exact case never reaches the function through it — proven here
+  // directly, on the function's own contract, rather than left unreachable.
+  assert.strictEqual(mentionsSegment('prefix-ctxroute', 'ctxroute'), true,
+    'A needle ending exactly at the text\'s last character was not recognised as a boundary match.');
+  assert.strictEqual(mentionsSegment('prefix-ctxroute2', 'ctxroute'), false,
+    'A needle immediately followed by another identifier character was wrongly counted as a boundary match.');
 });
 
 // ════════════════════════════════════════════════════════════════════════

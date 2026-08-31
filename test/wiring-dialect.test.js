@@ -75,6 +75,16 @@ const FLAT = () => ({
   },
 });
 
+/** Runs `fn`, returning the thrown error's message, or `null` if it did not throw. */
+function thrown(fn) {
+  try {
+    fn();
+    return null;
+  } catch (e) {
+    return e.message;
+  }
+}
+
 const DECLS = () => ([
   {
     event: 'PreToolUse', matcher: '*', type: 'command', command: 'node /r/gate.js --frame 1 --frames 2', timeout: 10,
@@ -360,4 +370,228 @@ test('the toml writer REFUSES what it will not escape, rather than guessing', ()
 
 test('a format with no writer is a NAMED REFUSAL, never an accepted-and-inert capability', () => {
   expect(() => serialize({ a: 1 }, 'yaml')).toThrow(/no writer for format "yaml"/);
+});
+
+// ── ⑦ NULL, NOT JUST MISSING OR THE WRONG SHAPE ──────────────────────
+// `!x || typeof x !== 'object' || Array.isArray(x)` only tells the whole
+// truth apart from `!x && typeof x !== 'object'` on `x === null` — every
+// other falsy JS value already has `typeof x !== 'object'` true.
+test('`harness`, `events`, `layout` and `fields` refuse `null` exactly like every other non-object', () => {
+  expect(() => dialect({ harness: null })).toThrow(/`harness` is missing/);
+
+  const nullEvents = NESTED();
+  nullEvents.harness.events = null;
+  expect(() => dialect(nullEvents)).toThrow(/`harness\.events` maps this framework/);
+
+  const nullLayout = NESTED();
+  nullLayout.harness.layout = null;
+  expect(() => dialect(nullLayout)).toThrow(/`harness\.layout` is missing for "nested-harness"/);
+
+  const nullFields = NESTED();
+  nullFields.harness.layout.fields = null;
+  expect(() => dialect(nullFields)).toThrow(/`harness\.layout\.fields` maps this framework/);
+});
+
+// `!x || typeof x !== 'object' || Array.isArray(x)` also needs a TRUTHY,
+// non-array, non-object `x` (a string, say) to prove the `typeof` clause is
+// load-bearing on its own — `null` and `[]` both already satisfy `!x` or
+// `Array.isArray(x)`, so neither exercises `typeof x !== 'object'` in isolation.
+test('`harness`, `events`, `layout` and `fields` refuse a TRUTHY non-object just as firmly', () => {
+  expect(() => dialect({ harness: 'a string' })).toThrow(/`harness` is missing/);
+
+  const stringEvents = NESTED();
+  stringEvents.harness.events = 'a string';
+  expect(() => dialect(stringEvents)).toThrow(/`harness\.events` maps this framework/);
+
+  const stringLayout = NESTED();
+  stringLayout.harness.layout = 'a string';
+  expect(() => dialect(stringLayout)).toThrow(/`harness\.layout` is missing for "nested-harness"/);
+
+  const stringFields = NESTED();
+  stringFields.harness.layout.fields = 'a string';
+  expect(() => dialect(stringFields)).toThrow(/`harness\.layout\.fields` maps this framework/);
+});
+
+test('a field mapped to an EMPTY string is refused, distinctly from one of the wrong type', () => {
+  const m = NESTED();
+  m.harness.layout.fields.type = '';
+  expect(() => dialect(m)).toThrow(/`harness\.layout\.fields\.type` is a non-empty string/);
+});
+
+test('the harness name and an event spelling refuse an EMPTY string, not just an absent one', () => {
+  const emptyName = NESTED();
+  emptyName.harness.name = '';
+  expect(() => dialect(emptyName)).toThrow(/`harness\.name` is a non-empty string/);
+
+  const emptySpoken = NESTED();
+  emptySpoken.harness.events = { PreToolUse: '' };
+  expect(() => dialect(emptySpoken)).toThrow(/`harness\.events\.PreToolUse` is a non-empty string/);
+});
+
+test('a container segment that is not a string is refused, distinctly from an empty one', () => {
+  const m = NESTED();
+  m.harness.layout.container = [123, '{event}'];
+  expect(() => dialect(m)).toThrow(/`harness\.layout\.container` is a non-empty list of non-empty strings/);
+});
+
+test('an undeclared matcherIn defaults to "none", not to `undefined`', () => {
+  const m = FLAT();
+  delete m.harness.layout.matcherIn;
+  assert.strictEqual(dialect(m).layout.matcherIn, 'none');
+});
+
+test('the layout key helper refuses an empty or wrongly-typed value, not just a missing one', () => {
+  const empty = NESTED();
+  empty.harness.layout.entriesKey = '';
+  expect(() => dialect(empty)).toThrow(/`harness\.layout\.entriesKey` is a non-empty string/);
+
+  const wrongType = NESTED();
+  wrongType.harness.layout.entriesKey = 7;
+  expect(() => dialect(wrongType)).toThrow(/`harness\.layout\.entriesKey` is a non-empty string/);
+});
+
+test('the write-object refusal message is carried whole, not just its opening clause', () => {
+  const m = NESTED();
+  m.harness.write = 'splice';
+  const msg = thrown(() => dialect(m));
+  assert.strictEqual(
+    msg,
+    'wiring dialect: `harness.write` is an object declaring at least `mode` (splice | fragment)'
+      + " — whether this tool may edit the operator's only copy of their configuration is not a thing to leave unsaid",
+  );
+});
+
+test('the unknown-field-mapping refusal names the FULL closed vocabulary, not a truncated one', () => {
+  const m = NESTED();
+  m.harness.layout.fields.deadline = 'deadline';
+  const msg = thrown(() => dialect(m));
+  assert.strictEqual(
+    msg,
+    'wiring dialect: `harness.layout.fields.deadline` names no field this framework generates'
+      + ' (type, command, url, timeout, statusMessage) — an unknown mapping is a typo that would silently never apply',
+  );
+});
+
+// ── ⑧ RENDERING: THE SHAPES A SIMPLE ASSERTION-ON-SUBSTRING CAN HIDE ────
+test('render refuses a dialect object with no `layout`, not only a missing dialect', () => {
+  expect(() => render(DECLS(), {})).toThrow(/render was given no validated dialect/);
+  // `typeof d !== 'object'` needs a `d` that is BOTH non-object AND carries a
+  // truthy `.layout`, or the third clause (`!d.layout`) silently covers for
+  // it. A string can't carry an own property, so a FUNCTION is the one
+  // non-object value JS lets us attach one to.
+  const withLayout = () => {};
+  withLayout.layout = { container: ['x'] };
+  expect(() => render(DECLS(), withLayout)).toThrow(/render was given no validated dialect/);
+});
+
+test('skipped events are reported SORTED, never in first-seen order', () => {
+  const decls = [
+    { event: 'PreToolUse', matcher: '*', type: 'command', command: 'node /r/gate.js', timeout: 10 },
+    { event: 'Stop', matcher: null, type: 'command', command: 'node /r/a.js', timeout: 3 },
+    { event: 'MyEvent', matcher: null, type: 'command', command: 'node /r/b.js', timeout: 3 },
+  ];
+  const { skippedEvents } = render(decls, dialect(NESTED()));
+  assert.deepStrictEqual(skippedEvents, ['MyEvent', 'Stop']);
+});
+
+test('the all-skipped refusal names the harness and the FULL, COMMA-JOINED event list', () => {
+  // TWO skipped events, deliberately: a one-element list cannot tell a real
+  // `', '` separator from an empty one — both join to the same string.
+  const orphan = [
+    { event: 'Stop', matcher: null, type: 'command', command: 'node /r/x.js', timeout: 3 },
+    { event: 'Abort', matcher: null, type: 'command', command: 'node /r/y.js', timeout: 3 },
+  ];
+  const msg = thrown(() => render(orphan, dialect(NESTED())));
+  assert.strictEqual(
+    msg,
+    'wiring dialect: "nested-harness" declares none of the events this manifest\'s consumers use (Abort, Stop)'
+      + ' — every path would be skipped and the document would be empty, which is indistinguishable from an unwired machine',
+  );
+});
+
+test('a null matcher is never written into the entry, even when matcherIn is "entry"', () => {
+  const decls = [{
+    event: 'UserPromptSubmit', matcher: null, type: 'command', command: 'node /r/turn.js', timeout: 5,
+  }];
+  const { document } = render(decls, dialect(FLAT()));
+  assert.deepStrictEqual(document.automation.triggers[0], {
+    when: 'on_prompt', kind: 'command', exec: 'node /r/turn.js', deadline_seconds: 5,
+  });
+  assert.strictEqual('only_for' in document.automation.triggers[0], false);
+});
+
+test('spliceObstacle names the ACTUAL container path when the placeholder sits at the wrong segment', () => {
+  const swapped = NESTED();
+  swapped.harness.layout.container = ['{event}', 'hooks'];
+  const obstacle = spliceObstacle(dialect(swapped));
+  assert.strictEqual(
+    obstacle,
+    'its container is `{event}.hooks`, and the splice walks a container that branches on the event at its second segment',
+  );
+});
+
+// The three-way OR (`!perEvent || length !== 2 || container[1] !== PLACEHOLDER`)
+// needs a case where the placeholder is present (perEvent true, so the FIRST
+// disjunct is false) but at the WRONG index, with a container that is also
+// the wrong LENGTH — the only way to prove the length disjunct fires on its
+// own, since a placeholder at index 1 forces `perEvent` true by construction
+// (a placeholder anywhere makes the container's OWN disjunct false too).
+test('spliceObstacle refuses on container LENGTH alone, even with the placeholder at the right index', () => {
+  const wrongLength = NESTED();
+  wrongLength.harness.layout.container = ['x', '{event}', 'y'];
+  const obstacle = spliceObstacle(dialect(wrongLength));
+  assert.strictEqual(
+    obstacle,
+    'its container is `x.{event}.y`, and the splice walks a container that branches on the event at its second segment',
+  );
+});
+
+// ── ⑨ THE TOML WRITER: EXACT OUTPUT, NOT JUST "IT CONTAINS X" ───────────
+test('a scalar-only document is written key by key, with the real key names', () => {
+  assert.strictEqual(serialize({ a: 1 }, 'toml'), 'a = 1\n');
+});
+
+test('both booleans are written unquoted, and BOTH values are exercised', () => {
+  assert.strictEqual(serialize({ a: true, b: false }, 'toml'), 'a = true\nb = false\n');
+});
+
+test('an empty nested table still earns its header — the ONLY thing an empty table says', () => {
+  assert.strictEqual(serialize({ a: {} }, 'toml'), '[a]\n');
+});
+
+test('a table holding only nested tables earns NO header of its own — TOML implies its parents', () => {
+  const text = serialize({ a: { b: { c: 1 } } }, 'toml');
+  assert.strictEqual(text, '[a.b]\nc = 1\n');
+  assert.strictEqual(text.includes('[a]\n'), false);
+});
+
+test('a table mixing a scalar with a nested table earns a header FOR THE SCALAR, not by unanimous vote', () => {
+  // `needsHeader` uses `.some`, not `.every`: one scalar sibling is enough,
+  // even when another sibling is a table.
+  const text = serialize({ a: { s: 1, t: { u: 2 } } }, 'toml');
+  assert.strictEqual(text, '[a]\ns = 1\n\n[a.t]\nu = 2\n');
+});
+
+test('a non-finite number is refused with its FULL dotted path, not the top-level key alone', () => {
+  const msg = thrown(() => serialize({ a: { b: 1 / 0 } }, 'toml'));
+  assert.strictEqual(msg, 'wiring dialect: `a.b` holds a non-finite number — TOML has no writing for it');
+});
+
+test('an unsupported value reports its REAL typeof, never "null" as a stuck default', () => {
+  const msg = thrown(() => serialize({ a: undefined }, 'toml'));
+  assert.strictEqual(
+    msg,
+    'wiring dialect: `a` holds a value of type undefined, which this writer does not produce and will not invent',
+  );
+});
+
+test('the invalid-array-element refusal names the EXACT, DOT-JOINED path, not just the top key', () => {
+  // A NESTED path, deliberately: a single-segment path cannot tell a real
+  // `'.'` separator from an empty one — both join to the same string.
+  const msg = thrown(() => serialize({ a: { b: [1, 2] } }, 'toml'));
+  assert.strictEqual(
+    msg,
+    'wiring dialect: `a.b` holds a list of values this writer does not produce'
+      + ' — only lists of tables are written, and inventing an inline array here would be guessing',
+  );
 });

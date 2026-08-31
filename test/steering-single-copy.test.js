@@ -58,6 +58,19 @@ function buildRepoWithWorktree() {
   return { base, main, linked };
 }
 
+/**
+ * Resolves a steering-journal path to the kernel's canonical form, so two
+ * spellings of the SAME directory (e.g. `/var/...` vs `/private/var/...` on
+ * macOS) compare equal while two ACTUALLY different directories never do.
+ * The journal file itself may not exist yet, so only its PARENT directory
+ * (the git common dir, which always exists) is resolved.
+ * @param {string} p
+ * @returns {string}
+ */
+function realSteeringPath(p) {
+  return path.join(fs.realpathSync(path.dirname(p)), path.basename(p));
+}
+
 test('TWO WORKTREES, ONE JOURNAL — both resolve to the same absolute path', () => {
   const { base, main, linked } = buildRepoWithWorktree();
   try {
@@ -71,10 +84,21 @@ test('TWO WORKTREES, ONE JOURNAL — both resolve to the same absolute path', ()
 
     const fromMain = paths.planPath(main);
     const fromLinked = paths.planPath(linked);
-    assert.strictEqual(fromLinked, fromMain,
+    // ⚠️ COMPARE BY REAL FILE IDENTITY, NOT BY RAW STRING (macOS-portable). On
+    //    macOS `/var` is itself a symlink to `/private/var`, and `os.tmpdir()`
+    //    can hand back either spelling depending on the path it was reached
+    //    through — so `gitCommonDir()` on `main` (never resolved) and on
+    //    `linked` (resolved through git's own `commondir` file) can legitimately
+    //    print two DIFFERENT strings for the SAME directory. `fs.realpathSync`
+    //    collapses both to the kernel's canonical form, which is what a real
+    //    divergence (two ACTUAL different directories) can never do.
+    assert.strictEqual(realSteeringPath(fromLinked), realSteeringPath(fromMain),
       'the two worktrees resolve the plan to DIFFERENT files — that IS the divergence this closes:\n'
       + `  main   -> ${fromMain}\n  linked -> ${fromLinked}`);
-    assert.strictEqual(paths.archivePath(linked), paths.archivePath(main));
+    assert.strictEqual(
+      realSteeringPath(paths.archivePath(linked)),
+      realSteeringPath(paths.archivePath(main))
+    );
 
     // ⚠️ ANTI-VACUITY ②: equality alone would also hold if the resolver
     //    answered a constant. The path must be INSIDE this repository's common

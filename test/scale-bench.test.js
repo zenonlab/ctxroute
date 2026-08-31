@@ -2050,6 +2050,30 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
 //    number barely clears — a strawman tuned to the line is a gate that only
 //    catches the defect it was shaped for. The margin here (≥ 2× the bar,
 //    reproducibly) is deliberately generous for exactly that reason.
+//
+// ⚠️ THE WATCHDOG BELOW IS DERIVED FROM A REAL CORE COUNT, NEVER A HARDCODED
+//    MACHINE NAME (portability fix, 2026-08-31 — the previous literal 200000
+//    was measured on ONE host only). This cell drives up to `CONT_LEVELS[-1]`
+//    (32) real OS THREADS disputing one lock; MEASURED on this repository's
+//    own dev host (`os.cpus().length === 12`): 115,141 ms wall time for this
+//    exact cell — consistent with the 112.5-114.1 s figure documented above,
+//    which is where `CONT_REFERENCE_CORES` comes from. A host with FEWER
+//    cores must time-slice more of those 32 threads onto the same execution
+//    units, which can only ADD wall time to a thread-contention benchmark —
+//    never reduce it (`os.cpus().length` read fresh below, a fact about the
+//    CURRENT host, never an assumption about which OS is running). This is
+//    exactly why GitHub-hosted `macos-latest` runners — documented to ship
+//    materially fewer vCPUs than a typical dev workstation
+//    (github.com/actions/runner-images) — can blow through a budget sized on
+//    a 12-core machine with no code regression at all.
+// 🛑 NO BAR MOVED: `BAR_CONT`/`CONT_LEVELS`/`CONT_SABOTAGE_SECTIONS`/
+//    `CONT_SABOTAGE_CPU_PASSES` are UNCHANGED, and so is the strictness of
+//    every assertion below — only the RESOURCE CEILING (a watchdog, never a
+//    correctness threshold) scales with the host actually running it.
+const CONT_REFERENCE_CORES = 12;
+const CONT_CORES = Math.max(1, os.cpus().length);
+const CONT_TIMEOUT_MS = Math.min(600000,
+  Math.max(200000, Math.round(200000 * CONT_REFERENCE_CORES / CONT_CORES)));
 test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose critical section consults every disputant', async (ctx) => {
   // ── CELL H: witness first, always — same guard as the healthy cell above and
   //    as SEEN RED (axis B) (2026-08-30): a negative check is a MEASUREMENT
@@ -2085,10 +2109,12 @@ test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose crit
 //    GLOBAL 30 s (its own header says so), which was correct while a single
 //    registry walk was cheap. Reaching a reproducible ≥ 2× margin over
 //    `BAR_CONT` (see the block above `CONT_SABOTAGE_CPU_PASSES`) MEASURED
-//    112.5-114.1 s of real wall time over 5 consecutive runs on this machine;
-//    200 s leaves headroom for a slower one without turning a real hang into
-//    a 3+ minute wait for everything else in the file.
-}, 200000);
+//    112.5-114.1 s of real wall time over 5 consecutive runs on a reference
+//    12-core machine; `CONT_TIMEOUT_MS` (derived above from the CURRENT
+//    host's own `os.cpus().length`) leaves the SAME proportional headroom on
+//    a host with fewer cores, capped at 600 s so a real hang still dies
+//    instead of stalling everything else in the file indefinitely.
+}, CONT_TIMEOUT_MS);
 
 // ═══════════════════════════════════════════════════════════════════════
 // CELLS E, F, G — DELIVERY, NOT TIME, OVER THE REAL `http` LANE.

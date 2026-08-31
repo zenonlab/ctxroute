@@ -92,6 +92,30 @@ test('tokenize keeps three-character and two-character operators whole', () => {
   assert.deepStrictEqual(T('a &&= b'), ['a', '&&=', 'b']);
 });
 
+test('tokenize keeps every remaining compound-assignment operator whole', () => {
+  // ⚠️ Kills the StringLiteral mutants that blank ONE element of OP3/OP2: each operator below is
+  //    absent from every other assertion in this suite, so a blanked entry can only be caught here.
+  assert.deepStrictEqual(T('a **= b'), ['a', '**=', 'b']);
+  assert.deepStrictEqual(T('a ||= b'), ['a', '||=', 'b']);
+  assert.deepStrictEqual(T('a ??= b'), ['a', '??=', 'b']);
+});
+
+test('tokenize keeps every remaining two-character operator whole', () => {
+  assert.deepStrictEqual(T('a == b'), ['a', '==', 'b']);
+  assert.deepStrictEqual(T('a != b'), ['a', '!=', 'b']);
+  assert.deepStrictEqual(T('a <= b'), ['a', '<=', 'b']);
+  assert.deepStrictEqual(T('a >= b'), ['a', '>=', 'b']);
+  assert.deepStrictEqual(T('a && b'), ['a', '&&', 'b']);
+  assert.deepStrictEqual(T('a || b'), ['a', '||', 'b']);
+  assert.deepStrictEqual(T('a++'), ['a', '++']);
+  assert.deepStrictEqual(T('a--'), ['a', '--']);
+  assert.deepStrictEqual(T('a += b'), ['a', '+=', 'b']);
+  assert.deepStrictEqual(T('a -= b'), ['a', '-=', 'b']);
+  assert.deepStrictEqual(T('a *= b'), ['a', '*=', 'b']);
+  assert.deepStrictEqual(T('a /= b'), ['a', '/=', 'b']);
+  assert.deepStrictEqual(T('a >> b'), ['a', '>>', 'b']);
+});
+
 test('tokenize keeps a string literal whole, quotes included, escapes included', () => {
   assert.deepStrictEqual(T("x = 'a b'"), ['x', '=', "'a b'"]);
   assert.deepStrictEqual(T('x = "a\\"b"'), ['x', '=', '"a\\"b"']);
@@ -111,6 +135,55 @@ test('tokenize reports the line of each token, counting newlines in every scanne
   assert.deepStrictEqual(tokenize('`a\nb`\nc').map((x) => x.line), [1, 3]);
 });
 
+test('tokenize does not open a line comment on a non-slash char followed by a slash', () => {
+  // ⚠️ Kills the ConditionalExpression mutant that drops the FIRST conjunct of the `if`
+  //    (`c === '/'`): with it gone, ANY char followed by `/` would wrongly start a comment scan.
+  assert.deepStrictEqual(T('a// hi'), ['a']);
+});
+
+test('tokenize terminates a line comment that runs to the absolute end of the source', () => {
+  // ⚠️ Without the inner while's `i < n` bound, a comment with no trailing newline scans past the
+  //    string end forever (`undefined !== '\n'` is always true) — this must complete, not hang.
+  assert.deepStrictEqual(T('// c'), []);
+});
+
+test('tokenize skips a block comment opener by exactly two characters', () => {
+  // ⚠️ Kills the AssignmentOperator mutant `i += 2` -> `i -= 2` on the block-comment opener: going
+  //    backward re-scans already-consumed text and finds a phantom `*/` inside it.
+  assert.deepStrictEqual(T('/*/**/z'), ['z']);
+});
+
+test('tokenize terminates an unclosed block comment that runs to the absolute end', () => {
+  // ⚠️ Without the `i < n` bound on the block-comment scanner, an unterminated comment scans past
+  //    the string end forever (`undefined === '*'` never true, so the loop never finds a closer).
+  assert.deepStrictEqual(T('/* unterminated'), []);
+});
+
+test('tokenize does not close a block comment on a bare "/" without a preceding "*"', () => {
+  // ⚠️ Kills the ConditionalExpression mutant that turns the LEFT clause of the closer test
+  //    (`src[i] === '*'`) into `true`: it would then close on the first `/` it meets.
+  assert.deepStrictEqual(T('/*a/b*/c'), ['c']);
+});
+
+test('tokenize does not close a block comment on a bare "*" without a following "/"', () => {
+  // ⚠️ Kills the ConditionalExpression mutant that turns the RIGHT clause of the closer test
+  //    (`src[i + 1] === '/'`) into `true`: it would then close on the first `*` it meets.
+  assert.deepStrictEqual(T('/* a*b */c'), ['c']);
+});
+
+test('tokenize requires BOTH the star and the slash to close a block comment', () => {
+  // ⚠️ Kills the LogicalOperator mutant `&&` -> `||` on the closer test: either half alone would
+  //    end the comment early.
+  assert.deepStrictEqual(T('/* a*b */c'), ['c']);
+  assert.deepStrictEqual(T('/* a/b */c'), ['c']);
+});
+
+test('tokenize terminates a string literal that runs to the absolute end of the source', () => {
+  // ⚠️ Kills the EqualityOperator mutant `i < n` -> `i <= n` on the string scanner: one extra
+  //    iteration reads past the end and appends the literal word "undefined" to the token text.
+  assert.deepStrictEqual(T("'abc"), ["'abc'"]);
+});
+
 test('tokenize handles a lone slash and whitespace without producing empty tokens', () => {
   assert.deepStrictEqual(T('a / b'), ['a', '/', 'b']);
   assert.deepStrictEqual(T('\t a \r\n'), ['a']);
@@ -125,6 +198,13 @@ test('tokenize reads a number with an exponent or a hexadecimal body as one toke
 test('sharedRuns returns nothing when the window is not a positive length', () => {
   assert.deepStrictEqual(sharedRuns(tokenize('a b c'), tokenize('a b c'), 0), []);
   assert.deepStrictEqual(sharedRuns(tokenize('a b c'), tokenize('a b c'), -1), []);
+});
+
+test('sharedRuns accepts a window of exactly 1, the admissible floor', () => {
+  // ⚠️ Kills the EqualityOperator mutant `minTokens >= 1` -> `minTokens > 1`: at exactly 1 the
+  //    mutant would refuse a window the contract admits.
+  assert.deepStrictEqual(sharedRuns(tokenize('a b'), tokenize('a b'), 1),
+    [{ tokens: 2, aLine: 1, bLine: 1, text: 'a b' }]);
 });
 
 test('sharedRuns finds nothing below the window, and the run at exactly the window', () => {
@@ -167,6 +247,54 @@ test('sharedRuns sorts longest first, then by model line, then by judged line', 
   const hit = sharedRuns(a(), b(), 4);
   assert.deepStrictEqual(hit.map((h) => h.tokens), [6, 5]);
   assert.strictEqual(hit[0].text, 'm n o p q ;');
+});
+
+test('sharedRuns breaks a tokens tie by model line, ascending — a real AND, not an OR', () => {
+  // ⚠️ Kills the LogicalOperator mutant `||` -> `&&` AND the ArithmeticOperator mutant
+  //    `x.aLine - y.aLine` -> `x.aLine + y.aLine` on the sort comparator: both findings below tie
+  //    on `tokens` (2 each), so only the SECOND comparator term can order them.
+  const a = () => tokenize('alpha beta\ngamma delta');
+  const b = () => tokenize('gamma delta\nalpha beta');
+  const hit = sharedRuns(a(), b(), 2);
+  assert.deepStrictEqual(hit.map((h) => h.text), ['alpha beta', 'gamma delta']);
+});
+
+test('sharedRuns keeps the maximal-start dedup key separator — two starts must not collide', () => {
+  // ⚠️ Kills the StringLiteral mutant `':'` -> `''` on `key2`: without a separator,
+  //    `(i - before) + (j - before)` glues two DIFFERENT start pairs into the same digit string
+  //    (1, 23) and (12, 3) both read "123" — one real finding would be dropped as a duplicate.
+  const mk = (n, overrides) => {
+    const arr = [];
+    for (let k = 0; k < n; k++) arr.push({ t: 'u' + k, line: 1 });
+    for (const [idx, val] of Object.entries(overrides)) arr[idx] = { t: val, line: 1 };
+    return arr;
+  };
+  const A = mk(30, { 1: 'SHARED1', 12: 'SHARED2' });
+  const B = mk(30, { 23: 'SHARED1', 3: 'SHARED2' });
+  const texts = sharedRuns(A, B, 1).map((h) => h.text);
+  assert.ok(texts.includes('SHARED1'));
+  assert.ok(texts.includes('SHARED2'));
+});
+
+test('sharedRuns requires BOTH sides in range to extend a match forward', () => {
+  // ⚠️ Real behavioral contract test (A is longer than B past the shared run, so only B's own
+  //    bound may stop the extension there) — NOT a mutant kill for the first `&&` of that
+  //    `while`'s guard: that LogicalOperator mutant is EQUIVALENT (see the `Stryker disable`
+  //    comment on the loop itself, corrected 31/08/2026). Kept for the contract it documents.
+  const a = () => tokenize('a b c d e');
+  const b = () => tokenize('a b c');
+  assert.deepStrictEqual(sharedRuns(a(), b(), 2),
+    [{ tokens: 3, aLine: 1, bLine: 1, text: 'a b c' }]);
+});
+
+test('sharedRuns requires BOTH sides in range to extend a match backward', () => {
+  // ⚠️ Real behavioral contract test (reading one out-of-range side alone must not extend the
+  //    match) — NOT a mutant kill for the first `&&` of that `while`'s guard: that LogicalOperator
+  //    mutant is EQUIVALENT (see the `Stryker disable` comment on the loop itself, corrected
+  //    31/08/2026). Kept for the contract it documents.
+  const a = () => tokenize('a a a a');
+  const b = () => tokenize('a');
+  assert.doesNotThrow(() => sharedRuns(a(), b(), 1));
 });
 
 test('sharedRuns finds every distinct copy when one side repeats a run', () => {
@@ -259,14 +387,16 @@ test('floorFaults reddens when too few MODELS were derived', () => {
   for (let i = 0; i < 7; i++) pairs.push({ model: 'a', judged: 'j' + i });
   const faults = floorFaults(pairs);
   assert.strictEqual(faults.length, 1);
-  assert.ok(faults[0].includes('1 model(s)'));
+  assert.ok(faults[0].startsWith('VACUOUS DERIVATION: 1 model(s) derived, floor is 2'));
+  assert.ok(faults[0].includes('a derivation that finds nothing is indistinguishable from a repository with no models'));
 });
 
 test('floorFaults reddens when too few PAIRS were derived', () => {
   const pairs = [{ model: 'a', judged: 'j1' }, { model: 'b', judged: 'j2' }];
   const faults = floorFaults(pairs);
   assert.strictEqual(faults.length, 1);
-  assert.ok(faults[0].includes('2 pair(s)'));
+  assert.ok(faults[0].startsWith('VACUOUS DERIVATION: 2 pair(s) derived, floor is 7'));
+  assert.ok(faults[0].includes('the gate would certify instead of protecting'));
 });
 
 test('floorFaults reddens TWICE on a derivation that measured nothing at all', () => {
@@ -290,6 +420,10 @@ test('verdict reddens on a run whose PAIR is not declared at all', () => {
   assert.ok(f[0].includes('20 tokens'));
   assert.ok(f[0].includes('model line 7'));
   assert.ok(f[0].includes('judged line 9'));
+  // ⚠️ Kills the StringLiteral mutants that blank the ' (' and '): ' separators: an EXACT match
+  //    is the only assertion a blanked separator cannot slip through.
+  assert.strictEqual(f[0],
+    'UNDECLARED SHARED CODE — src/m.js <-> src/e.js (20 tokens, model line 7, judged line 9): a b c');
 });
 
 test('verdict reddens on a run whose pair is declared but whose TEXT is not', () => {
@@ -302,25 +436,56 @@ test('verdict reddens on a DORMANT PERMIT — an exemption that stopped being ne
   const f = verdict([], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'INHERITED_TWIN' }] } });
   assert.strictEqual(f.length, 1);
   assert.ok(f[0].startsWith('DORMANT PERMIT'));
+  // ⚠️ Kills the StringLiteral mutant that blanks the whole explanatory phrase.
+  assert.strictEqual(f[0],
+    'DORMANT PERMIT — src/m.js <-> src/e.js no longer shares this run, remove the declaration: a b c');
 });
 
 test('verdict reddens on an invented class', () => {
   const f = verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'SMALL' }] } });
   assert.strictEqual(f.length, 1);
   assert.ok(f[0].startsWith('UNKNOWN CLASS "SMALL"'));
+  // ⚠️ Kills the StringLiteral mutant that blanks the ': ' separator before the shared text.
+  assert.strictEqual(f[0], 'UNKNOWN CLASS "SMALL" — src/m.js <-> src/e.js: a b c');
 });
 
 test('verdict demands a real justification from a CONTRACT run, and accepts a real one', () => {
   const short = verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'CONTRACT', why: 'short' }] } });
   assert.strictEqual(short.length, 1);
   assert.ok(short[0].startsWith('CLASS CONTRACT OWES A `why` OF AT LEAST 60 CHARACTERS'));
+  // ⚠️ Kills the StringLiteral mutant that blanks the ': ' separator before the shared text.
+  assert.strictEqual(short[0],
+    'CLASS CONTRACT OWES A `why` OF AT LEAST 60 CHARACTERS — src/m.js <-> src/e.js: a b c');
   const missing = verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'CONTRACT' }] } });
   assert.strictEqual(missing.length, 1);
   const nonString = verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'CONTRACT', why: 12345 }] } });
   assert.strictEqual(nonString.length, 1);
+  // ⚠️ Kills the StringLiteral mutant that replaces the non-string fallback `''` by a fixed
+  //    18-character placeholder: both are shorter than MIN_WHY, so only a boundary probe can tell
+  //    them apart from a genuine short `why` — the fault still fires with a real class/pair/text.
+  assert.deepStrictEqual(nonString,
+    ['CLASS CONTRACT OWES A `why` OF AT LEAST 60 CHARACTERS — src/m.js <-> src/e.js: a b c']);
   assert.deepStrictEqual(
     verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'CONTRACT', why: WHY }] } }),
     []);
+});
+
+test('verdict treats a `why` of EXACTLY MIN_WHY characters as sufficient, not short', () => {
+  // ⚠️ Kills the EqualityOperator mutant `why.length < MIN_WHY` -> `why.length <= MIN_WHY`: at the
+  //    exact boundary the mutant would wrongly demand a longer justification.
+  const why60 = 'x'.repeat(MIN_WHY);
+  assert.deepStrictEqual(
+    verdict([RUN()], { 'src/m.js <-> src/e.js': { shared: [{ text: 'a b c', class: 'CONTRACT', why: why60 }] } }),
+    []);
+});
+
+test('verdict never lets a non-array `shared` fallback silently pollute the permitted set', () => {
+  // ⚠️ Kills the ArrayDeclaration mutant that replaces the empty fallback `[]` (when `entry.shared`
+  //    is absent) by a non-empty placeholder array: a bogus permit entry would otherwise slip in
+  //    and, for a run whose text happens to read "undefined", wrongly suppress a real fault.
+  const findings = [{ pair: 'X', tokens: 1, text: 'undefined', aLine: 1, bLine: 1 }];
+  assert.deepStrictEqual(verdict(findings, { X: {} }),
+    ['UNDECLARED SHARED CODE — X (1 tokens, model line 1, judged line 1): undefined']);
 });
 
 test('verdict never demands a justification from INHERITED_TWIN — a false one is worse than none', () => {

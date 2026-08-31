@@ -38,9 +38,47 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import Module from 'node:module';
 import { verdict, refusal, UNAVAILABLE_REASON } from '../src/commit-msg-leak.js';
 
 const require_ = createRequire(import.meta.url);
+
+// ── FORCING THE ABSENT BRANCH ON A MACHINE WHERE THE PACKAGE IS PRESENT ──
+// 🔴 The tri-state test below (`matcherAbsent`) only EXERCISES `verdict()`'s
+//    `!personalDataGuard` branch on a machine where the sibling checkout is
+//    genuinely missing (CI, a clean clone) — never on the maintainer's own
+//    machine, where the branch is simply unreachable through normal use.
+// ⚠️ NOT a simulation of a DIFFERENT behavior: `Module._load` is patched to
+//    make the SAME `require('@zenon-lab/personal-data-guard')` call the
+//    module makes throw, exactly as it genuinely does on a clean clone —
+//    then the module is re-required fresh (its own cache entry cleared) so
+//    it re-runs its real `try/catch` against that real failure. The patch
+//    and the caches are restored in `finally`, unconditionally.
+function requireLeakModuleWithGuardAbsent() {
+  const srcPath = require_.resolve('../src/commit-msg-leak.js');
+  const guardPath = require_.resolve('@zenon-lab/personal-data-guard');
+  delete require_.cache[srcPath];
+  delete require_.cache[guardPath];
+  const originalLoad = Module._load;
+  Module._load = function (request, parent, isMain) {
+    if (request === '@zenon-lab/personal-data-guard') {
+      throw new Error('simulated: package cannot be resolved');
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  try {
+    return require_(srcPath);
+  } finally {
+    Module._load = originalLoad;
+    delete require_.cache[srcPath];
+  }
+}
+
+test('verdict() with the matcher forced ABSENT returns EXACTLY {violations: [], unavailable: true}, ignoring motifs', () => {
+  const forced = requireLeakModuleWithGuardAbsent();
+  const v = forced.verdict('deploy: fix the pipeline for acme-widgets', [{ name: 'x', re: /x/ }]);
+  assert.deepEqual(v, { violations: [], unavailable: true });
+});
 
 let personalDataGuard = null;
 try {
@@ -147,4 +185,35 @@ test('TRI-STATE: refusal() of an unavailable verdict is LOUD and NAMES the missi
 test('TRI-STATE: the unavailable reason is exported and non-empty (whoever prints it needs the words)', () => {
   assert.ok(typeof UNAVAILABLE_REASON === 'string' && UNAVAILABLE_REASON.length > 20);
   assert.ok(UNAVAILABLE_REASON.includes('@zenon-lab/personal-data-guard'));
+});
+
+test('TRI-STATE: the unavailable reason is the EXACT sentence, both halves', () => {
+  assert.equal(
+    UNAVAILABLE_REASON,
+    '@zenon-lab/personal-data-guard is not installed (the `file:../personal-data-guard` sibling '
+    + 'checkout is missing) — this gate CANNOT JUDGE the message for personal data.',
+  );
+});
+
+test('TRI-STATE: refusal() of an unavailable verdict is the EXACT four-line contract', () => {
+  const text = refusal({ violations: [], unavailable: true });
+  const expected = [
+    'COMMIT REFUSED — the anti-leak gate CANNOT JUDGE this message.',
+    '  ' + UNAVAILABLE_REASON,
+    'This repository never lets a commit through when it cannot verify personal data.',
+    'Install the sibling package, or use `git commit --no-verify` CONSCIOUSLY.',
+  ].join('\n');
+  assert.equal(text, expected);
+});
+
+test.skipIf(matcherAbsent)('refusal: the violation refusal text is the EXACT contract, every line', () => {
+  const v = verdict('deploy: fix the pipeline for acme-widgets', motifs());
+  const text = refusal(v);
+  const expected = [
+    'COMMIT REFUSED — the message carries personal data.',
+    'This repository is PUBLIC: a pushed message survives in history for ever (git log -p).',
+    'Remove the data below from the message, then commit again.',
+    ...v.violations.map((o) => `  ${o.name} (${o.excerpt})`),
+  ].join('\n');
+  assert.equal(text, expected);
 });

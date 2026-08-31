@@ -174,6 +174,198 @@ test('⑨ the drift is a DIFFERENCE, never a stored counter', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// ⑩ — DIRECT UNIT CELLS on the lattice pieces and the raw structures.
+//     ⚠️ The tests above drive everything through the public flow (`recall`,
+//     `bumpTurn`, `decideSegments`…), which never exercises a merge where the
+//     LEFT side already holds a larger value, nor a case where `compactRemainder`
+//     sees only ONE half of a pair. Both are real states a peer can reach.
+// ═══════════════════════════════════════════════════════════════════════
+
+test('⑩a mergeCounter keeps the LARGER existing slot — merge is MAX, never overwrite', () => {
+  // A left-hand slot already ahead of the incoming one must survive the merge
+  // unchanged: overwriting it would break idempotence (re-merging an old state
+  // would move the counter BACKWARDS).
+  expect(crdt.mergeCounter({ daemon: 5 }, { daemon: 2 })).toEqual({ daemon: 5 });
+  expect(crdt.mergeCounter({}, { spawn: 3 })).toEqual({ spawn: 3 });
+});
+
+test('⑩b mergeMaxReg keeps the LARGER existing value, and creates an absent key', () => {
+  expect(crdt.mergeMaxReg({ 'a.md': 9 }, { 'a.md': 4 })).toEqual({ 'a.md': 9 });
+  expect(crdt.mergeMaxReg({}, { 'a.md': 0 })).toEqual({ 'a.md': 0 });
+});
+
+test('⑩c emptyTurns starts UNREFUSED', () => {
+  expect(crdt.emptyTurns().refused).toBe(false);
+});
+
+test('⑩d mergeTurns.refused is a TRUTH TABLE, not a shortcut on either side', () => {
+  const T = { turns: {}, refused: true };
+  const F = { turns: {}, refused: false };
+  expect(crdt.mergeTurns(F, F).refused).toBe(false);
+  expect(crdt.mergeTurns(T, F).refused).toBe(true);
+  expect(crdt.mergeTurns(F, T).refused).toBe(true);
+  expect(crdt.mergeTurns(T, T).refused).toBe(true);
+});
+
+test('⑩e compactRemainder keeps an EMITTED-only entry that has no DECIDED pair', () => {
+  // The pair-removal rule only fires when BOTH halves carry the id; an
+  // emitted-only entry (the decision has not merged in yet) must survive.
+  const r = { decided: {}, emitted: { orphan: true }, emissions: {} };
+  const { state, removed } = crdt.compactRemainder(r);
+  expect(removed).toEqual([]);
+  expect(state.emitted).toEqual({ orphan: true });
+});
+
+test('⑩f compactRemainder keeps a DECIDED-only entry that has no EMITTED pair', () => {
+  const r = { decided: { pending: { seq: 0, text: 'x' } }, emitted: {}, emissions: {} };
+  const { state, removed } = crdt.compactRemainder(r);
+  expect(removed).toEqual([]);
+  expect(state.decided).toEqual({ pending: { seq: 0, text: 'x' } });
+});
+
+test('⑩g compactRemainder returns the REMOVED ids SORTED, independent of insertion order', () => {
+  const r = {
+    decided: { z: { seq: 0, text: 'a' }, a: { seq: 1, text: 'b' } },
+    emitted: { z: true, a: true },
+    emissions: {},
+  };
+  const { removed } = crdt.compactRemainder(r);
+  expect(removed).toEqual(['a', 'z']);
+});
+
+test('⑩h decideSegments tie-break — LOWER seq wins, higher seq is IGNORED', () => {
+  let r = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'first', seq: 5 }]);
+  r = crdt.decideSegments(r, [{ id: 's1', text: 'later', seq: 9 }]);
+  expect(r.decided.s1).toEqual({ seq: 5, text: 'first' });
+});
+
+test('⑩i decideSegments tie-break — EQUAL seq, LEXICOGRAPHICALLY SMALLER text wins', () => {
+  let r = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'b', seq: 5 }]);
+  r = crdt.decideSegments(r, [{ id: 's1', text: 'a', seq: 5 }]);
+  expect(r.decided.s1).toEqual({ seq: 5, text: 'a' });
+  // …and the reverse candidate (larger text, same seq) changes nothing.
+  r = crdt.decideSegments(r, [{ id: 's1', text: 'z', seq: 5 }]);
+  expect(r.decided.s1).toEqual({ seq: 5, text: 'a' });
+});
+
+test('⑩j decideSegments — an EQUAL candidate (same seq, same text) is a strict no-op', () => {
+  let r = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'x', seq: 5 }]);
+  const before = r.decided.s1;
+  r = crdt.decideSegments(r, [{ id: 's1', text: 'x', seq: 5 }]);
+  expect(r.decided.s1).toBe(before); // same reference: the branch never ran
+});
+
+test('⑩k mergeRemainder tie-break — LOWER seq wins, higher seq loses, EQUAL seq keeps the smaller text', () => {
+  const higherSeq = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'x', seq: 9 }]);
+  const lowerSeq = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'y', seq: 5 }]);
+  expect(crdt.mergeRemainder(higherSeq, lowerSeq).decided.s1).toEqual({ seq: 5, text: 'y' });
+  expect(crdt.mergeRemainder(lowerSeq, higherSeq).decided.s1).toEqual({ seq: 5, text: 'y' });
+
+  const equalA = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's2', text: 'b', seq: 1 }]);
+  const equalB = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's2', text: 'a', seq: 1 }]);
+  expect(crdt.mergeRemainder(equalA, equalB).decided.s2).toEqual({ seq: 1, text: 'a' });
+});
+
+test('⑩l remaining() sorts by (seq, id), including NEGATIVE seq — a real tie-break, not insertion order', () => {
+  let r = crdt.emptyRemainder();
+  // Insertion order deliberately the OPPOSITE of the expected output order, and
+  // seq values that a naive `x + y` (instead of `x - y`) would misorder.
+  r = crdt.decideSegments(r, [
+    { id: 'c', text: 'x', seq: 1 },
+    { id: 'b', text: 'x', seq: -1 },
+    { id: 'a', text: 'x', seq: 1 }, // same seq as 'c' → tie-break on id
+  ]);
+  expect(crdt.remaining(r).map((s) => s.id)).toEqual(['b', 'a', 'c']);
+});
+
+test('⑩m2 remaining() tie-break — a SCRAMBLED insertion order, not merely reversed', () => {
+  // 🛑 A `ConditionalExpression -> true` mutant on the comparator (always
+  //    return -1) is INDISTINGUISHABLE from the correct comparator on an
+  //    array whose insertion order already happens to be the exact REVERSE of
+  //    the expected output: V8's small-array insertion sort then reverses the
+  //    input regardless of what the comparator actually computes, which
+  //    coincidentally matches. A SCRAMBLED (non-reversed) order is required to
+  //    tell the two apart.
+  let r = crdt.emptyRemainder();
+  r = crdt.decideSegments(r, [
+    { id: 'b', text: 'x', seq: 0 },
+    { id: 'a', text: 'x', seq: 0 },
+    { id: 'c', text: 'x', seq: 0 },
+  ]);
+  expect(crdt.remaining(r).map((s) => s.id)).toEqual(['a', 'b', 'c']);
+});
+
+test('⑩n mergeRemainder tie-break — EQUAL seq, WORSE (larger) incoming text never wins, either merge order', () => {
+  // 🛑 Distinguishes `<` from `<=` on the seq clause: with equal seq the first
+  //    clause of the real condition is FALSE, so the outcome depends entirely
+  //    on the text comparison. A `<=` mutant would short-circuit straight to
+  //    "update", ignoring the text rule.
+  const good = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'a', seq: 3 }]);
+  const worse = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'z', seq: 3 }]);
+  expect(crdt.mergeRemainder(good, worse).decided.s1).toEqual({ seq: 3, text: 'a' });
+  expect(crdt.mergeRemainder(worse, good).decided.s1).toEqual({ seq: 3, text: 'a' });
+});
+
+test('⑩n2 mergeRemainder — EQUAL seq AND EQUAL text: the LEFT reference is kept, never replaced', () => {
+  // 🛑 Distinguishes `<` from `<=` on the text clause specifically: two equal
+  //    candidates carry the SAME values, so a value-equality assertion cannot
+  //    tell the branches apart — only REFERENCE identity can. The real rule
+  //    (`<`) never fires on a tie, so the left-hand `decided[id]` object must
+  //    survive the merge UNTOUCHED (same reference); a `<=` mutant would
+  //    replace it with `b`'s (value-identical, different object).
+  const left = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'same', seq: 3 }]);
+  const right = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'same', seq: 3 }]);
+  expect(crdt.mergeRemainder(left, right).decided.s1).toBe(left.decided.s1);
+});
+
+test('⑩o mergeRemainder — a HIGHER incoming seq never wins, either merge order', () => {
+  // 🛑 Distinguishes a `ConditionalExpression -> true` mutant (always update)
+  //    from the real rule: a strictly higher seq must NEVER overwrite.
+  const lowSeq = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'x', seq: 0 }]);
+  const highSeq = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'y', seq: 9 }]);
+  expect(crdt.mergeRemainder(lowSeq, highSeq).decided.s1).toEqual({ seq: 0, text: 'x' });
+  expect(crdt.mergeRemainder(highSeq, lowSeq).decided.s1).toEqual({ seq: 0, text: 'x' });
+});
+
+test('⑩p decideSegments — a HIGHER seq candidate never wins, and a FALSE-everything mutant is caught', () => {
+  // 🛑 A `ConditionalExpression -> false` mutant would silently skip even the
+  //    first-ever decision of a brand-new id (`prev === undefined` case).
+  let r = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 'fresh', text: 'v', seq: 0 }]);
+  expect(r.decided.fresh).toEqual({ seq: 0, text: 'v' });
+  // 🛑 A `ConditionalExpression -> true` mutant would let a strictly WORSE
+  //    (higher-seq) candidate overwrite an already-decided one.
+  r = crdt.decideSegments(r, [{ id: 'fresh', text: 'later', seq: 5 }]);
+  expect(r.decided.fresh).toEqual({ seq: 0, text: 'v' });
+});
+
+test('⑩p2 decideSegments — a STRICTLY LOWER seq candidate DOES win (the real replacement path)', () => {
+  // 🛑 Every other decideSegments test in this file either introduces a
+  //    brand-new id (`prev === undefined`, first clause alone) or follows up
+  //    with an EQUAL or HIGHER seq (no replacement). None of them exercises
+  //    the middle clause (`candidate.seq < prev.seq`) as the SOLE reason the
+  //    branch fires — so a `ConditionalExpression -> false` mutant on that
+  //    clause changed NOTHING observable in any of them and survived. Here
+  //    the second call has a strictly LOWER seq and a DIFFERENT text: only
+  //    the middle clause can explain the replacement.
+  let r = crdt.decideSegments(crdt.emptyRemainder(), [{ id: 's1', text: 'stale', seq: 9 }]);
+  r = crdt.decideSegments(r, [{ id: 's1', text: 'fresher', seq: 2 }]);
+  expect(r.decided.s1).toEqual({ seq: 2, text: 'fresher' });
+});
+
+test('⑩m remaining() DOES sort — neutralizing the comparator would keep insertion order', () => {
+  // Insertion order already equals the WRONG (descending) order, so if the
+  // comparator were disarmed (sort() with no real effect), the sabotaged
+  // result would be indistinguishable from the correct one on ⑩l alone.
+  // Here insertion order is descending seq while expected output is ascending.
+  let r = crdt.emptyRemainder();
+  r = crdt.decideSegments(r, [
+    { id: 'hi', text: 'x', seq: 5 },
+    { id: 'lo', text: 'x', seq: 1 },
+  ]);
+  expect(crdt.remaining(r).map((s) => s.id)).toEqual(['lo', 'hi']);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // ② — THE DIFFERENTIAL. Oracle = the code shipped today.
 // ═══════════════════════════════════════════════════════════════════════
 

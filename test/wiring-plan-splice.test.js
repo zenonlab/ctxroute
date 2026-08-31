@@ -333,3 +333,46 @@ test('a NEIGHBOURING project whose name merely STARTS with ours is not a suspect
     { type: 'command', command: 'node C:/other/ctxroute/src/hooks/session-inject.js', timeout: 20 },
   ], 'A sibling directory (`-policies`, `_old`) was accused of being this framework, or a REAL second copy stopped being reported. The mention must end on a segment boundary — and it must still catch a genuine copy.');
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE SHAPE — no caller in this fleet ever passes one, but the parameter
+// is a documented part of the contract (porting to a harness that nests
+// its own wiring under different key names). It must actually be USED.
+// ═══════════════════════════════════════════════════════════════════════
+test('a harness whose wiring nests differently is spliced from ITS OWN shape, not the default', () => {
+  const declarations = plan(manifest(), machine());
+  const shape = { rootKey: 'automation', entriesKey: 'triggers', matcherKey: 'when' };
+  const before = {
+    automation: {
+      PreToolUse: [{ when: '*', triggers: [theirs('audit')] }],
+    },
+  };
+
+  // 🛑 IF THE CUSTOM SHAPE WERE IGNORED, `splice` WOULD FALL BACK TO THE
+  //    DEFAULT `hooks` ROOT KEY — which this fixture does not carry at all —
+  //    and REFUSE with "no `hooks` section". A successful splice below is
+  //    therefore proof the declared shape actually reached the engine.
+  const out = splice(before, declarations, ROOT(), shape);
+
+  assert.strictEqual(out.removed, 0, 'Nothing under the custom shape was ours yet.');
+  assert.deepStrictEqual(out.settings.automation.PreToolUse[0].triggers, [theirs('audit')],
+    'The operator\'s own trigger, read through the custom shape, was altered.');
+  const ourBlock = out.settings.automation.PreToolUse.find((b) => b.when === '*' && b !== out.settings.automation.PreToolUse[0]);
+  assert.ok(ourBlock, 'Our own declarations were never written under the custom shape\'s root/entries/matcher keys.');
+  assert.deepStrictEqual(ourBlock.triggers.map((e) => e.command), [
+    'node C:/fixture/ctxroute/src/hooks/doc-inject.js --client --frame 1 --frames 2',
+    'node C:/fixture/ctxroute/src/hooks/doc-inject.js --client --frame 2 --frames 2',
+  ]);
+});
+
+test('a malformed custom shape is a NAMED refusal, key by key, with the key quoted', () => {
+  const declarations = plan(manifest(), machine());
+  const at = (shape) => () => splice({ hooks: {} }, declarations, ROOT(), shape);
+
+  expect(at({ rootKey: '', entriesKey: 'hooks', matcherKey: 'matcher' }))
+    .toThrow('the splice was given no `rootKey` — it decides which entries of a file we do not own are DELETED, and a wrong name there empties the wrong branch');
+  expect(at({ rootKey: 'hooks', entriesKey: 7, matcherKey: 'matcher' }))
+    .toThrow('the splice was given no `entriesKey` — it decides which entries of a file we do not own are DELETED, and a wrong name there empties the wrong branch');
+  expect(at({ rootKey: 'hooks', entriesKey: 'hooks', matcherKey: undefined }))
+    .toThrow('the splice was given no `matcherKey` — it decides which entries of a file we do not own are DELETED, and a wrong name there empties the wrong branch');
+});

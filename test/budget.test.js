@@ -100,6 +100,7 @@ test('NOTHING fits → BARE announcement, content never truncated, nothing lost'
   //    block it truncates silently, that is to say the original defect.
   const r = plan([seg('enorme', 50000)], 400);
   assert.deepStrictEqual(r.emitted, []);
+  assert.deepStrictEqual(r.segments, [], 'the kept-segments list carries nothing when nothing fits');
   assert.deepStrictEqual(r.deferred.map((d) => d.id), ['enorme']);
   assert.ok(r.text.includes('enorme.md'));
   assert.ok(!r.text.includes('x'.repeat(1000)), 'the content must NOT be emitted');

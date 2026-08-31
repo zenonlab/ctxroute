@@ -43,12 +43,14 @@
 
 'use strict';
 
+// ⚠️ NO reassignment in the catch: `personalDataGuard` is already `null` from the line above,
+//    and `require()` throwing means the assignment on the next line never completed — so an
+//    explicit `personalDataGuard = null;` here would be a no-op, i.e. dead code a mutation
+//    test cannot ever tell apart from an empty catch. Removed at the source, never test-frozen.
 let personalDataGuard = null;
 try {
   personalDataGuard = require('@zenon-lab/personal-data-guard');
-} catch {
-  personalDataGuard = null;
-}
+} catch {}
 
 /** Named, loud reason shown whenever the matcher could not be loaded. */
 const UNAVAILABLE_REASON =

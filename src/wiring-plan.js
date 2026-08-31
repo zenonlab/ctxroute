@@ -786,4 +786,9 @@ module.exports = {
   plan, byBlock, splice, gateBound, gateTransport, gateFrames, framesMissingBound, frameCoordinates,
   boundCeiling, SETTINGS_PLACEHOLDER, knownEvents, KNOWN_LANES, KNOWN_TRANSPORTS,
   gateBoundPath, COORD_NAMES,
+  // ⚠️ Exported ONLY for direct unit testing of its boundary behaviour (a
+  //    needle ending at the very last character of the text), which its sole
+  //    caller — `JSON.stringify(entry)`, always terminated by `}` — can never
+  //    reach. NOT part of the manifest vocabulary; internal to the splice.
+  mentionsSegment,
 };

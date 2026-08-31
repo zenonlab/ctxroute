@@ -311,6 +311,7 @@
 - `vitest.config.mjs` — default vitest config (`npm test`): all suites EXCEPT the heavy ones.
 - `vitest.stryker.config.mjs` — vitest config DEDICATED to Stryker: ONLY the deterministic suites of the mutated modules (never property/spawn).
 - `vitest.heavy.config.mjs` — vitest config of the heavy suites (load, fleet, vendor, differential) — the only way to run them (the default config's exclude beats CLI args).
+- `test/workflow-encoding-gate.test.js` — GATE: no workflow file starts with a UTF-8 BOM. MEASURED 2026-08-31: a BOM on `mutation.yml` made GitHub refuse the file (run fails in 0 s, listed under its path instead of its `name:`), so the whole mutation job silently stopped running in CI while local reports looked normal. Scope DERIVED from disk (root `.github/workflows/` only), anti-vacuity floor, seen RED by injecting a BOM then restoring. NOT a style rule: a `.ps1` under `service/` REQUIRES a BOM for PowerShell 5.1 — the opposite rule, deliberately out of scope.
 - `test/mutation-workflow-gate.test.js` — GATE: mutate ⟷ CI paths ⟷ Stryker suites mirror + commandRunner/node:test anti-return.
 - `src/lint.js` — PURE CORE of the fleet audit (dead/ghost docs, Stryker-mutated). Shell = `tools/lint-corpus.js`.
 - `tools/lint-corpus.js` — I/O shell of the fleet lint (`npm run lint`), liveness probe exit 2.
