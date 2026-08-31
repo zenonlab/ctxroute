@@ -376,7 +376,29 @@ test('EADDRINUSE ON THE RENDEZVOUS KILLS: the kernel refuses a SECOND instance a
     try {
       assert.ok(occupant.listening, 'the occupant never took the address — the cell would prove nothing');
       const tracked = lancer('occupee', port, { CTXROUTE_TEST_ENDPOINT: address });
-      const code = await tracked.fin;
+
+      // 🔴 A SHELL THAT NEVER DIES MUST NOT LOOK LIKE A SLOW ONE — macOS CI,
+      //    2026-08-31. This cell timed out at 30 s with NO output at all: the
+      //    child simply kept running, and a bare `await tracked.fin` says
+      //    nothing about WHY. Three explanations fit that silence equally well
+      //    — the bind was never attempted, the kernel answered something other
+      //    than EADDRINUSE so the shell took the DEGRADATION path, or the probe
+      //    never settled — and a timeout cannot tell them apart. That is the
+      //    difference between a failing test and an unusable one.
+      // 🛑 THIS IS NOT A RETRY AND NOT A WIDER LIMIT: the cell still FAILS, it
+      //    just fails while NAMING what the child said and whether it was still
+      //    alive. Diagnosing a kernel nobody here owns starts by making it speak.
+      const DEATH_WINDOW_MS = 15000;
+      const code = await Promise.race([
+        tracked.fin,
+        new Promise((r) => { setTimeout(() => r(Symbol.for('still-running')), DEATH_WINDOW_MS).unref(); }),
+      ]);
+      assert.notStrictEqual(code, Symbol.for('still-running'),
+        `the shell was STILL RUNNING ${DEATH_WINDOW_MS} ms after the rendezvous was taken by a live `
+        + 'occupant — it neither bound nor died. What it wrote to stderr, verbatim:\n'
+        + `${tracked.stderr.trim() || '(nothing at all — it never even reported an error)'}\n`
+        + 'Read that before assuming a cause: an EADDRINUSE that never surfaced, a different errno '
+        + 'sent down the degradation path, and a probe that never settled all produce this silence.');
 
       assert.notEqual(code, 0,
         'the daemon survived an address the kernel had already given to somebody else. Duplicate '

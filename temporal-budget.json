@@ -25,10 +25,10 @@
       "motive": "undecidable",
       "why": "Watchdog that SIGKILLs the spawned hook. This suite exists precisely to prove the hook dies when stdin never ends: what is awaited is, by construction, possibly infinite. Without this timer a red test would hang the runner for ever."
     },
-    "test/vendor-deadline.test.js": {
-      "count": 2,
+    "test/dual-transport.test.js": {
+      "count": 1,
       "motive": "undecidable",
-      "why": "The same watchdog as `deadline.test.js`, applied to the vendored copy shipped to the hook fleet: a hook under test may legitimately never exit, which is the very defect being measured."
+      "why": "Cell 4 forks a shell against a rendezvous a LIVE occupant already holds, and asserts the shell dies. On macOS CI (2026-08-31) it neither bound nor died: the cell timed out at 30 s with an empty stderr, and a timeout cannot tell apart a bind never attempted, an errno other than EADDRINUSE sent down the degradation path, and a probe that never settled. Whether that child will EVER exit is not decidable from here — it is the halting question, on a kernel nobody on this side owns. The bound does not retry and does not widen anything: the cell still FAILS, it fails while NAMING what the child wrote and that it was still alive."
     },
     "test/http-daemon-lifecycle.test.js": {
       "count": 4,
@@ -39,6 +39,11 @@
       "count": 2,
       "motive": "undecidable",
       "why": "ONE yield (`settle`) between two observations of a FOREIGN process: has the daemon written its journal line yet, has it bound its port yet. The fact belongs to another process and no signal says 'you may now observe it', so 'has it got there yet?' is not decidable from this one. Nothing here concludes from time passing: every loop asks the kernel again and gives up the moment the child is gone. The yield exists so a poll does not saturate a core while the kernel does the work. — SECOND CALL (2026-08-31), cell 6bis: it waits for a metadata-only KERNEL NOTIFICATION to end a paranoid daemon started with serve:false. With no request the point-of-use comparison never runs, so that notification is the ONLY thing that can end it, and whether a given filesystem will ever deliver one is not decidable from here: MEASURED on all three CI runners, none did, and the cell timed out at 60 s on a healthy repository. The bound turns that infinity into a NAMED non-decision (ctx.skip UNMEASURED) instead of a red reporting a regression that does not exist. 🛑 It is not a widened limit: waiting longer cannot make an absent notification arrive."
+    },
+    "test/vendor-deadline.test.js": {
+      "count": 2,
+      "motive": "undecidable",
+      "why": "The same watchdog as `deadline.test.js`, applied to the vendored copy shipped to the hook fleet: a hook under test may legitimately never exit, which is the very defect being measured."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `pattern:` atom of `rules/temporal-call.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",
