@@ -31,16 +31,42 @@ const lireJson = (f) => JSON.parse(readFileSync(f, "utf8").replace(/^﻿/, ""));
 const MANIFEST = lireJson(path.join(ROOT, "deps-criticality.json"));
 
 // ⚠️ Folders carrying package.json files that are NOT ours (dependencies, tool sandboxes).
-const IGNORE = new Set(["node_modules", ".git", ".stryker-tmp", "coverage", "reports", "dist"]);
+// ⚠️ `state/` IS IGNORED AND IT IS NOT HYGIENE — MEASURED 2026-09-19 after FOUR
+//    intermittent reds. It is where `lock.js` takes its locks, as DIRECTORIES
+//    created and removed by `mkdir`/`rmdir` in milliseconds. A parallel suite
+//    takes one, this walk sees it in `readdirSync`, and `statSync` lands after
+//    the `rmdir`: ENOENT, the walk throws, and vitest reports the exception
+//    against whichever cell was running — which spoke of phantom dependencies
+//    that were never measured. It holds runtime state, never a sub-package.
+const IGNORE = new Set(["node_modules", ".git", ".stryker-tmp", "coverage", "reports", "dist", "state"]);
+
+/** The disk, as the walk sees it. Replaced ONLY by the cells that drive the races. */
+const walkInternals = { readdir: readdirSync, stat: statSync };
 
 // List of package.json files DERIVED from the tree, never written down — a sub-package added later is
 // covered without anyone thinking about it.
-function packageManifests(dir = ROOT, out = []) {
-  for (const e of readdirSync(dir)) {
+// 🛑 THE DISK READS ARE INJECTED so the two guards below can be DRIVEN. They
+//    exist for races a real machine produces at random — a lock taken by a
+//    parallel suite, a directory gone between the read and the stat — and a
+//    guard nobody can make fail is a guard ASSUMED to work. Default to `fs`, so
+//    every real caller is untouched.
+function packageManifests(dir = ROOT, out = [], io = walkInternals) {
+  for (const e of io.readdir(dir)) {
     if (IGNORE.has(e)) continue;
     const p = path.join(dir, e);
-    if (e === "package.json") out.push(p);
-    else if (statSync(p).isDirectory()) packageManifests(p, out);
+    if (e === "package.json") { out.push(p); continue; }
+    // 🛑 A VANISHED ENTRY IS SKIPPED, NEVER FATAL. A tree changes under any
+    //    walker on a live machine, and a judge that DIES of it reports a defect
+    //    that does not exist — paid four times on 2026-09-19. What disappeared
+    //    between the read and the stat cannot be the manifest we are looking
+    //    for: it was there a microsecond ago and is gone now. 🛑 This swallows
+    //    NOTHING else — only the entry that no longer exists.
+    let stats;
+    try { stats = io.stat(p); } catch (err) {
+      if (err && err.code === "ENOENT") continue;
+      throw err;
+    }
+    if (stats.isDirectory()) packageManifests(p, out, io);
   }
   return out;
 }
@@ -104,5 +130,65 @@ describe("dependency criticality", () => {
       ghosts,
       `entr(ies) of deps-criticality.json that NO package.json installs: ${ghosts.join(", ")} — remove them (a phantom classification suggests a coverage that does not exist)`,
     ).toEqual([]);
+  });
+});
+
+// ═══════════════════════
+// THE WALK ITSELF — the class that reddened FOUR times in one day
+// ═══════════════════════
+// 🔴 MEASURED 2026-09-19: this judge did not FAIL an assertion, it THREW —
+//    `ENOENT: stat 'state\\.lock-doc-unknown'` — and vitest attributes an
+//    exception to whichever cell is running, which happened to be the one about
+//    phantom dependencies. It had never measured a phantom. The walk was inside
+//    `state/`, where `lock.js` takes its locks as DIRECTORIES created and removed
+//    in milliseconds; a parallel suite took one between the read and the stat.
+//    It was never random — it was racing a lock, which is exactly why it was
+//    always green alone. Four evenings were filed "not reproduced in isolation".
+describe("the walk that finds the manifests", () => {
+  test("`state/` is ignored — it is where the LOCKS live, and they vanish mid-walk", async () => {
+    expect(IGNORE.has("state"), "`state/` must be ignored").toBe(true);
+    // 🔑 ANTI-VACUITY: a name in a list proves nothing about WHY. This asks the
+    //    OWNER of the lock address where locks go, and requires it to be the
+    //    very folder the guard excludes.
+    // 🛑 It does NOT take a real lock: `state/` belongs to the LIVE daemon, and
+    //    blocking production to prove a point about a test is the "never share a
+    //    window between observation and intervention" rule, broken again.
+    const { docLockDir } = await import("../src/store-resolve.js");
+    const address = docLockDir("walk-probe-session");
+    expect(
+      path.relative(ROOT, address).replace(/\\/g, "/").startsWith("state/"),
+      `the lock address is ${address} — if locks no longer live under state/, this guard now excludes the WRONG folder and the walk is unprotected`,
+    ).toBe(true);
+  });
+
+  test("an entry that VANISHES between the read and the stat is skipped, never fatal", () => {
+    // The exact race, made deterministic: the entry is listed, then the stat
+    // says it is gone — which is what a released lock looks like.
+    const vanished = {
+      readdir: (d) => (d === "/root" ? ["gone", "package.json"] : []),
+      stat: (f) => {
+        if (f.endsWith("gone")) { const e = new Error("ENOENT"); e.code = "ENOENT"; throw e; }
+        return { isDirectory: () => false };
+      },
+    };
+    let found = null;
+    let threw = null;
+    try { found = packageManifests("/root", [], vanished); } catch (err) { threw = err; }
+    expect(threw, `the walk DIED on a vanished entry: ${threw && threw.message}`).toBe(null);
+    expect(found.length, "and it must still return the manifest it was looking for").toBe(1);
+    expect(found[0].endsWith("package.json")).toBe(true);
+  });
+
+  test("ONLY ENOENT is swallowed — a permission error still kills the judge", () => {
+    // 🛑 A walker that swallows EVERY error cannot report a broken disk. The
+    //    repair must stay narrow, or it becomes the next silent hole.
+    const denied = {
+      readdir: () => ["locked"],
+      stat: () => { const e = new Error("EACCES"); e.code = "EACCES"; throw e; },
+    };
+    let threw = null;
+    try { packageManifests("/root", [], denied); } catch (err) { threw = err; }
+    expect(threw && threw.code, "EACCES must propagate — the ENOENT repair may not hide a real problem")
+      .toBe("EACCES");
   });
 });

@@ -31,14 +31,70 @@
 Description=ctxroute HTTP injection gate socket (local loopback, user scope)
 
 [Socket]
-# ⚠️ LOOPBACK, and the address now lives HERE — this is the single place it is
-#    written on Linux. The harness hook URL on the other side carries the same
-#    number: two ends, one value. `http-server.js` does not choose it any more
-#    when it is activated; it is handed an already-bound socket.
+# ⚠️ LOOPBACK. `http-server.js` does not CHOOSE this address when it is activated:
+#    systemd binds it and hands over an already-bound socket. That much is
+#    unchanged and it is why the address has to appear in this file at all.
+# 🔴 BUT "THE SINGLE PLACE IT IS WRITTEN ON LINUX" WAS ALREADY FALSE, AND THE
+#    CORRECTION IS DATED 2026-09-19. The configuration holds the same address —
+#    `tools/wiring-generate.js` builds the harness URL from it — so this file and
+#    the configuration were TWO places for one value, agreeing by convention and
+#    compared by nothing. The failure that left open is SILENT: a configuration on
+#    9000 against a unit on 8787 makes systemd hold 8787 while every hook POSTs to
+#    9000, and nothing anywhere reports it.
+# ✅ SO THE DIRECTION IS NOW WRITTEN DOWN: the CONFIGURATION is the source, this
+#    unit is DERIVED from it at install time by `service/render-units.js`, and the
+#    shipped copy below is simply that renderer's output for the default
+#    configuration — proven byte-for-byte by `test/render-units-pure.test.js`.
+# ⚠️ EDITING THE ADDRESS HERE BY HAND IS THEREFORE OVERWRITTEN AT THE NEXT INSTALL.
+#    Change `http.host` / `http.port` in the configuration instead, and re-run the
+#    installer — that is the gesture that keeps the supervisor and the harness on
+#    one number.
 # 🛑 Never widen this to 0.0.0.0. There is no authentication and there must never
 #    need to be one: the socket IS the boundary, and it returns this fleet's
 #    private knowledge to whoever connects.
+# 🛑 FOUR SOCKETS, AND THE COUNT IS A CONTRACT WITH THE DAEMON (2026-09-19).
+#    `http.listeners` defaults to 4 (`DEFAULT_LISTENERS`, src/declared-paths-pure.js)
+#    and the daemon REFUSES TO START when the number systemd hands it differs from
+#    the number the configuration declares — deliberately: serving fewer would drop
+#    that share of EVERY action, in silence, with nothing going red. So these lines
+#    and that constant are ONE fact in two files, and `service-units-gate` is what
+#    keeps them equal.
+# 📐 sd_listen_fds(3) hands the descriptors "in the order of configuration", and the
+#    daemon maps them onto 3, 4, 5, 6 — so the order decides which PORT arrives on
+#    which descriptor.
+# ⚠️ AND THAT IS DELIBERATELY NOT LOAD-BEARING — an earlier version of this comment
+#    claimed it was, on 2026-09-19, and that was a FALSE INVARIANT. Every socket is
+#    served by the SAME handler sharing ONE sequencer table, so which port a frame
+#    lands on changes nothing about what it is served. A claimed invariant nobody
+#    can violate is worse than none: it makes the next reader protect the wrong
+#    thing. What IS load-bearing is the COUNT, stated just above.
+# ⚠️ Whoever wants the pre-2026-09-19 behaviour keeps ONE line here and writes
+#    `"listeners": 1` in the configuration — both sides, or neither.
 ListenStream=127.0.0.1:8787
+ListenStream=127.0.0.1:8788
+ListenStream=127.0.0.1:8789
+ListenStream=127.0.0.1:8790
+
+# ⚠️ DECLARED, NEVER LEFT TO SYSTEMD'S OWN DEFAULT (2026-09-17) — same
+#    principle as `LISTEN_BACKLOG` in `http-server.js`: a capacity this
+#    project relies on is written, not inherited. Under socket activation
+#    THIS unit binds the socket, not the daemon, so `http-server.js`'s own
+#    constant does not apply here — this line is the one that actually
+#    governs the Linux accept queue.
+# 📐 systemd.socket(5): modern systemd defaults `Backlog=` to its own
+#    maximum (4294967295), itself silently capped by the kernel's
+#    `net.core.somaxconn` — but OLDER systemd defaulted to plain `SOMAXCONN`
+#    (128), a ceiling low enough to reproduce the exact burst-refusal class
+#    this project spent 2026-09-16/17 diagnosing on Windows. Declaring it
+#    explicitly removes that version-dependent gap. `man7.org/linux/man-
+#    pages/man5/systemd.socket.5.html`.
+# 🛑 The REAL ceiling still needs `net.core.somaxconn` raised at the OS
+#    level (root, `sysctl`) if the kernel default (4096 on 5.4+, 128
+#    before) is ever the true bottleneck — no unit file, no application
+#    code, can force a number past what the kernel itself is configured to
+#    grant. Out of scope for this file; an installer-level step, not yet
+#    added (`install-linux.sh` does not touch sysctl as of this date).
+Backlog=65535
 
 # ═══════════════════════════════════════════════════════════════════════
 # 🛑 Accept=no — THE ONE SETTING THAT WOULD UNDO THE ENTIRE HTTP LANE

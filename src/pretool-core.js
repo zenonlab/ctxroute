@@ -69,9 +69,22 @@ const lockModule = require('./lock');
 //    the state directory was the lock's name, and that name has an owner now.
 const store = require('./session-store');
 const { docLockDir } = require('./store-resolve');
+// ⚠️ `category`'s OWN state (22/09/2026, Phase 1 wiring) — a PURE shape module,
+//    never a store opener itself (cf `category.md`): this file remains the
+//    single place that calls `st.loadState`/`saveState`, exactly like it
+//    already does for `STORE_PREFIX`/`PLAN_PREFIX`/`TURN_PREFIX`.
+const categoryStore = require('./category-store-pure');
 
 // Per-session state, prefix 'doc-seen-' (dedup by DOC) — cf session-store.js.
 const STORE_PREFIX = 'doc-seen-';
+// ⚠️ `category`'s session-scoped role, READ-ONLY from this file (Phase 1): no
+//    gesture in THIS repo ever calls `saveState(CATEGORY_PREFIX, …)` — that
+//    write belongs to the opinionated commands of `ctxroute-policies`. Purged
+//    by `ctxroute-reset.js` like every other per-scope state (PreCompact is an
+//    ABSOLUTE, mode-independent reset here — a declared role does not survive
+//    it any more than a `doc-seen-` record does; re-declaring it costs the
+//    same two-second gesture the operator already designed for this).
+const CATEGORY_PREFIX = 'category-';
 // ⚠️ PLAN MEMOIZED PER INVOCATION (03/08/2026) — DISTINCT prefix mandatory.
 //    Without it, multi-frame mode would be FALSE: the N processes each call
 //    `gate.decide`, which WRITES the state. The first one consumes the `once`
@@ -154,6 +167,28 @@ function run(data, emit, options) {
     // receive NOTHING (hole proven 19/07/2026). Harness WITHOUT agent_id (Codex):
     // scopeId returns the simple key — shared state, absorbed by construction.
     const sessionId = lib.scopeId(data.session_id, data.agent_id);
+    // ⚠️ PARENT → SUB-AGENT CATEGORY INHERITANCE (22/09/2026, Phase 1). MEASURED,
+    //    not invented: `scopeId(session_id, undefined)` — the exact call this
+    //    file already makes for the MASTER's own scope — returns the bare
+    //    `sanitizeSessionId(session_id)`, and `session_id` is the ONE field the
+    //    per-agent scope doctrine already documents as SHARED, never
+    //    discriminating, between a master and every one of its sub-agents (both
+    //    measured harness contracts, Claude Code and Codex ≥ 0.146.0). So a
+    //    sub-agent that has never declared its OWN category can fall back to
+    //    the state filed under ITS SESSION'S bare scope — which is exactly
+    //    where the master's own category would live, with zero new harness
+    //    capability required. ⚠️ HONEST LIMIT, measured, not assumed: NEITHER
+    //    harness's hook payload names WHICH agent_id is the immediate PARENT of
+    //    a nested sub-agent (only "this session" and "this agent_id" are
+    //    exposed) — so a chain deeper than master→sub-agent cannot be resolved
+    //    this way. It is NOT invented here because this codebase's own
+    //    measured architecture doctrine (skill §Bezos) already states
+    //    sub-agents are NOT recursive today ("a manager dispatches N agents on
+    //    N disjoint scopes... recursion awaits compute, not software") — so the
+    //    unresolvable case does not arise in the fleet this wiring runs on. If
+    //    that ever changes, this fallback covers ONE level and no more, and
+    //    that bound must be re-measured, never assumed to have grown with it.
+    const parentScopeId = data.agent_id ? lib.scopeId(data.session_id, undefined) : null;
     const config = loadConfig();
 
     // Global switch — same semantics on all harnesses.
@@ -167,8 +202,43 @@ function run(data, emit, options) {
     // session_id/transcript_path/cwd/hook_event_name). Consumed
     // ONLY by the skill source, FAIL-SOFT: absent → behaviour
     // from before. The file/MCP sources IGNORE it — protect-files parity.
-    const payload = { toolName, toolInput, cwd: data.cwd };
-    const acc = collectAll(config, payload);
+    // 🔑 THE MOMENT OF THE ACTION IS HANDED OVER BY THE SHELL, like the invocation (2026-09-23):
+    //    `{ response }` once the tool has answered, absent BEFORE it runs. Only the shell knows
+    //    which harness event it is serving and where that harness puts the answer; this core
+    //    reads no harness field (extension contract §7) and passes it to `gate.decide` as is.
+    // ⚠️ Absent ⇒ `undefined` ⇒ today's behaviour to the byte (extension contract §6).
+    // 🛑 THE SHELL MUST ALSO GIVE THIS MOMENT ITS OWN `invocationId`: the plan is memoised per
+    //    invocation, and the two moments of one action share the harness's call id — reusing it
+    //    would replay the BEFORE plan after the answer and deliver nothing, in silence.
+    const after = options && options.after && typeof options.after === 'object' ? options.after : undefined;
+    // ⚠️ CARRIED BY THE PAYLOAD too: the moment is a fact of the gesture this core decides on, and
+    //    `explain.js` must build the same fields (`explain-payload-parity`) — the collection ignores it.
+    const payload = { toolName, toolInput, cwd: data.cwd, after };
+    // 🔑 WHO COLLECTS IS AN ARGUMENT (2026-09-18) — the SAME law as the store,
+    //    the lock and the budget above, for the same reason: only a LONG-LIVED
+    //    process can know that two requests belong to ONE action, and this core
+    //    is shared by processes that cannot.
+    // 📐 WHY IT EXISTS, MEASURED: `collectAll` costs **6.36 ms on the real
+    //    corpus with the resident cache armed**, and the harness opens ONE
+    //    connection PER FRAME — 32 for a single tool call. The collection was
+    //    therefore recomputed 32 times, identically, for one action:
+    //    **282.92 ms of single-threaded CPU of which ~198 ms was that
+    //    recomputation.** The daemon has ONE thread, so those milliseconds are
+    //    not merely latency — they are the window during which it stops
+    //    draining its sockets (`win 0`, `http-lane.md`).
+    // ✅ MEASURED AFTER, byte-for-byte differential on a real 32-frame action:
+    //    **510.7 ms → 143 ms, 25 emissions and 190,276 characters IDENTICAL**,
+    //    ONE real collection instead of 32.
+    // 🛑 THE MEMOISATION IS THE SHELL'S, NEVER THIS CORE'S. A cache here would
+    //    have no invocation to key on in a spawned hook, no bound, and no way to
+    //    be told the corpus moved — it would serve yesterday's knowledge, which
+    //    is the one failure this project refuses outright. Absent ⇒ `collectAll`
+    //    ⇒ today's behaviour TO THE BYTE, which is what keeps the spawn lane and
+    //    every differential untouched (extension contract §6).
+    // 🛑 NEVER AN ENVIRONMENT VARIABLE: inherited by children, so one leak would
+    //    hand a spawned hook a collector belonging to another process.
+    const collectFn = (options && options.collect) || collectAll;
+    const acc = collectFn(config, payload);
     const { matched, decls, bodies } = acc;
 
     // TURN counter read ONLY if a matched doc is in driftUnit
@@ -254,7 +324,24 @@ function run(data, emit, options) {
     //    directly from an emitter. `split` alone = REPLAY of an already decided
     //    splitting (memoized plan) or DEGRADED path without a lock; the normal
     //    path is `emission.emit`, which touches the queue.
-    const split = (segments) => emission.split(segments, budgetMax, nbFrames);
+    // 🔑 THE SPLIT IS MEMOISABLE BY THE SHELL, exactly as the COLLECTION is
+    //    (`options.collect` above) and for the same reason: only a LONG-LIVED
+    //    process can know that two requests belong to ONE action. The split is
+    //    deterministic so that N separate PROCESSES agree on it without
+    //    coordinating — on the spawn lane that is the whole mechanism — but the
+    //    daemon is one process with one memory, so it recomputed an identical
+    //    result 32 times per action (MEASURED 2026-09-19: `budget.js` = 26.7 %
+    //    of its CPU, A/B 180 ms → 128 ms per action, bodies byte-identical).
+    // 🛑 ABSENT ⇒ `emission.split` ⇒ TODAY'S BEHAVIOUR TO THE BYTE, which is what
+    //    keeps the spawn lane and every differential untouched (extension
+    //    contract §6). 🛑 NEVER AN ENVIRONMENT VARIABLE: inherited by children,
+    //    so one leak would hand a spawned hook another process's memo.
+    // ⚠️ THE THREE ARGUMENTS TRAVEL, never a closure over them: this `split` has
+    //    THREE callers below and one of them — the CARRYOVER — splits the plan of
+    //    a DIFFERENT invocation. A memo may only ever key on what the function is
+    //    a function of, so it must SEE those arguments.
+    const splitFn = (options && options.split) || emission.split;
+    const split = (segments) => splitFn(segments, budgetMax, nbFrames);
     // Identity of a document: single source in `budget.js` (the chunks
     // carry `<doc>#<j>`). It lived here as a local copy — it is a rule of the
     // TRANSPORT, not of this orchestration.
@@ -279,10 +366,19 @@ function run(data, emit, options) {
       //    splitting non-reproducible, that is to say break multi-frame mode
       //    silently.
       if (Array.isArray(cache.segments)) {
-        return { segments: cache.segments, decision: cache.decision, frames: split(cache.segments), filteredOut: cache.filteredOut || [] };
+        return { segments: cache.segments, decision: cache.decision, frames: split(cache.segments), filteredOut: cache.filteredOut || [], categoryOut: cache.categoryOut || [] };
       }
       const state = st.loadState(STORE_PREFIX, sessionId);
-      const r = gate.decide(config, decls, matched, state, turnCount, acc.owner, toolName);
+      // ⚠️ READ ONLY (Phase 1): this session's declared categories, exactly like
+      //    every other per-scope state above — never resolved, never defaulted
+      //    beyond what `categoriesOf` already does on an absent/malformed state.
+      //    A sub-agent with NO category of its own inherits the MASTER's
+      //    (`parentScopeId`, cf its declaration above) — one level, measured.
+      let sessionCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, sessionId));
+      if (sessionCategories.length === 0 && parentScopeId) {
+        sessionCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, parentScopeId));
+      }
+      const r = gate.decide(config, decls, matched, state, turnCount, acc.owner, toolName, sessionCategories, after);
 
       // ── EMISSION: queue first, fresh next, remainder persisted ──
       // ⚠️ THIS WHOLE MECHANISM LIVES IN `emission-core.js` (RFC 6455 order,
@@ -365,8 +461,8 @@ function run(data, emit, options) {
       if (r.changed) st.saveState(STORE_PREFIX, sessionId, r.state);
       // ⚠️ `filteredOut` MEMOIZED with the plan: frames 2..N read the cache back
       //    and must see the SAME finding as the 1st (same reason as segments).
-      if (fragmented) st.saveState(PLAN_PREFIX, clePlan, { segments, decision: r.decision, filteredOut: r.filteredOut });
-      return { segments, decision: r.decision, frames, filteredOut: r.filteredOut };
+      if (fragmented) st.saveState(PLAN_PREFIX, clePlan, { segments, decision: r.decision, filteredOut: r.filteredOut, categoryOut: r.categoryOut });
+      return { segments, decision: r.decision, frames, filteredOut: r.filteredOut, categoryOut: r.categoryOut };
     }, { fallback: null });
     // Lock unavailable → decide WITHOUT state (never keep silent, cf header).
     // ⚠️ NEITHER READING NOR WRITING THE QUEUE ON THIS PATH: without a lock, two
@@ -381,7 +477,11 @@ function run(data, emit, options) {
       //    WRITES — reading never needed it and has no side effect.
       //    We read, we decide, we write NOTHING. Detail: `gate.md`.
       const knownState = st.loadState(STORE_PREFIX, sessionId);
-      const r = gate.decide(config, decls, matched, knownState, turnCount, acc.owner, toolName);
+      let knownCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, sessionId));
+      if (knownCategories.length === 0 && parentScopeId) {
+        knownCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, parentScopeId));
+      }
+      const r = gate.decide(config, decls, matched, knownState, turnCount, acc.owner, toolName, knownCategories, after);
       // 🔴 `injectLockless`, NOT `inject` — fix of 2026-08-20, proved sufficient by the TLA+
       //    spec (`TransportCandidateFix.cfg`) BEFORE being written here.
       //    Without the lock we may DELIVER but never WRITE. A `once` document delivered and
@@ -410,6 +510,7 @@ function run(data, emit, options) {
         decision: r.decisionLockless,
         frames: split(segments),
         filteredOut: r.filteredOut,
+        categoryOut: r.categoryOut,
         withheld: r.inject.length - r.injectLockless.length,
       };
     }
@@ -476,7 +577,18 @@ function run(data, emit, options) {
       //    is honest — it is delivered, not attributed.
       const injected = [...new Set(plan.emitted.map(baseId))].filter((d) => acc.owner[d] === a.id);
       if (injected.length === 0) continue;
-      const m = a.message(injected, { fullDoc, config, acc });
+      // 🔴 `emitted` CARRIES THE RAW IDS, AND WITHOUT IT THE BADGE CANNOT KNOW A
+      //    PIECE FROM A DOCUMENT (2026-09-13). The line above maps `baseId` over
+      //    `plan.emitted`, so `injected` holds BASES — the `#j/m` is already gone
+      //    by the time an adapter sees it. A first fix asked `chunkPart(injected[0])`
+      //    and was therefore DEAD ON ARRIVAL in production while its own suite was
+      //    green: the suite fabricated ids carrying `#`, i.e. it tested a caller
+      //    that does not exist. A green on a twin is not a green on the thing.
+      // 🛑 PASS THE RAW IDS, never rebuild them: an adapter that needs to know
+      //    whether a document is chunked MUST read them through `ctx.emitted`.
+      //    Absent ⇒ every consumer falls back to its historical behaviour, so this
+      //    key can never break an adapter that ignores it.
+      const m = a.message(injected, { fullDoc, config, acc, emitted: plan.emitted });
       if (m) msgs.push(m);
     }
     // ⚠️ CHUNK SUFFIX — ADDED ONE SINGLE TIME, HERE (06/08/2026).
@@ -546,10 +658,18 @@ function run(data, emit, options) {
     const filter = filteredOut.length > 0 && index === 1
       ? ` · 🚫 ${filteredOut.length} doc(s) excluded by filterMode/filterList`
       : '';
+    // ⚠️ SAME PRINCIPLE AS `filter` ABOVE, DISTINCT REASON — a doc excluded by
+    //    `category` never bit the target filter at all, it is the SESSION's own
+    //    declared role that silenced it. Merging the two counts would hide
+    //    WHICH mechanism to fix when the number looks wrong.
+    const categoryOut = Array.isArray(res.categoryOut) ? res.categoryOut : [];
+    const categoryBadge = categoryOut.length > 0 && index === 1
+      ? ` · 🏷️ ${categoryOut.length} doc(s) excluded by category`
+      : '';
     // ⚠️ The withholding notice rides the SAME channel as the other badges and
     //    is appended LAST — it is the only one that speaks about what is NOT
     //    there, so it must not be read as a comment on what is.
-    const suffix = badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarm + filter;
+    const suffix = badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarm + filter + categoryBadge;
     emit(res.decision, fullDoc, lib.joinSystemMessage(suffix, avis));
   } catch {
     // fail-open: we ANSWER "nothing to inject", we do not kill the process.
@@ -605,8 +725,31 @@ function noticeOutput(systemMessage) {
   return { systemMessage };
 }
 
+/**
+ * THE OUTPUT AFTER THE TOOL ANSWERED (2026-09-23) — the knowledge travels next to the answer.
+ *
+ * 🔑 OFFICIAL DOCS, READ 2026-09-23: Claude Code and Codex both take
+ *    `hookSpecificOutput.additionalContext` on `PostToolUse` ("appended to the tool's output" /
+ *    "added as extra developer context"). ✅ MEASURED on Claude Code 2.1.280 the same day: a
+ *    PostToolUse `additionalContext` reached the model after a native tool AND after an MCP tool.
+ * 🛑 NO DECISION FIELD, AND NO DENY FORM EVER: the action already ran. `decision` is accepted
+ *    so the shells keep ONE signature, and deliberately ignored — `gate.decide` never refuses
+ *    after the answer, and if a hand-edited config ever made it try, the knowledge is still
+ *    delivered as information instead of a refusal of an action that is already over.
+ * ⚠️ SHARED BY BOTH HARNESSES, like `denyOutput`: the JSON is identical, two copies diverge.
+ * @param {string} _decision ignored, see above
+ * @param {string} fullDoc
+ * @param {string} [systemMessage]
+ */
+function afterOutput(_decision, fullDoc, systemMessage) {
+  if (!fullDoc) return noticeOutput(systemMessage);
+  const out = { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: fullDoc } };
+  if (systemMessage) out.systemMessage = systemMessage;
+  return out;
+}
+
 // ⚠️ `PLAN_PREFIX` IS EXPORTED SO NOBODY RE-SPELLS IT. The daemon needs to
 //    reason about memoized plans; a literal copied into the shell would be a
 //    second truth for one store key, and this repository has paid that bill
 //    (two spellings of a lock address are two locks, i.e. no lock).
-module.exports = { run, denyOutput, noticeOutput, PLAN_PREFIX };
+module.exports = { run, denyOutput, noticeOutput, afterOutput, PLAN_PREFIX };

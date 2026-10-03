@@ -1,7 +1,8 @@
 ---
 match: [commit-msg]
 scope: ["ctxroute"]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # commit-msg-lang.js / commit-msg-check.js / .githooks/commit-msg — the published HISTORY stays English

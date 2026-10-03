@@ -1,6 +1,7 @@
 ---
 match: differential-normalize
-mode: dumb
+mode: smart
+threshold: 34
 ---
 
 # differential-normalize.js — the reader that could make the differentials BLIND

@@ -19,7 +19,8 @@
 'use strict';
 
 const { shouldInjectFor, targetExcluded } = require('./lib-pure');
-const { DRIFT_UNITS, MODES } = require('./frontmatter');
+const { settingRegistry, takeSetting } = require('./frontmatter');
+const { responseRefuses } = require('./response-pure');
 
 // ⚠️ `confirm`/`ask` REMOVED on 05/08/2026 (together with `WRITE_TOOLS`, which only
 //    existed for it). NEVER reintroduce it: ① `ask` escalates to the HUMAN, the
@@ -50,10 +51,10 @@ const { DRIFT_UNITS, MODES } = require('./frontmatter');
 //    A skill is project knowledge — loading it once is enough; a doc is
 //    a reminder of a gesture. Uniformising them would flip ALL the skills at
 //    the first global config posted = silent regression (contract §6).
-const FRAMEWORK_DEFAULTS = { skill: { mode: 'once', global: false }, '': { mode: 'smart', global: true } };
-function rulesOf(source) {
-  return FRAMEWORK_DEFAULTS[source] || FRAMEWORK_DEFAULTS[''];
-}
+// ✅ 23/09/2026: that asymmetry is now DATA in `frontmatter.settingRegistry()` (`mode`:
+//    `global(source)` answers null for `skill`, `framework: { skill: 'once', '': 'smart' }`), read by the ONE
+//    cascade below — `FRAMEWORK_DEFAULTS` held it for `mode` alone, beside four other
+//    resolvers that each re-wrote the same four stages by hand.
 
 // Level ②: the defaults declared for THIS source. Absent = empty object (total
 // fallback — an undeclared category behaves exactly as before).
@@ -63,14 +64,36 @@ function defaultsOf(config, source) {
   return v || {};
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE ONE CASCADE (23/09/2026) — every setting resolves HERE, through the same four stages
+// ═══════════════════════════════════════════════════════════════════════
+// ⚠️ entry > `defaults.{source}` > global (unless the setting has none, or skips it for
+//    this source) > framework default. A stage is accepted only if its value is VALID for
+//    that setting (`takeSetting`), otherwise the cascade GOES DOWN — the TOTAL fallback.
+// 🔴 WHY ONE FUNCTION: there were five resolvers, one per setting, each re-writing the four
+//    stages by hand. They had already diverged once — `threshold` checked validity at
+//    stage ② only, so `0` crossed stages ① and ③ (43 divergence classes, 19/08/2026) — and
+//    `category` shipped with a stage accepted on the mere PRESENCE of its key (22/09/2026).
+//    Both were ONE defect class: a stage rule written N times. It is written once now.
+// 🛑 The per-setting knowledge (validity, global key, framework default) is DATA in
+//    `frontmatter.settingRegistry()`; this function knows no setting by name.
+function resolveSetting(name, config, decl, source) {
+  const s = settingRegistry()[name];
+  const fromEntry = decl ? takeSetting(name, decl[name]) : undefined;
+  if (fromEntry !== undefined) return fromEntry;
+  const fromCategory = takeSetting(name, defaultsOf(config, source)[name]);
+  if (fromCategory !== undefined) return fromCategory;
+  const globalKey = s.global ? s.global(source) : null;
+  if (globalKey && config) {
+    const fromGlobal = takeSetting(name, config[globalKey]);
+    if (fromGlobal !== undefined) return fromGlobal;
+  }
+  return source in s.framework ? s.framework[source] : s.framework[''];
+}
+
 // Effective mode for ONE doc — full cascade above.
 function modeForDoc(config, decl, source) {
-  const rules = rulesOf(source);
-  const cat = defaultsOf(config, source);
-  if (decl && MODES.includes(decl.mode)) return decl.mode;
-  if (MODES.includes(cat.mode)) return cat.mode;
-  if (rules.global && config && MODES.includes(config.mode)) return config.mode;
-  return rules.mode;
+  return resolveSetting('mode', config, decl, source);
 }
 
 // Effective threshold for ONE doc: decl.threshold (POSED by a source from the
@@ -108,12 +131,8 @@ function modeForDoc(config, decl, source) {
 //    `defaultThreshold: 0` reached here. Defense in depth: a threshold is a COUNT of
 //    ticks, so it is an integer >= 1 at EVERY stage, and an invalid value IGNORES ITSELF
 //    and lets the next stage exist (total fallback).
-const validThreshold = (v) => Number.isInteger(v) && v >= 1;
 function thresholdForDoc(config, decl, source) {
-  const cat = defaultsOf(config, source);
-  if (decl && validThreshold(decl.threshold)) return decl.threshold;
-  if (validThreshold(cat.threshold)) return cat.threshold;
-  return validThreshold(config && config.defaultThreshold) ? config.defaultThreshold : 4;
+  return resolveSetting('threshold', config, decl, source);
 }
 
 // Unit of the `smart` counter for ONE doc — CASCADE OF 3 AUTHORITIES (exact mirror of
@@ -124,10 +143,7 @@ function thresholdForDoc(config, decl, source) {
 // `turn` = compares the session's turn counter (turn-count.js gate).
 // ⚠️ Degenerate outside of smart: dumb/once never call this value.
 function driftUnitForDoc(config, decl, source) {
-  const cat = defaultsOf(config, source);
-  if (decl && DRIFT_UNITS.includes(decl.driftUnit)) return decl.driftUnit;
-  if (DRIFT_UNITS.includes(cat.driftUnit)) return cat.driftUnit;
-  return DRIFT_UNITS.includes(config && config.defaultDriftUnit) ? config.defaultDriftUnit : 'tool';
+  return resolveSetting('driftUnit', config, decl, source);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -190,10 +206,7 @@ function excludedTargetsFor(config, source, toolName) {
 // An explicit `false` CANCELS the inheritance: without it, a category moved to
 // enforce would be UN-OPT-OUT-ABLE (the classic dead end of cascades).
 function enforceForDoc(config, decl, source) {
-  const cat = defaultsOf(config, source);
-  if (decl && typeof decl.enforce === 'boolean') return decl.enforce;
-  if (typeof cat.enforce === 'boolean') return cat.enforce;
-  return false;
+  return resolveSetting('enforce', config, decl, source);
 }
 
 // `enforce` FOLLOWS THE CADENCE — it has NO rhythm of its own (05/08/2026).
@@ -217,6 +230,85 @@ function enforceForDoc(config, decl, source) {
 //    reintroduce it: "to block" is not one more semantics than
 //    "enforce", it is the same fact said twice.
 
+// ═══════════════════════════════════════════════════════════════════════
+// `category` — NARROW an injection to sessions carrying a matching category.
+// ═══════════════════════════════════════════════════════════════════════
+//
+// ⚠️ THIS IS NOT A TRIGGER: it never CREATES an injection (same family as
+//    `enforce`/`filterMode` — a behavior key, not `match`/`rules`/`tool`).
+//    A doc/skill/tool-entry declares `category: [...]`; the SESSION carries
+//    its own declared categories (an external fact, supplied by the caller —
+//    same contract as `turnCount`: gate.js NEVER reads a store itself, it
+//    stays pure). Absent on EITHER side = no restriction, parity preserved:
+//    before this key existed, `categoryList` always answered `[]`.
+//
+// ⚠️ CASCADE — 2 LEVELS, NO GLOBAL STAGE, SAME REASONING AS `enforce`:
+//    entry > `defaults.{source}` > (no restriction). A GLOBAL `category`
+//    would silently restrict the very first gesture of every session on
+//    every doc of the fleet — the system one unplugs. An explicit EMPTY
+//    list at the entry does not exist as a distinct value (categoryList of
+//    an absent/invalid declaration IS `[]`), so there is no `enforce:false`
+//    equivalent to "opt out": an entry that wants no restriction simply
+//    omits the key, which is the language's normal default-inheritance shape
+//    everywhere else it does NOT need one (mode/threshold/driftUnit do,
+//    because their FRAMEWORK default is a real value, not "nothing").
+function categoryForDoc(config, decl, source) {
+  // 🔴 FIXED (2026-09-22, found by cadence-differential ①bis): this used to
+  //    accept a stage on the mere PRESENCE of the key (`'category' in decl`),
+  //    never on the VALIDITY of its value — so `{ category: undefined }` (or
+  //    any other form `categoryList` cannot normalize) resolved to `[]` and
+  //    STOPPED the cascade, exactly like a legitimate "explicit no
+  //    restriction", instead of falling through to `defaults.{source}`.
+  //    Every other cascaded setting here accepts a stage only if its value
+  //    is VALID (cf `resolve`/`enforceForDoc`'s `typeof === 'boolean'` guard);
+  //    `category`'s own validity is "normalizes to a NON-EMPTY list" — the
+  //    schema forbids an author from ever writing a valid, deliberately empty
+  //    `category: []` (minItems: 1), so an empty result is ALWAYS invalid
+  //    input, never a decision to fall through on.
+  //    ✅ 23/09/2026: that validity rule is now the registry's `take` for `category`, applied
+  //    by the ONE cascade — the class (a stage accepted on presence) cannot recur per setting.
+  return resolveSetting('category', config, decl, source);
+}
+
+// ⚠️ A doc that names NO category is UNRESTRICTED (the operator's own spec:
+//    "no category = generalist doc") — that is what makes `sessionCategories`
+//    optional everywhere and keeps every pre-existing doc byte-identical.
+// ⚠️ A doc that DOES name categories, on a session that declared NONE, is
+//    EXCLUDED (fail-closed on the RESTRICTION, never fail-open into showing a
+//    scoped doc to an unscoped session — the exact inverse of `enforce`'s own
+//    fail-open, and deliberately so: `enforce` protects against OUR hook
+//    dying, this protects against a doc author's INTENT being ignored).
+function categoryExcluded(config, decl, source, sessionCategories) {
+  const required = categoryForDoc(config, decl, source);
+  if (required.length === 0) return false;
+  // ⚠️ ONE expression, fail-closed BY CONSTRUCTION (23/09/2026): a non-list session is
+  //    excluded (the `&&` short-circuits), an EMPTY list is excluded (`some` of nothing is
+  //    false). It used to be a separate `if (… || length === 0) return true`, whose empty-
+  //    list half repeated what `some` already answers — an equivalent mutant nobody could
+  //    kill, and a sign two readings of one rule sat side by side. Same verdict on every
+  //    input, measured by the cells of `gate.test.js` ("categoryExcluded").
+  //    A SET, not `includes` inside `some` (a nested traversal). Only a real LIST is read:
+  //    a bare string would otherwise become a set of its CHARACTERS and match by accident.
+  const declared = Array.isArray(sessionCategories) ? new Set(sessionCategories) : new Set();
+  return !required.some((c) => declared.has(c));
+}
+
+// `response` — the filter a doc sets on the tool's ANSWER, or `null` when it does not wait for
+// one. Same cascade as every setting (entry > `defaults.{source}` > framework `null`, no global
+// stage — a global value would move every doc of the fleet after the action).
+function responseForDoc(config, decl, source) {
+  return resolveSetting('response', config, decl, source);
+}
+
+// Does this doc belong to the OTHER moment of the action? Before the answer, the docs that
+// wait for it; after the answer, the docs that do not. `after` is `undefined` BEFORE.
+// ⚠️ `!== null` and NOT a truthiness test: the resolved filter is an object or `null`, so the
+//    two readings agree today — but a cascade that one day resolves to another falsy value
+//    must not silently move a doc to the wrong moment. Stated by what the framework poses.
+function otherMoment(config, decl, source, after) {
+  return (responseForDoc(config, decl, source) !== null) !== (after !== undefined);
+}
+
 /**
  * THE gate's decision. PURE — mutates NO argument.
  *
@@ -236,27 +328,60 @@ function enforceForDoc(config, decl, source) {
  * @param {string} [toolName] - the TARGET of the gesture (global filter 52). ABSENT =
  *                           no filter by tool name can bite —
  *                           behaviour identical to BEFORE (parity).
+ * @param {string[]} [sessionCategories] - categories DECLARED for this session
+ *                           (an external fact, never read here — cf `category`
+ *                           block above). ABSENT/empty = behaviour identical to
+ *                           BEFORE this key existed (parity): only docs that
+ *                           themselves declare `category` can be affected.
+ * @param {{response: *}} [after] - the tool's ANSWER, handed over by the shell AFTER the
+ *                           action ran (2026-09-23). ABSENT = the call BEFORE the action,
+ *                           behaviour identical to before `response` existed (parity) except
+ *                           that a doc waiting for an answer is left for later.
  * ⚠️ `injectLockless`/`decisionLockless` = what a caller that CANNOT WRITE may deliver
  *    (2026-08-20). A JSDoc here is a VERIFIED CONTRACT — `tsc` refused the two new fields
  *    until this line declared them, and it was right to.
- * @returns {{ decision: 'none'|'allow'|'deny', inject: string[], injectLockless: string[], decisionLockless: 'none'|'allow'|'deny', state: object, changed: boolean, filteredOut: string[] }}
+ * @returns {{ decision: 'none'|'allow'|'deny', inject: string[], injectLockless: string[], decisionLockless: 'none'|'allow'|'deny', state: object, changed: boolean, filteredOut: string[], categoryOut: string[] }}
  *
  * ⚠️ `changed` = the state REALLY moved — a 100% dumb corpus NEVER
  *    produces a write (perf parity with protect-files, which has no state).
  */
-function decide(config, decls, matched, state, turnCount, owners, toolName) {
+function decide(config, decls, matched, state, turnCount, owners, toolName, sessionCategories, after) {
   const prev = state || {};
   // ⚠️ OWNER source of each doc (acc.owner, posed by the adapter) —
   //    the only entry of level ② of the cascade. ABSENT = cascade as BEFORE,
   //    identically (parity: the differentials see nothing change).
   const src = (doc) => (owners ? owners[doc] : undefined);
+  // ── THE MOMENT OF THE ACTION (2026-09-23) — decided FIRST, and SILENTLY ──
+  //    One action is decided TWICE: before it runs, then after it answered. Each doc belongs
+  //    to exactly ONE of the two moments, so a doc of the other moment leaves THIS decision
+  //    as if the matching half had never selected it — no delivery, no recall, no report.
+  // 🛑 FIRST, before the target filter and `category`: otherwise a doc would be counted in
+  //    `filteredOut`/`categoryOut` at BOTH moments, and the badge would announce one exclusion
+  //    twice for a single action.
+  const present = matched.filter((doc) => !otherMoment(config, decls[doc], src(doc), after));
   // ── GLOBAL FILTER BY TARGET (52): the discarded docs LEAVE the gesture ──
   //    Neither injected nor "recalled" (their counter is not reset) —
   //    exactly as if they had not matched; the call therefore advances the
   //    foreign counters as before (historical contract of the server filter).
   //    RETURNED in `filteredOut`: a filter that cuts silently = a mute hole.
-  const filteredOut = matched.filter((doc) => excludedTargetsFor(config, src(doc), toolName));
-  const kept = matched.filter((doc) => !filteredOut.includes(doc));
+  const filteredOut = present.filter((doc) => excludedTargetsFor(config, src(doc), toolName));
+  // ── `category` (never merged with `filteredOut`: two DISTINCT reasons a doc
+  //    left the gesture — filter ≠ category — same principle as filter ≠
+  //    cadence documented above). Evaluated on what the target filter left. ──
+  // ⚠️ SETS, never `includes` inside `filter` (23/09/2026): that was a traversal inside a
+  //    traversal on the matched docs — O(N²) the day a gesture matches many docs, and the
+  //    complexity gate held it at its ceiling. Membership is now a lookup.
+  const targetOut = new Set(filteredOut);
+  const categoryOut = present.filter(
+    (doc) => !targetOut.has(doc) && categoryExcluded(config, decls[doc], src(doc), sessionCategories),
+  );
+  const leftOut = new Set(filteredOut.concat(categoryOut));
+  // ── THE ANSWER'S FILTER, after the action only — SILENT like a `scope` that did not bite:
+  //    the doc simply does not concern this answer, nothing was excluded by a setting.
+  //    `responseForDoc` is never `null` here: after the answer, only docs waiting for one
+  //    are still present.
+  const kept = present.filter((doc) => !leftOut.has(doc)
+    && !(after !== undefined && responseRefuses(responseForDoc(config, decls[doc], src(doc)), after.response)));
   const matchedSet = new Set(kept);
   const next = {};
   let changed = false;
@@ -272,7 +397,10 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    increment here) — incrementing it anyway = dead disk writes.
   for (const doc of Object.keys(prev)) {
     const entry = prev[doc];
-    if (!matchedSet.has(doc) && entry && modeForDoc(config, decls[doc], src(doc)) === 'smart'
+    // 🛑 AFTER THE ANSWER, NOTHING DRIFTS: the action was ALREADY counted when it was decided
+    //    before it ran. Ticking again here would count every action twice, and a `smart` doc
+    //    would come back after half its threshold — silently, for the whole fleet.
+    if (after === undefined && !matchedSet.has(doc) && entry && modeForDoc(config, decls[doc], src(doc)) === 'smart'
       && driftUnitForDoc(config, decls[doc], src(doc)) === 'tool') {
       // 🛑 PROPAGATE THE EXISTING ENTRY — NEVER REBUILD IT FIELD BY FIELD (2026-08-23).
       //    A foreign action changes ONE quantity: the drift counter. Writing an object
@@ -345,7 +473,11 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
     //    so `dumb` becomes legitimate too (block, pass, block, pass).
     // ⚠️ Do not confuse it with "the doc is no longer injected": in `dumb` it
     //    is re-injected on every call, only the REFUSAL alternates.
-    if (injects && enforceForDoc(config, decls[doc], src(doc)) && !previouslyDenied) {
+    // 🛑 AFTER THE ANSWER, NOTHING IS REFUSED: the action already ran, so a refusal could
+    //    only land on the NEXT, unrelated action — and the answer is content no one here
+    //    controls. `validate` refuses `enforce` + `response`; this is the engine's half, for
+    //    the config nothing validates at runtime.
+    if (after === undefined && injects && enforceForDoc(config, decls[doc], src(doc)) && !previouslyDenied) {
       blocked.push(doc);
     }
     // ⚠️ Write the state ONLY if the mode consumes it: a `dumb` doc always
@@ -422,7 +554,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    one cadence rule diverge, and this repo has paid that twice.
   const decisionLockless = injectLockless.length === 0 ? 'none' : 'allow';
 
-  return { decision, inject, injectLockless, decisionLockless, state: next, changed, filteredOut };
+  return { decision, inject, injectLockless, decisionLockless, state: next, changed, filteredOut, categoryOut };
 }
 
 // Short label of an injected doc (user-only systemMessage) — EXACT REPLICA of
@@ -452,4 +584,4 @@ function docLabel(doc) {
   return title ? title[1].slice(0, 40) : '';
 }
 
-module.exports = { decide, docLabel, modeForDoc, thresholdForDoc, driftUnitForDoc, enforceForDoc, excludedTargetsFor };
+module.exports = { decide, docLabel, modeForDoc, thresholdForDoc, driftUnitForDoc, enforceForDoc, excludedTargetsFor, categoryForDoc, categoryExcluded, responseForDoc };

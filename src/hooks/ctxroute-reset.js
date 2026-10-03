@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const lib = require('../lib-pure');
+const { stateStores } = require('../memory-store-pure');
 const { readStdinJson } = require('../stdin-json');
 // ⚠️ THE CLIENT LANE (2026-08-21) — and this shell is the one whose absence was
 //    MEASURED. The gate had been wired to the daemon while this hook still only
@@ -108,7 +109,11 @@ readStdinJson(
       //    would deliver, after compaction, the end of a document whose beginning has
       //    disappeared — an orphan, unreadable fragment. Purging it is therefore the
       //    CORRECT behavior, not a loss.
-      for (const prefix of ['doc-seen-', 'ctxroute-seen-', 'turn-count-', 'plan-', 'remainder-']) {
+      // ✅ THE LIST IS DERIVED (23/09/2026): every store declared in
+      //    `memory-store-pure.stateStores()` is swept — the SAME declaration that
+      //    gives it its lock class and its eviction class, so a store can no longer
+      //    be locked or evicted without being purged, or the reverse.
+      for (const { prefix } of stateStores()) {
         // ⚠️ ONE KEY PREFIX PER STORE, AND IT REPRODUCES THE DISK SEMANTICS
         //    EXACTLY. In memory a purge is `startsWith`: with an `agent_id` the
         //    scope is `<session>--agent-<id>`, so it matches that one agent and

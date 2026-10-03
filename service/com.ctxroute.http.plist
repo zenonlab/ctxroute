@@ -96,17 +96,66 @@
     -->
     <key>Sockets</key>
     <dict>
+        <!--
+          🔴 AN ARRAY OF FOUR SINCE 2026-09-19, AND THE COUNT IS A CONTRACT.
+             `http.listeners` defaults to 4 (`DEFAULT_LISTENERS`,
+             src/declared-paths-pure.js) and the daemon REFUSES TO START when the
+             number it is handed differs from the number its configuration
+             declares — deliberately: serving fewer would drop that share of
+             EVERY action in silence. So a plist left at one listener is not a
+             smaller capacity, it is a job that never comes up. `test/
+             listeners-count-gate.test.js` is what keeps the two numbers equal.
+          🛑 AND THE SHIM MUST FORWARD ALL OF THEM. `launchd-socket-shim.c`
+             publishes `LISTEN_FDS` = the count launchd returned and duplicates
+             every descriptor onto 3..3+N-1. Declaring four here while the shim
+             forwards the first hands the daemon ONE and it refuses.
+          ⚠️ Whoever wants the pre-2026-09-19 behaviour keeps a SINGLE entry here
+             and writes `"listeners": 1` in the configuration — both sides, or
+             neither.
+        -->
         <key>Listeners</key>
-        <dict>
-            <key>SockNodeName</key>
-            <string>127.0.0.1</string>
-            <key>SockServiceName</key>
-            <string>8787</string>
-            <key>SockType</key>
-            <string>stream</string>
-            <key>SockFamily</key>
-            <string>IPv4</string>
-        </dict>
+        <array>
+            <dict>
+                <key>SockNodeName</key>
+                <string>127.0.0.1</string>
+                <key>SockServiceName</key>
+                <string>8787</string>
+                <key>SockType</key>
+                <string>stream</string>
+                <key>SockFamily</key>
+                <string>IPv4</string>
+            </dict>
+            <dict>
+                <key>SockNodeName</key>
+                <string>127.0.0.1</string>
+                <key>SockServiceName</key>
+                <string>8788</string>
+                <key>SockType</key>
+                <string>stream</string>
+                <key>SockFamily</key>
+                <string>IPv4</string>
+            </dict>
+            <dict>
+                <key>SockNodeName</key>
+                <string>127.0.0.1</string>
+                <key>SockServiceName</key>
+                <string>8789</string>
+                <key>SockType</key>
+                <string>stream</string>
+                <key>SockFamily</key>
+                <string>IPv4</string>
+            </dict>
+            <dict>
+                <key>SockNodeName</key>
+                <string>127.0.0.1</string>
+                <key>SockServiceName</key>
+                <string>8790</string>
+                <key>SockType</key>
+                <string>stream</string>
+                <key>SockFamily</key>
+                <string>IPv4</string>
+            </dict>
+        </array>
     </dict>
 
     <!--

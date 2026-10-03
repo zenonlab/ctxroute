@@ -106,7 +106,10 @@ function main() {
     const origin = process.env.CTXROUTE_FLEET_HOOKS_DIR
       ? 'CTXROUTE_FLEET_HOOKS_DIR' : 'paths.fleetHooksDir()';
     console.error(`REFUSED — fleet root not found: ${FLEET} (address from ${origin}). Nothing written.`);
-    process.exit(1);
+    // 🛑 EXIT CODE SET, NEVER FORCED (2026-10-01): `process.exit` cut the refusal on
+    //    a POSIX pipe. No handle is held, so the process ends NATURALLY with 1.
+    process.exitCode = 1;
+    return;
   }
 
   const rapport = { copy: false, armed: [], deja: [], manual: [], ignores: 0 };

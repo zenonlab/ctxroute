@@ -52,6 +52,7 @@ const { request } = require('./state-client');
 // would simply go uncounted, costing a turn-unit document its re-injection.
 const { routes: protocolRoutes } = require('../protocol-routes-pure');
 const { readStdinJson } = require('../stdin-json');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 const paths = require('../paths');
 
 const STORE_PREFIX = 'turn-count-';
@@ -124,7 +125,9 @@ function sayTheRefusal(error, sessionId, config) {
   } catch {
     return; // fail-open: a witness never costs a turn
   }
-  if (avis) console.log(JSON.stringify({ systemMessage: avis }));
+  // 🛑 Through `stdout-exit`, like every hook that speaks: the caller's exit
+  //    below then waits for the drain instead of cutting it.
+  if (avis) printThenExit(JSON.stringify({ systemMessage: avis }));
 }
 
 readStdinJson(
@@ -185,7 +188,7 @@ readStdinJson(
           (response, error) => {
             if (response) process.exit(0);
             sayTheRefusal(error, sessionId, config);
-            process.exit(0);
+            exitUnlessPrinting();
           },
         );
         return;

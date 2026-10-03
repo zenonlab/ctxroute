@@ -57,6 +57,7 @@ const lib = require('../lib-pure');
 const { readCorpus } = require('../corpus');
 const { sessionDocs } = require('../sources/session');
 const { readStdinJson } = require('../stdin-json');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 const paths = require('../paths');
 // ⚠️ EMISSION LAYER MANDATORY — no emitter composes its output
 //    itself. Sealed by `emission-core-gate.test.js`: every file that
@@ -121,15 +122,17 @@ readStdinJson(
       //    output shape would diverge at the first change — the defect class
       //    this repository exists to fight.
       // Empty frame (neither content nor announcement) ⇒ silence, like the PreToolUse gate.
+      // 🛑 PRINT, THEN LEAVE ONCE STDOUT HAS DRAINED — the Codex wiring declares
+      //    `--budget 0`, so a session corpus above 64 KB is ROUTINE here, and
+      //    `console.log` + `process.exit` cut it on a POSIX pipe (2026-10-01).
       const emit = (plan) => {
         if (!plan || plan.text === '') process.exit(0);
-        console.log(JSON.stringify({
+        printThenExit(JSON.stringify({
           hookSpecificOutput: {
             hookEventName: 'SessionStart',
             additionalContext: plan.text,
           },
         }));
-        process.exit(0);
       };
 
       // ── CLIENT LANE: the QUEUE belongs to the daemon, so the daemon splits ──
@@ -185,7 +188,9 @@ readStdinJson(
       );
       emit(res ? res.plan : emission.split(fresh, budgetMax, 1)[0]);
     } catch {
-      process.exit(0); // fail-open (missing docs/session folder included)
+      // fail-open (missing docs/session folder included) — but never on top of
+      // a print already in flight, which would cut it.
+      exitUnlessPrinting();
     }
   },
   () => process.exit(0)

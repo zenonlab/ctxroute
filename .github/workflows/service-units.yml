@@ -260,6 +260,63 @@ jobs:
         shell: bash
 
 
+  # ═══════════════════════════════════════════════════════════════════════
+  # 🔑 THE DELIBERATE ALTERNATIVE, 2026-09-17 — see com.ctxroute.http.eager.plist
+  #    and service/README.md ("Bounding the accept queue") for the trade-off.
+  #    NO window-closed proof and NO shim-sabotage cell here: this mode never
+  #    holds the socket across a death and never compiles a shim, so neither
+  #    property exists to prove — testing for them would certify something
+  #    this mode does not claim.
+  # ═══════════════════════════════════════════════════════════════════════
+  macos-eager:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: load the agent (eager mode — direct bind, full LISTEN_BACKLOG)
+        shell: bash
+        env:
+          CTXROUTE_MACOS_MODE: eager
+        run: |
+          set +e
+          sh service/install-macos.sh install | tee install.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 78 ]; then
+            echo "::error::PRECONDITION NOT MET on this runner — no reachable launchd domain. The agent was NOT judged."
+            exit 1
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          echo "CTXROUTE_PORT=$(sed -n 's/^ctxroute-port=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+          echo "CTXROUTE_TARGET=$(sed -n 's/^ctxroute-launchd-target=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+
+      # ⚠️ RunAtLoad started the daemon at `bootstrap` above — unlike the
+      #    socket-activated job, this request does NOT start the first
+      #    instance, it reaches one already running.
+      - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
+        shell: bash
+
+      - name: diagnose — why did it not answer
+        if: failure()
+        shell: bash
+        run: |
+          echo "--- launchd view of the agent ---"
+          launchctl print "${CTXROUTE_TARGET:-gui/$(id -u)/com.ctxroute.http.eager}" 2>&1 | head -60 || true
+          echo "--- the installed plist ---"
+          cat "$HOME/Library/LaunchAgents/com.ctxroute.http.eager.plist" || true
+          echo "--- what the daemon said to the unified log ---"
+          log show --last 10m --style compact --predicate 'process == "node"' 2>&1 | tail -60 || true
+
+      - if: always()
+        run: |
+          CTXROUTE_MACOS_MODE=eager sh service/install-macos.sh uninstall
+        shell: bash
+
   windows:
     runs-on: windows-latest
     steps:
@@ -269,6 +326,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # 🔴 A CONFIGURATION, AT THE OS-CONVENTIONAL ADDRESS, BEFORE THE INSTALLER
+      #    (2026-10-01). Since the dedicated adapter became the default (2026-09-02)
+      #    the installer DECLARES its address INTO a configuration and refuses to
+      #    invent one — correctly. This runner had none, so every run since then
+      #    stopped on that refusal and the task was never judged. An empty object
+      #    is what a fresh operator machine holds: the installer writes the
+      #    address, the daemon reads it back. Never a value typed here.
+      - name: provide the operator configuration
+        shell: bash
+        run: |
+          mkdir -p "$APPDATA/ctxroute"
+          echo '{}' > "$APPDATA/ctxroute/ctxroute-config.json"
 
       # ⚠️ Driven from bash so the 78 branch is written ONCE per job in the same
       #    form as the other two — the installer itself is PowerShell, as an
@@ -289,8 +359,11 @@ jobs:
           #    return glued to the port would build a malformed URL — a failure
           #    that reads like "the daemon never answered". Harmless elsewhere.
           echo "CTXROUTE_PORT=$(sed -n 's/^ctxroute-port=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
+          # The address the daemon really binds (the dedicated adapter by default),
+          # printed by the installer from the same resolution point as the port.
+          echo "CTXROUTE_ADDRESS=$(sed -n 's/^ctxroute-host=//p' install.log | tr -d '\r' | tail -n 1)" >> "$GITHUB_ENV"
 
-      - run: sh service/verify-responds.sh "$CTXROUTE_PORT"
+      - run: sh service/verify-responds.sh "$CTXROUTE_PORT" "$CTXROUTE_ADDRESS"
         shell: bash
 
       # ⚠️ ON FAILURE, ASK THE SUPERVISOR WHAT IT DID — `LastTaskResult` tells a

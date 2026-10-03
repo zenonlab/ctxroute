@@ -547,25 +547,39 @@ function shouldSkip(rule, context, toolInput) {
     const src = d.additions.length ? textValues(toolInput, 0, null, undefined, d) : brut;
     return src.chunks.filter((_, i) => d.guard(src.keys[i])).map(norm);
   };
-  const values = guard('scope');
+  // ⚠️ The CONTEXT remains a SEPARATE value, never glued to the params: glued,
+  //    the end of the params and the start of the context fabricated a pattern that
+  //    exists nowhere (`…ex` + `plain.js` = "explain.js"). Same class
+  //    as the concatenation above, fixed before it.
+  // 🛑 `exclude` READS ITS OWN AXIS, never `scope`'s. Reusing the list computed above
+  //    was a REAL bug caught by the test the same hour: the two axes are declared
+  //    separately precisely so they can differ, and sharing one universe made the
+  //    `exclude` axis silently inert — an operator that accepts a value and ignores it.
+  // ⚠️ The context is a LIST since 19/08/2026 (every biting candidate), and stays
+  //    ONE STRING on the `tool`/`servers` axes (the tool name). `concat` accepts both
+  //    without a single conditional: an array is spread, a scalar is appended —
+  //    totality by CONSTRUCTION, where a `Array.isArray` guard would be one more
+  //    branch to keep alive for nothing.
+  // 🛑 COMPUTED UNCONDITIONALLY, never behind `Array.isArray(rule.exclude)`: the verdict
+  //    below ignores the universe when there is no `exclude`, so a guard here would change
+  //    no outcome — an EQUIVALENT mutant, avoided by construction (same doctrine as above).
+  const excludeUniverse = guard('exclude').concat(
+    Array.isArray(context) ? context.map(norm) : norm(context),
+  );
+  return filtersRefuse(rule, guard('scope'), excludeUniverse);
+}
+
+// ⚠️ THE VERDICT OF `scope`/`exclude`, SEPARATED FROM THE TRAVERSAL THAT FEEDS IT (2026-09-23).
+//    `shouldSkip` reads a GESTURE's parameters; the `response` setting reads what the tool
+//    ANSWERED. Two universes, ONE semantics — ∃ for `scope` (AND of OR groups), ∀¬ for
+//    `exclude` — and a semantics written twice drifts (㊱, ㊳). Both callers hand over their
+//    values ALREADY NORMALISED; this function never traverses anything.
+// 🛑 `excludeUniverse` is EVERY value `exclude` must see, context included: the caller builds
+//    it, because only the caller knows what its context is (a candidate path, a tool name —
+//    or nothing at all, for a response).
+function filtersRefuse(rule, values, excludeUniverse) {
   if (Array.isArray(rule.exclude)) {
-    // ⚠️ The CONTEXT remains a SEPARATE value, never glued to the params: glued,
-    //    the end of the params and the start of the context fabricated a pattern that
-    //    exists nowhere (`…ex` + `plain.js` = "explain.js"). Same class
-    //    as the concatenation above, fixed before it.
-    // 🛑 `exclude` READS ITS OWN AXIS, never `scope`'s. Reusing the list computed above
-    //    was a REAL bug caught by the test the same hour: the two axes are declared
-    //    separately precisely so they can differ, and sharing one universe made the
-    //    `exclude` axis silently inert — an operator that accepts a value and ignores it.
-    // ⚠️ The context is a LIST since 19/08/2026 (every biting candidate), and stays
-    //    ONE STRING on the `tool`/`servers` axes (the tool name). `concat` accepts both
-    //    without a single conditional: an array is spread, a scalar is appended —
-    //    totality by CONSTRUCTION, where a `Array.isArray` guard would be one more
-    //    branch to keep alive for nothing.
-    const universe = guard('exclude').concat(
-      Array.isArray(context) ? context.map(norm) : norm(context),
-    );
-    if (rule.exclude.some((ex) => universe.some((u) => u.includes(norm(ex))))) return true;
+    if (rule.exclude.some((ex) => excludeUniverse.some((u) => u.includes(norm(ex))))) return true;
   }
   // ⚠️ `scope` absent OR EMPTY array = "no filter": without the length
   //    check, `[].some()` = false → the rule would be SILENTLY SKIPPED.
@@ -709,6 +723,7 @@ module.exports = {
   norm,
   extractFilePaths,
   shouldSkip,
+  filtersRefuse,
   scopeGroups,
   bashCandidates,
   textValues,

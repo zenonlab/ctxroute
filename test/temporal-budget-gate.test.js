@@ -243,13 +243,17 @@ test('NEGATIVE: the WIRING really reddens on a fabricated occurrence', () => {
 //    INVISIBLE to the gate and the gate could not SAY it was invisible — which
 //    is indistinguishable from an oversight. 📐 MEASURED 2026-08-21: 1
 //    occurrence, `test/client-core.test.js` (a tick used to prove a promise
-//    settles without a timer).
+//    settles without a timer). RE-DECIDED 2026-09-29: 2 occurrences — the
+//    second, `test/socket-cut.test.js` (2026-09-24), resolves ONE tick after a
+//    socket's `close` event instead of inside it. It waits for an EVENT and
+//    guesses no duration: a tick, kept. It shipped undeclared and this cell
+//    was red from that day until this re-decision.
 //
 // ⚠️ THE COUNT IS AN EQUALITY, like the ratchet: a NEW `setImmediate` reddens
 //    here, and the fix is to RE-DECIDE it (still a tick ⇒ raise the number
 //    with the reason · a disguised wait ⇒ delete the call), never to widen the
 //    clause in silence.
-const OUT_OF_SCOPE_TICK = { atom: 'setImmediate', count: 1 };
+const OUT_OF_SCOPE_TICK = { atom: 'setImmediate', count: 2 };
 
 test('OUT OF SCOPE: `setImmediate` is a TICK, declared and counted — never an atom', () => {
   // ① It must NOT be an atom of the detection rule: enrolling it would demand

@@ -1,6 +1,7 @@
 ---
 match: [carryover-pure.js, carryover-pure.test.js, http-carryover.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # carryover-pure.js — a frame that never connects no longer COSTS the content
 

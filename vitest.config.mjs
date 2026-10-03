@@ -40,7 +40,7 @@ const EXCLUDED = [ // basenames, compared by classifySuites before prefixing
 //    a new suite that spawns lands in `integration` by itself, so the fast
 //    loop CANNOT silently get heavier. Details and measurements:
 //    `vitest-projects.mjs`.
-const { unit, integration } = classifySuites(import.meta.dirname, EXCLUDED);
+const { unit, integration, daemon } = classifySuites(import.meta.dirname, EXCLUDED);
 
 export default defineConfig({
   test: {
@@ -91,6 +91,30 @@ export default defineConfig({
           //    read. The cure is then to ISOLATE ITS STATE, never to bring back
           //    sequential execution: the slowness would return for everyone.
           sequence: { concurrent: true },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'daemon',
+          include: daemon,
+          // 🔴 THE THIRD LANE, 2026-09-20, AND IT EXISTS FOR A MEASURED DEFECT.
+          //    These suites BIND REAL ADDRESSES and fork real daemons. Run
+          //    beside one another they take each other's ports and reset each
+          //    other's connections: ONE full run produced 16 reds, and NOT ONE
+          //    of them was an assertion — `ECONNRESET`, `ETIMEDOUT`, "never
+          //    served". `dual-transport` renders 5/5 ALONE, twice.
+          // 🛑 `fileParallelism: false` IS THE ONLY SETTING THAT FIXES IT, and
+          //    knowing why matters: `sequence.concurrent` orders the tests
+          //    INSIDE a file, and the race measured here is BETWEEN files.
+          //    Serialising within a file would have looked like a fix and
+          //    changed nothing — `scale-bench` already carried that half.
+          // ⚠️ THE PRICE IS REAL AND IT IS THE POINT OF A SEPARATE LANE: only
+          //    these 23 suites pay it, the other 161 keep their parallelism.
+          //    A red that is really a race is a red people stop reading, and a
+          //    suite nobody reads protects nothing.
+          fileParallelism: false,
+          sequence: { concurrent: false },
         },
       },
     ],

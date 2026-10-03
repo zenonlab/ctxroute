@@ -218,4 +218,24 @@ const HOOK_OUTPUT_BUDGET = {
   codex: UNMEASURED,
 };
 
-module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, HOOK_OUTPUT_BUDGET, ABSENT, UNMEASURED };
+// ═══════════════════════════════════════════════════════════════════════
+// WHERE A HARNESS SAYS "THE TOOL HAS ANSWERED", AND WHERE IT PUTS THE ANSWER (2026-09-23)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 The `response` setting decides a doc AFTER the tool ran, on what it answered. Which event
+//    carries that moment, and under which field the answer travels, are a third party's names —
+//    DATA, read by `lib-pure.afterAnswer`, never a literal in a shell.
+// 📐 DOC-FIRST, read 2026-09-23: Claude Code `code.claude.com/docs/en/hooks` (PostToolUse:
+//    `tool_response`, MCP results included) · Codex `learn.chatgpt.com/docs/hooks` (PostToolUse:
+//    `tool_response`; Bash, apply_patch, MCP and local function tools — NOT hosted tools such as
+//    WebSearch). ✅ MEASURED on Claude Code 2.1.280 the same day by a real PostToolUse hook: the
+//    field is present on every tool, and an MCP result with structured content arrives as a JSON
+//    STRING (`response-pure.js` unfolds it).
+// ⚠️ A harness with no such event simply has no entry: its shell hands over no answer, and every
+//    doc waiting for one stays silent there — a degradation `doctor --harness` names, never a
+//    breakage (Windsurf and Kiro, 2026-09-23: their post-tool hooks cannot inject context).
+const AFTER_ANSWER = {
+  claudeCode: { eventField: 'hook_event_name', event: 'PostToolUse', responseField: 'tool_response' },
+  codex: { eventField: 'hook_event_name', event: 'PostToolUse', responseField: 'tool_response' },
+};
+
+module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, HOOK_OUTPUT_BUDGET, AFTER_ANSWER, ABSENT, UNMEASURED };

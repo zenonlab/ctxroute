@@ -1,7 +1,7 @@
 ---
 match: doc-drift-gate.test.js
 mode: smart
-threshold: 15
+threshold: 18
 ---
 # doc-drift-gate.test.js — a doc that LIES is worse than no doc (2026-08-06)
 ⚠️ **BORN OF A LIVED DEFECT**: on 2026-08-03, THREE docs taught the OPPOSITE of the code, fixed only because an agent HAPPENED to pass over them. An injected doc carries the tone of a proven invariant — nobody questions it. Limit case reached the same day: the GATE **and** its DOC said the same FALSE thing (two ramparts agreeing with each other, both off target); it took a HUMAN audit, exactly what 0-human forbids.

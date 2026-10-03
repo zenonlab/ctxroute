@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"state-crdt-pure.js","scope":["ctxroute"]},{"pattern":"state-crdt-pure.test.js","scope":["ctxroute"]},{"pattern":"state-crdt-pure.property.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 47
 ---
 # state-crdt-pure — WRITES THAT COMMUTE, so no lock has to be right (2026-08-23)
 

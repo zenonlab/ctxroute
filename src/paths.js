@@ -181,6 +181,57 @@ function httpEndpoint() {
   });
 }
 
+// EVERY listening point, derived ONCE from the address above (2026-09-18).
+// 🛑 ONE DOOR, because there are TWO consumers: the daemon BINDS these and
+//    `tools/wiring-generate.js` POSTS to them. Letting each call `httpEndpoint()`
+//    and expand the list on its own side rebuilds the 2026-08-25 defect — one
+//    fact in two places, agreeing by luck, compared by nothing — on a lane with
+//    NO fallback where one divergence loses every frame of every action.
+// ⚠️ With nothing declared this returns exactly ONE address, byte for byte the
+//    historical behaviour: zero default change is the acceptance criterion.
+function httpListenEndpoints() {
+  return declared.listenEndpoints(httpEndpoint());
+}
+
+// HOW MANY THREADS THE DAEMON MAY RUN — read RAW, judged next door (2026-09-20).
+// 🛑 IT IS NOT PART OF THE ADDRESS, AND THAT SEPARATION IS THE POINT. `http` is
+//    ONE grouped key because an address is ONE fact; `workers` merely LIVES
+//    under it, the way a pool size lives beside the sockets it will hold.
+//    Nothing binds it and the wiring generator never posts to it, so folding it
+//    into `httpEndpoint()` would widen an object every consumer compares whole.
+// 🛑 AND IT IS NOT VALIDATED HERE. Every refusal about a pool — above the
+//    ceiling, not an integer, more threads than sockets — belongs to
+//    `worker-pool-pure.js`, pure and mutated. Two validators for one key is two
+//    truths, and the day they disagree one of them is refusing a value the
+//    other has already accepted with nobody able to say which is the rule.
+// ⚠️ ABSENT, UNREADABLE OR MALFORMED ⇒ `null` ⇒ NO POOL, i.e. today's daemon
+//    byte for byte. An unreadable config is an ABSENT config here exactly as it
+//    is everywhere else in this module.
+function httpWorkers() {
+  const declaredHttp = configuredValue(declared.HTTP_KEY);
+  if (!declaredHttp || typeof declaredHttp !== 'object' || Array.isArray(declaredHttp)) return null;
+  const value = /** @type {{workers?: unknown}} */ (declaredHttp).workers;
+  return value === undefined ? null : value;
+}
+
+// WHEN THE DAEMON RUNS — read RAW, judged next door (2026-09-29).
+// 🛑 SAME SPLIT AS `httpWorkers()` AND FOR THE SAME REASON: `lifecycle` and
+//    `idleSeconds` LIVE under `http` (they govern the daemon that owns it) but
+//    they are not part of the address, and every refusal about them belongs to
+//    `lifecycle-pure.js`, pure and mutated. Two validators for one key would be
+//    two truths.
+// ⚠️ ABSENT, UNREADABLE OR MALFORMED `http` ⇒ both fields `undefined` ⇒ the
+//    framework decides (`auto`, thirty minutes).
+/** @returns {{lifecycle: unknown, idleSeconds: unknown}} */
+function httpLifecycle() {
+  const declaredHttp = configuredValue(declared.HTTP_KEY);
+  if (!declaredHttp || typeof declaredHttp !== 'object' || Array.isArray(declaredHttp)) {
+    return { lifecycle: undefined, idleSeconds: undefined };
+  }
+  const group = /** @type {{lifecycle?: unknown, idleSeconds?: unknown}} */ (declaredHttp);
+  return { lifecycle: group.lifecycle, idleSeconds: group.idleSeconds };
+}
+
 // Corpus of the MCP docs. Env var RESERVED for tests and for doctor.js.
 function docsDir() {
   return declarableDir(declared.DOCS_DIR_KEY, process.env.CTXROUTE_DOCS_DIR, path.join(ROOT, 'docs', 'mcp'));
@@ -502,7 +553,7 @@ function archivePath(startDir) {
 }
 
 module.exports = {
-  configPath, conventionalConfigPath, docsDir, stateDir, httpEndpoint,
+  configPath, conventionalConfigPath, docsDir, stateDir, httpEndpoint, httpListenEndpoints, httpWorkers, httpLifecycle,
   gitCommonDir, steeringDir, planPath, archivePath,
   fleetHooksDir, fleetHooksLabel, fleetHooksSegments,
   transcriptsDir, harnessRoots,

@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"loader.js","scope":["ctxroute"]},{"pattern":"loader.test.js","scope":["ctxroute"]},{"pattern":"oracle.js","scope":["ctxroute"]},{"pattern":"shadow-relic-extinct.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # loader.js / oracle.js — the switch-over survivors (the shadow itself is DELETED)
 

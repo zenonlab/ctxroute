@@ -147,6 +147,10 @@ function boundCeiling(defaults) {
 //    transport cannot gain a check the other silently lacks.
 /** The two coordinate names. ONE spelling each, shared by every writing and every reading. */
 const COORD_NAMES = Object.freeze({ index: 'frame', total: 'frames' });
+// The config key of the moment AFTER the tool answered — also the value a consumer's `framed` names.
+// ⚠️ A FUNCTION, never a module-level literal: a load-time string is a STATIC mutant (measured
+//    here on 2026-08-22, five of eight event names survived).
+const afterBandwidth = () => 'afterFrames';
 
 /** The transports a declaration may travel on. An unknown one is a NAMED REFUSAL, never a fallback. */
 const KNOWN_TRANSPORTS = Object.freeze(['command', 'http']);
@@ -355,12 +359,35 @@ function checkModule(spec) {
 }
 
 /**
+ * WHICH listening point carries frame `k` — ROUND ROBIN, and the rule is the
+ * whole reason for spreading at all.
+ *
+ * 🔑 The accept queue is capped PER SOCKET, so N sockets are N queues. Sending
+ *    every frame to the first one would OPEN the others and use none of them —
+ *    capacity that exists and nobody reaches, which is worse than none because
+ *    it READS as a margin on a healthy start line.
+ * ⚠️ DETERMINISTIC by construction (a pure function of `k`): the drift gate
+ *    compares a generated wiring with the live one byte for byte, so anything
+ *    spreading by luck would report divergences that are not there.
+ * ⚠️ Frames are 1-based and endpoints 0-based — the `- 1` is that translation
+ *    and nothing else.
+ * @param {{host?: string, port?: number}[]} endpoints
+ * @param {number} k 1-based frame number
+ * @returns {{host?: string, port?: number}}
+ */
+function frameEndpoint(endpoints, k) {
+  return endpoints[(k - 1) % endpoints.length];
+}
+
+/**
  * Builds the ordered declaration list the harness must execute.
  *
  * @param {any} manifest - the parsed `wiring.json`.
- * @param {{root: string, frames: number, host?: string, port?: number, routePath?: string, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
+ * @param {{root: string, frames: number, afterFrames?: *, host?: string, port?: number, endpoints?: {host?: string, port?: number}[], routePath?: string, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
  *   - `root`: absolute repo root, POSIX-separated, no trailing slash.
  *   - `frames`: the bandwidth of one action (`frames` in ctxroute-config.json).
+ *   - `afterFrames`: the bandwidth of the moment AFTER the tool answered (`afterFrames` in
+ *      ctxroute-config.json) — read only when a consumer declares `framed: "afterFrames"`.
  *   - `host`/`port`: the daemon's listening address (`http` in ctxroute-config.json,
  *      read WHOLE through `paths.httpEndpoint()`) — the http transport ONLY.
  *   - `routePath`: the GATE route the daemon serves, read from its single owner
@@ -373,7 +400,19 @@ function checkModule(spec) {
  */
 function plan(manifest, machine) {
   if (!manifest || typeof manifest !== 'object') fail('unreadable manifest');
-  const { root, frames, host, port, routePath, laneFlag, stateConsumers, settingsPath } = machine || {};
+  const {
+    root, frames, afterFrames, host, port, routePath, laneFlag, stateConsumers, settingsPath,
+  } = machine || {};
+  // ⚠️ THE LISTENING POINTS ARE A MACHINE FACT LIKE THE ADDRESS ITSELF, derived by
+  //    their single owner (`paths.httpListenEndpoints()`) and never expanded here:
+  //    the daemon BINDS that same list, so a second derivation on this side is the
+  //    2026-08-25 divergence rebuilt — one truth, two places, compared by nothing,
+  //    on a lane where a wiring pointing at a port nobody holds loses every frame.
+  // 🛑 ABSENT ⇒ the single historical address, so a caller that knows nothing of
+  //    this generates byte-for-byte what it generated before.
+  const endpoints = Array.isArray(machine && machine.endpoints) && machine.endpoints.length > 0
+    ? machine.endpoints
+    : [{ host, port }];
 
   if (typeof root !== 'string' || root.length === 0) fail('no repository root supplied');
   if (!Number.isInteger(frames) || frames < 1) fail(`\`frames\` must be an integer >= 1, got ${JSON.stringify(frames)}`);
@@ -451,8 +490,12 @@ function plan(manifest, machine) {
   for (const spec of consumers) {
     if (!spec || typeof spec !== 'object') fail('a consumer is not an object');
     checkModule(spec);
-    if (seen.has(spec.module)) fail(`\`${spec.module}\` is declared twice — a duplicate declaration means the hook runs twice per event`);
-    seen.add(spec.module);
+    // ⚠️ A MODULE IS UNIQUE PER EVENT, never across events (2026-09-23): the gate shell serves
+    //    the moment BEFORE the action and the moment AFTER the answer, and those are two events.
+    //    What a duplicate really breaks is the SAME hook running twice on ONE event.
+    const identity = `${spec.module}@${spec.event}`;
+    if (seen.has(identity)) fail(`\`${spec.module}\` is declared twice on ${JSON.stringify(spec.event)} — a duplicate declaration means the hook runs twice per event`);
+    seen.add(identity);
 
     if (!knownEvents().includes(spec.event)) fail(`\`${spec.module}\`: unknown event ${JSON.stringify(spec.event)}`);
     const matcher = spec.matcher === undefined ? null : spec.matcher;
@@ -478,8 +521,29 @@ function plan(manifest, machine) {
     // coordinates. `frames` has ONE source (ctxroute-config.json) and reaches
     // here as a number: re-typing it in the manifest would recreate the two
     // places for one figure that `doctor --settings` exists to confront.
-    const copies = spec.framed === true ? frames : 1;
-    if (spec.framed !== undefined && typeof spec.framed !== 'boolean') fail(`\`${spec.module}\`: \`framed\` is a boolean`);
+    // 🔑 `framed` NAMES WHICH BANDWIDTH (2026-09-23): `true` = `frames`, the action's; the string
+    //    `"afterFrames"` = the moment after the tool answered. That moment carries the whole answer
+    //    in EVERY frame's body (the harness POSTs its payload to each declaration), so 32 frames
+    //    would ship a 100 KB answer 32 times per tool call — its bandwidth is declared apart,
+    //    small, and what does not fit goes to the queue for the next action (never lost).
+    if (spec.framed !== undefined && spec.framed !== true && spec.framed !== false && spec.framed !== afterBandwidth()) {
+      fail(`\`${spec.module}\`: \`framed\` is true, false or ${JSON.stringify(afterBandwidth())}`);
+    }
+    // 🔑 THE MOMENT AFTER THE ANSWER IS OFF UNLESS ASKED FOR (2026-09-23): `afterFrames` absent or
+    //    `0` ⇒ that consumer produces NOTHING. It used to be a REFUSAL, which meant a clean install
+    //    without the key could not generate its wiring at all, and the operator could not switch
+    //    the moment off without editing `settings.json` by hand. Measured the day it went live: two
+    //    extra POSTs after EVERY tool call, for a capacity no document yet used. Off is the default;
+    //    a count is asked for only by someone who wants the moment.
+    // 🛑 ONLY absent and 0 mean off. Anything else that is not an integer >= 1 stays a NAMED
+    //    refusal: a typo must never read as "off".
+    if (spec.framed === afterBandwidth() && (afterFrames === undefined || afterFrames === null || afterFrames === 0)) continue;
+    if (spec.framed === afterBandwidth() && (!Number.isInteger(afterFrames) || afterFrames < 1)) {
+      fail(`\`${spec.module}\` is framed on \`${afterBandwidth()}\`, which must be 0 (off) or an integer >= 1, got ${JSON.stringify(afterFrames)} — a guessed count silently changes what the moment after the answer can deliver`);
+    }
+    const isFramed = spec.framed === true || spec.framed === afterBandwidth();
+    const bandwidth = spec.framed === afterBandwidth() ? afterFrames : frames;
+    const copies = isFramed ? bandwidth : 1;
 
     // 🛑 EVERY DECLARATION CARRIES A BOUND, AND AN ABSENT ONE IS A REFUSAL.
     //    A hook with no `timeout` inherits the harness default in silence — the
@@ -491,7 +555,7 @@ function plan(manifest, machine) {
     // ⚠️ CHECKED LAST, after `framed` is known to be a boolean: a malformed
     //    `framed` must be told to the reader as a malformed `framed`, not as a
     //    missing timeout on a consumer that never claimed to need one.
-    if (spec.framed === true) {
+    if (isFramed) {
       if (spec.timeout !== undefined) {
         fail(`\`${spec.module}\`: a framed consumer must NOT declare its own \`timeout\` — its bound is \`${gateBoundPath()}\`, and two places for one number is the divergence this manifest exists to remove`);
       }
@@ -504,7 +568,7 @@ function plan(manifest, machine) {
     //    the shape of failure this framework refuses outright. The refusal is
     //    named, and the fix is the operator's (declare `kind: "command"`, or
     //    move that argument into the endpoint).
-    const onHttp = spec.framed === true && transport.kind === 'http';
+    const onHttp = isFramed && transport.kind === 'http';
     if (onHttp && args.length > 0) {
       fail(`\`${spec.module}\`: a framed consumer on the \`${transport.kind}\` transport cannot carry \`args\` (${JSON.stringify(args)}) — a URL has no argv, so those arguments would be silently DROPPED from the wiring`);
     }
@@ -512,7 +576,7 @@ function plan(manifest, machine) {
     for (let k = 1; k <= copies; k += 1) {
       // ONE computation of the pair (which frame, out of how many); the
       // transport below only chooses how to WRITE it.
-      const coords = spec.framed === true ? coordinates(k, frames) : null;
+      const coords = isFramed ? coordinates(k, bandwidth) : null;
       // The bound is written by the SAME pass that writes the frame, so the
       // sixteen cannot diverge: there is one number and one loop.
       if (onHttp) {
@@ -525,7 +589,8 @@ function plan(manifest, machine) {
           event: spec.event,
           matcher,
           type: transport.kind,
-          url: `${transport.kind}://${host}:${port}${routePath}?${asQuery(coords)}`,
+          url: `${transport.kind}://${frameEndpoint(endpoints, k).host}:`
+            + `${frameEndpoint(endpoints, k).port}${routePath}?${asQuery(coords)}`,
           timeout: bound,
           // Declared wins; the derivation is the written default.
           statusMessage: transport.statusMessage === undefined ? tokenOf(root) : transport.statusMessage,
@@ -539,11 +604,13 @@ function plan(manifest, machine) {
       //    declarations have never carried one, so deriving a default here
       //    would rewrite every generated command declaration for a key nobody
       //    asked for — a silent change to the wiring of every port.
-      const spoken = spec.framed === true && transport.statusMessage !== undefined
+      // ⚠️ `isFramed`, NEVER `spec.framed === true` (2026-09-23): the after moment is framed too,
+      //    and reading the boolean alone dropped its bound — caught by its own cell the same hour.
+      const spoken = isFramed && transport.statusMessage !== undefined
         ? { statusMessage: transport.statusMessage } : {};
       out.push({
         event: spec.event, matcher, type: 'command', command,
-        timeout: spec.framed === true ? bound : spec.timeout,
+        timeout: isFramed ? bound : spec.timeout,
         ...spoken,
       });
     }

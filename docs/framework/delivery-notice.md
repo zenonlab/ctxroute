@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"delivery-notice-pure","scope":["ctxroute"]},{"pattern":"http-lane-differential.test.js","scope":["ctxroute"]},{"pattern":"delivery-notice-integration.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 25
+threshold: 33
 ---
 # delivery-notice-pure.js — telling the human whether an invocation finished
 

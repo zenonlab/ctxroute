@@ -421,7 +421,12 @@ const NUMBER = /[\u3220-\u3229\u3248-\u324F\u32B1-\u32BF\u2460-\u24FF\u3251-\u32
 function openOutsideTable(text) {
   const l = text.split('\n');
   const openRows = l.filter((x) => x.startsWith('## ') && x.includes('OUVERT') && NUMBER.test(x));
-  const debut = l.findIndex((x) => x.includes('CE QUI RESTE OUVERT'));
+  // 🔴 L'ANCRE EST UN TITRE, JAMAIS UNE LIGNE QUI CITE LA PHRASE (20/09/2026).
+  //    Une phrase ORDINAIRE du journal la contenait, et ce volet a ancré 2 600
+  //    lignes trop haut puis ramassé toutes les tables de DONNÉES qui suivaient —
+  //    huit lignes accusées d'être des rangées de statut. Un juge dont l'ancre est
+  //    une sous-chaîne libre est percutable par la prose qu'il surveille.
+  const debut = l.findIndex((x) => x.startsWith('#') && x.includes('CE QUI RESTE OUVERT'));
   if (debut === -1) return openRows.map((s) => s.slice(0, 80));
   let fin = debut + 1;
   while (fin < l.length && !l[fin].startsWith('## ')) fin++;
@@ -497,7 +502,12 @@ function cells(line) {
  */
 function incoherentTable(text) {
   const l = text.split('\n');
-  const debut = l.findIndex((x) => x.includes('CE QUI RESTE OUVERT'));
+  // 🔴 L'ANCRE EST UN TITRE, JAMAIS UNE LIGNE QUI CITE LA PHRASE (20/09/2026).
+  //    Une phrase ORDINAIRE du journal la contenait, et ce volet a ancré 2 600
+  //    lignes trop haut puis ramassé toutes les tables de DONNÉES qui suivaient —
+  //    huit lignes accusées d'être des rangées de statut. Un juge dont l'ancre est
+  //    une sous-chaîne libre est percutable par la prose qu'il surveille.
+  const debut = l.findIndex((x) => x.startsWith('#') && x.includes('CE QUI RESTE OUVERT'));
   if (debut === -1) {
     return 'the "CE QUI RESTE OUVERT" table is UNREACHABLE: the backlog no longer '
       + 'declares what is open, and part ④ has nothing to check against either.';
@@ -554,6 +564,22 @@ test('⑤ NEGATIVE — part ⑤ bites (IN-MEMORY sabotage, never the real file)'
     '## Autre section',
   ].join('\n');
   assert.strictEqual(incoherentTable(healthy), null, 'false positive: a table of genuinely open rows is reported');
+
+  // 🔴 THE ANCHOR IS A HEADING, NEVER A LINE THAT MERELY CITES THE LABEL
+  //    (2026-09-20, and the defect was this file's own prose). An ORDINARY
+  //    sentence of the backlog carried "CE QUI RESTE OUVERT", so this part
+  //    anchored on it 2,600 lines above the real table, then collected every
+  //    pipe line down to the next "## " — eight DATA rows accused of being stale
+  //    status rows. A judge whose anchor is a free substring is collidable by the
+  //    very prose it watches.
+  // ⚠️ The fixture puts the sentence ABOVE the real heading on purpose: that is
+  //    the exact shape that fooled it, and an anchor scanning top-down takes the
+  //    first match. It must skip the prose and land on the heading.
+  const prose = ['Un paragraphe ordinaire qui dit CE QUI RESTE OUVERT dans une phrase.',
+    '', '| donnee | valeur |', '|---|---|', '| mesure | 183 ms |', '',
+    healthy].join('\n');
+  assert.strictEqual(incoherentTable(prose), null,
+    'a plain sentence citing the label became the anchor: the part then judges DATA tables as status rows');
 
   // ① THE REAL CASE OF 21/08/2026: a row closed the same day, left in the table.
   const staleRow = healthy.replace('| E | alarme capacite | OUVERT |', '| F | WI-STATE-EVICTION | FERME |');

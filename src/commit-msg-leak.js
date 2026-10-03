@@ -88,13 +88,20 @@ function scannable(message) {
 /**
  * THE DECISION for a commit MESSAGE. Reuses `leak-pure.scan()` — the SAME
  * matcher the file gate runs — over patterns built by the CALLER.
+ *
+ * ⚠️ `guard` DEFAULTS TO THE LOADED PACKAGE and the hook never passes it, so production is
+ *    byte-for-byte unchanged. It exists because the package is a sibling checkout ABSENT on
+ *    every clean clone: without the seam, the CI could never run this module's PRESENT path,
+ *    and its mutants stayed `NoCoverage` there for a month (measured 2026-10-02: 14 of them)
+ *    while the maintainer's machine read 100 %. An explicit `null` is the ABSENT state.
  * @param {string} message
  * @param {{name:string, re:RegExp}[]} motifs
+ * @param {{scan: (text: string, motifs: {name:string, re:RegExp}[]) => {name:string, excerpt:string}[]}|null} [guard]
  * @returns {{violations: {name:string, excerpt:string}[], unavailable?: boolean}}
  */
-function verdict(message, motifs) {
-  if (!personalDataGuard) return { violations: [], unavailable: true };
-  return { violations: personalDataGuard.scan(scannable(message), motifs) };
+function verdict(message, motifs, guard = personalDataGuard) {
+  if (!guard) return { violations: [], unavailable: true };
+  return { violations: guard.scan(scannable(message), motifs) };
 }
 
 /** The refusal text. Kept here so the hook and the suite say the SAME thing. */

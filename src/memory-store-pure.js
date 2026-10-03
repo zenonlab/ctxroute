@@ -57,6 +57,56 @@ const MAX_SCOPES = 4096;
 const EPHEMERAL_PREFIX = 'plan-';
 const MAX_EPHEMERAL = 2048;
 
+// 🔴 A CEILING IN KEYS NEVER BOUNDED THE MEMORY — MEASURED 2026-09-20, CLOSED 2026-10-01.
+//    A plan weighs 19 KB on average and 168 KB at worst, so 1 787 plans reached
+//    35 MB of snapshot at LESS THAN HALF of `MAX_EPHEMERAL`, rewritten whole at
+//    every persist (183 ms of `JSON.stringify` on the serving thread). The KEY
+//    ceiling bounds a COUNT; what fills the disk and the loop is BYTES. Both
+//    ceilings now hold, whichever bites first.
+// 📐 SIZING, written so it can be refuted: a plan only matters while ITS action
+//    runs (well under a second of frames). 16 MiB keeps ~880 average plans or
+//    ~100 worst-case ones in flight at once — above the hundreds of parallel
+//    agents this is sized for, each with ONE action in flight — and caps the
+//    ephemeral half of a snapshot at 16 MiB instead of an unbounded figure.
+// ⚠️ The unit is the UTF-8 BYTE of the JSON the snapshot writes (`weightOf`),
+//    never a character: this corpus is French, and an accent is two bytes.
+// 🛑 THE YOUNGEST PLAN IS NEVER EVICTED, even alone above the ceiling: it is the
+//    one whose frames are running RIGHT NOW. Evicting it would make the late
+//    frames of a live action deliver nothing — the exact silent loss the
+//    snapshot cell of 2026-09-20 exists to forbid.
+const MAX_EPHEMERAL_BYTES = 16 * 1024 * 1024;
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE STATE-STORE REGISTRY (23/09/2026) — a per-scope store is declared ONCE, HERE
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 WHY: a store's prefix lived in THREE hand-written lists — the lock classes
+//    (`store-resolve.js` TURN_KEYS/DOC_KEYS), the PreCompact sweep (`ctxroute-reset.js`)
+//    and the disk-eviction classes (`state-eviction-pure.js` DURABLE_PREFIXES) — kept in
+//    agreement only by cells that parsed one file's literal to compare it with another's.
+//    Shipping `category-` meant editing all three. Now each consumer DERIVES its list here,
+//    so a new store is one line and the three can no longer disagree.
+// Fields: `prefix` (the key is `<prefix><scopeId>`) · `lock` — which lock guards it,
+//    `'doc'` (`store-resolve.docLockDir`, the injection state) or `'turn'` (`turnLockDir`,
+//    the turn counter: it moves once per human turn, and merging the two would queue every
+//    frame behind it) · `durable` — alive as long as its agent (count ceiling only, never
+//    aged out) or ephemeral (dies with its action). Every store is SWEPT at PreCompact:
+//    compaction empties the real context, so every per-scope memory restarts from zero.
+// 🛑 ORDER IS THE PURGE ORDER, kept identical to the historical sweep.
+// ⚠️ A FUNCTION, never a module-level literal (static mutants — cf `stryker-usage`).
+function stateStores() {
+  return [
+    { prefix: 'doc-seen-', lock: 'doc', durable: true },
+    // Legacy relic: still swept and evicted so an old install's files do not outlive it.
+    { prefix: 'ctxroute-seen-', lock: 'doc', durable: true },
+    { prefix: 'turn-count-', lock: 'turn', durable: true },
+    { prefix: EPHEMERAL_PREFIX, lock: 'doc', durable: false },
+    { prefix: 'remainder-', lock: 'doc', durable: true },
+    // `category`'s per-scope role state (22/09/2026): written in the SAME gesture as
+    // `doc-seen-`, hence the SAME lock — a separate one would let the two race.
+    { prefix: 'category-', lock: 'doc', durable: true },
+  ];
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // HOW OFTEN THE SNAPSHOT IS WRITTEN — a COUNT, and the daemon's CLEAN EXIT.
 // ═══════════════════════════════════════════════════════════════════════
@@ -184,9 +234,40 @@ function isWriteThrough(k) {
   return !isEphemeral(k);
 }
 
-/** @returns {{durable: Map<string,object>, ephemeral: Map<string,object>}} */
+/**
+ * The shape of the state, declared ONCE so every function names the same thing.
+ * @typedef {{durable: Map<string,object>, ephemeral: Map<string,object>,
+ *   weights: Map<string,number>, ephemeralBytes: number}} StoreState
+ */
+
+/**
+ * `weights` and `ephemeralBytes` belong to the EPHEMERAL class only: every write
+ * and every deletion of a `plan-` key goes through this module, which is what
+ * keeps the running total equal to the sum of what is held (a property cell
+ * re-adds it after every kind of mutation).
+ * @returns {StoreState}
+ */
 function createState() {
-  return { durable: new Map(), ephemeral: new Map() };
+  return { durable: new Map(), ephemeral: new Map(), weights: new Map(), ephemeralBytes: 0 };
+}
+
+/**
+ * The weight of a value as the snapshot will write it: UTF-8 bytes of its JSON.
+ * @param {object} v
+ */
+function weightOf(v) {
+  // ⚠️ No encoding argument: UTF-8 IS `Buffer.byteLength`'s documented default for a
+  //    string, and spelling it out made an equivalent mutant (`'utf8'` → `""` also
+  //    falls back to UTF-8). The UTF-8 contract is held by a cell that weighs an accent.
+  return Buffer.byteLength(JSON.stringify(v));
+}
+
+/** Forgets the weight of an ephemeral key that is being deleted. */
+function forgetWeight(state, k) {
+  const w = state.weights.get(k);
+  if (w === undefined) return;
+  state.weights.delete(k);
+  state.ephemeralBytes -= w;
 }
 
 /**
@@ -196,33 +277,39 @@ function createState() {
  *    hour by two cells timing out at 4096 entries, and it is exactly the "and at
  *    10,000?" defect this house forbids. Two maps give each class its own LRU,
  *    and eviction is back to deleting the first key: constant, amortised.
- * @param {{durable: Map<string,object>, ephemeral: Map<string,object>}} state
+ * @param {StoreState} state
  * @param {string} k
  */
 function mapFor(state, k) {
   return isEphemeral(k) ? state.ephemeral : state.durable;
 }
 
-/** @param {{durable: Map, ephemeral: Map}} state */
+/** @param {StoreState} state */
 function set(state, k, v) {
   const m = mapFor(state, k);
   // ⚠️ DELETE THEN SET — insertion order IS the LRU, so re-writing an existing
   //    key must move it to the young end, never leave it where it was.
   m.delete(k);
   m.set(k, v);
+  if (m === state.ephemeral) {
+    forgetWeight(state, k);
+    const w = weightOf(v);
+    state.weights.set(k, w);
+    state.ephemeralBytes += w;
+  }
 }
 
-/** @param {{durable: Map, ephemeral: Map}} state */
+/** @param {StoreState} state */
 function size(state) {
   return state.durable.size + state.ephemeral.size;
 }
 
-/** @param {{durable: Map, ephemeral: Map}} state */
+/** @param {StoreState} state */
 function keys(state) {
   return [...state.durable.keys(), ...state.ephemeral.keys()];
 }
 
-/** @param {{durable: Map, ephemeral: Map}} state */
+/** @param {StoreState} state */
 function entries(state) {
   return [...state.durable, ...state.ephemeral];
 }
@@ -239,18 +326,40 @@ function prune(m, plafond) {
 }
 
 /**
- * @param {{durable: Map, ephemeral: Map}} state
- * @param {number} max ceiling of the DURABLE class (one per agent scope)
- * @param {number} [maxEphemeral] ceiling of the EPHEMERAL class (one per invocation)
+ * The EPHEMERAL class has TWO ceilings, keys and bytes: the coldest plan leaves
+ * while EITHER is exceeded — but never the last one standing (see
+ * `MAX_EPHEMERAL_BYTES`: the youngest plan is the action in flight).
+ * @param {StoreState} state
+ * @param {number} ceiling
+ * @param {number} ceilingBytes
  */
-function evict(state, max, maxEphemeral) {
+function pruneEphemeral(state, ceiling, ceilingBytes) {
+  const m = state.ephemeral;
+  let removed = 0;
+  while (m.size > ceiling || (m.size > 1 && state.ephemeralBytes > ceilingBytes)) {
+    const k = m.keys().next().value;
+    m.delete(k);
+    forgetWeight(state, k);
+    removed += 1;
+  }
+  return removed;
+}
+
+/**
+ * @param {StoreState} state
+ * @param {number} max ceiling of the DURABLE class (one per agent scope)
+ * @param {number} [maxEphemeral] KEY ceiling of the EPHEMERAL class (one per invocation)
+ * @param {number} [maxEphemeralBytes] BYTE ceiling of the EPHEMERAL class
+ */
+function evict(state, max, maxEphemeral, maxEphemeralBytes) {
   const ephemeralCap = maxEphemeral === undefined ? MAX_EPHEMERAL : maxEphemeral;
+  const ephemeralBytesCap = maxEphemeralBytes === undefined ? MAX_EPHEMERAL_BYTES : maxEphemeralBytes;
   // `Map.keys()` yields in insertion order, so the first key IS the coldest.
   // ⚠️ TWO EXPLICIT CALLS rather than a loop over pairs: a `[Map, number]` tuple
   //    widens to `number | Map` for the type checker, which then refuses
   //    `.delete` on it. The loop was prettier and untypable — and a contract the
   //    checker cannot read is a contract nobody enforces.
-  return prune(state.durable, max) + prune(state.ephemeral, ephemeralCap);
+  return prune(state.durable, max) + pruneEphemeral(state, ephemeralCap, ephemeralBytesCap);
 }
 
 /**
@@ -276,7 +385,7 @@ function touch(state, k) {
  *    conform is DROPPED, never thrown. A corrupt save costs one extra
  *    delivery; a daemon refusing to start would cost the fleet its injection.
  * @param {unknown} brut
- * @param {{durable: Map, ephemeral: Map}} state
+ * @param {StoreState} state
  * @param {number} max
  * @param {number} [maxEphemeral]
  */
@@ -304,7 +413,7 @@ function purge(state, keyPrefix) {
   //    plans of that scope behind would keep a memo of an action whose context
   //    no longer exists — and forgetting one map is the silent half of a purge.
   for (const m of [state.durable, state.ephemeral]) {
-    for (const k of [...m.keys()]) if (k.startsWith(keyPrefix)) { m.delete(k); n += 1; }
+    for (const k of [...m.keys()]) if (k.startsWith(keyPrefix)) { m.delete(k); forgetWeight(state, k); n += 1; }
   }
   return n;
 }
@@ -312,6 +421,6 @@ function purge(state, keyPrefix) {
 module.exports = {
   key, createState, mapFor, set, size, keys, entries,
   evict, touch, adopt, purge, isEphemeral, isWriteThrough,
-  persistTick, shouldFlush,
-  MAX_SCOPES, MAX_EPHEMERAL, EPHEMERAL_PREFIX, PERSIST_EVERY,
+  persistTick, shouldFlush, stateStores, weightOf,
+  MAX_SCOPES, MAX_EPHEMERAL, MAX_EPHEMERAL_BYTES, EPHEMERAL_PREFIX, PERSIST_EVERY,
 };

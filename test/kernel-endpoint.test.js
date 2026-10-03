@@ -24,7 +24,9 @@ import assert from 'node:assert/strict';
 //    reported as surviving. MEASURED 2026-08-20: this file scored **0.00 %,
 //    51 survivors out of 51** — not one missing test, the whole suite invisible.
 //    The rule was already written in `quality-configs.md`; it was broken here.
-import { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, FINGERPRINT } from '../src/kernel-endpoint.js';
+import os from 'node:os';
+import path from 'node:path';
+import { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, FINGERPRINT, MAX_SOCKET_PATH_BYTES } from '../src/kernel-endpoint.js';
 
 // 🛑 THE PREFIX IS IMPOSED BY THE KERNEL, never chosen by us: on Windows a
 //    server listening anywhere else is REFUSED (EACCES) — measured while
@@ -144,4 +146,62 @@ test('THE ADDRESS IS A FUNCTION OF THE DATA SERVED, NOT OF THE CODE FOLDER', () 
     endpoint({ platform: 'win32', stateDir: '/var/ctxroute/state' }),
     endpoint({ platform: 'win32', stateDir: '/var/other/state' }),
     'two corpora must NEVER meet: one would answer for the other documents');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE SOCKET FILE MUST FIT sun_path, OR NODE TRUNCATES IT IN SILENCE (2026-09-23)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 Measured on the macOS runner: a 105-byte path bound a TRUNCATED name, `kernel-bind` then
+//    unlinked the FULL name (ENOENT) and re-bound into the leftover (EADDRINUSE) — the daemon never
+//    came back. The fixtures below are the MEASURED path, then the exact boundary. Compared on
+//    `/`-normalised forms and on BYTE length: `path.join` uses the local separator, the length
+//    does not change with it.
+const slash = (p) => p.split(String.fromCharCode(92)).join('/');
+const NAME_BYTES = Buffer.byteLength('ctxroute-.sock') + FINGERPRINT;   // 26
+const dirOfLength = (n, ch = 'a') => '/' + ch.repeat(n - 1);
+
+test('the MEASURED 105-byte state path moves to the user temp directory, same name', () => {
+  const stateDir = '/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/ctxroute-restart-JsMVEh/state';
+  const tmpdir = '/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T';
+  assert.equal(Buffer.byteLength(slash(`${stateDir}/ctxroute-${fingerprint(stateDir)}.sock`)), 105,
+    'anti-vacuity: the fixture must be the path that failed, 2 bytes over the limit');
+  const a = endpoint({ platform: 'darwin', stateDir, tmpdir });
+  assert.equal(slash(a), `${tmpdir}/ctxroute-${fingerprint(stateDir)}.sock`,
+    'the second rung, and the SAME name: the fingerprint still names the data served');
+  assert.ok(Buffer.byteLength(a) <= MAX_SOCKET_PATH_BYTES);
+});
+
+test('the bound is exact: 103 bytes stays in the state directory, 104 moves', () => {
+  assert.equal(MAX_SOCKET_PATH_BYTES, 103, 'sizeof(sun_path) - 1 on macOS, per Node\'s own doc');
+  const at = dirOfLength(MAX_SOCKET_PATH_BYTES - NAME_BYTES - 1);
+  const over = dirOfLength(MAX_SOCKET_PATH_BYTES - NAME_BYTES);
+  const tmpdir = '/t';
+  assert.ok(slash(endpoint({ platform: 'darwin', stateDir: at, tmpdir })).startsWith(`${at}/`),
+    'exactly 103 bytes fits: it must stay where the framework writes');
+  assert.equal(Buffer.byteLength(slash(endpoint({ platform: 'darwin', stateDir: at, tmpdir }))), 103);
+  assert.ok(slash(endpoint({ platform: 'darwin', stateDir: over, tmpdir })).startsWith('/t/'),
+    '104 bytes would be truncated by the kernel: it must move');
+});
+
+test('the bound counts BYTES, never characters: a non-ASCII directory moves one byte earlier', () => {
+  const chars = MAX_SOCKET_PATH_BYTES - NAME_BYTES - 1;       // 76 characters, would fit in ASCII
+  const accented = '/' + 'a'.repeat(chars - 2) + 'é';        // same 76 characters, 77 bytes
+  assert.equal(accented.length, chars);
+  assert.ok(slash(endpoint({ platform: 'darwin', stateDir: accented, tmpdir: '/t' })).startsWith('/t/'),
+    'a character count would keep a 104-byte path, and the kernel would truncate it');
+});
+
+test('when the temp directory is too long as well, /tmp is the last rung — always short', () => {
+  const long = dirOfLength(90);
+  const a = endpoint({ platform: 'darwin', stateDir: long, tmpdir: dirOfLength(95) });
+  assert.equal(a, `/tmp/ctxroute-${fingerprint(long)}.sock`);
+  assert.ok(Buffer.byteLength(a) <= MAX_SOCKET_PATH_BYTES);
+});
+
+test('without an injected temp directory, the second rung is the OS one', () => {
+  const long = dirOfLength(90);
+  const a = endpoint({ platform: 'darwin', stateDir: long });
+  const expected = slash(path.join(os.tmpdir(), `ctxroute-${fingerprint(long)}.sock`));
+  if (Buffer.byteLength(expected) <= MAX_SOCKET_PATH_BYTES) assert.equal(slash(a), expected);
+  else assert.equal(a, `/tmp/ctxroute-${fingerprint(long)}.sock`);
 });

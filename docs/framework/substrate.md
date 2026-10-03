@@ -1,7 +1,8 @@
 ---
 match: substrate-gate.test.js
 scope: ["ctxroute"]
-mode: dumb
+mode: smart
+threshold: 30
 rank: 568
 ---
 # substrate-gate.test.js — the 2nd symmetry: what each source SEES

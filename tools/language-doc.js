@@ -53,7 +53,7 @@ function facts() {
     {
       name: 'vocabulary',
       content:
-        `File doc keys: ${docfacts.wordList(fm.KNOWN)}\n`
+        `File doc keys: ${docfacts.wordList(fm.knownKeys())}\n`
         + `\`rules\` entry keys: ${docfacts.wordList(fm.RULE_KEYS)}\n`
         + `Triggers: ${docfacts.wordList(fm.TRIGGERS)} · tool wildcard \`${fm.WILDCARD}\` · \`inject: ${fm.INJECT.join('|')}\` disarms\n`
         + 'Unknown key ⇒ doc REJECTED (never silently ignored).',
@@ -115,7 +115,8 @@ if (require.main === module) {
   }
   if (failure) {
     console.error('  Fix: `node tools/language-doc.js --write` (the CODE is authoritative).\n');
-    process.exit(1);
   }
-  process.exit(0);
+  // 🛑 Through `exitAfterFlush` (2026-10-01): `process.exit` cut the discrepancy
+  //    list on a POSIX pipe — the CI log would show half of what to fix.
+  require('../src/stdout-exit').exitAfterFlush(failure ? 1 : 0);
 }

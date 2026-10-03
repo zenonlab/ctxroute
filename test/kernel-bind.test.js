@@ -150,3 +150,45 @@ test('a failure that is NOT EADDRINUSE is reported, never cleaned up', () => {
 
   assert.equal(received, eacces, 'a permission error must surface untouched — cleaning it would hide the real defect');
 });
+
+// ── ⑥ THE REFUSAL SAYS WHICH BRANCH PRODUCED IT (2026-09-23) ─────────────
+// 🔴 On the macOS runner a restarting daemon kept dying on a bare `EADDRINUSE`, and a LIVING owner
+//    and a re-bind that FAILED after the cleanup were indistinguishable. Fresh error objects here:
+//    the annotation is written ON the kernel's error, so a shared fixture would carry it across cells.
+const inUse = () => Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' });
+
+test('a living owner is refused as `owner-alive`, on the kernel\'s own error object', () => {
+  const first = inUse();
+  let received = null;
+  bind(fakeServer([first]), '/tmp/x.sock', () => {}, (err) => { received = err; }, {
+    platform: 'darwin', probe: (_c, done) => done(true), unlink: () => {},
+  });
+  assert.equal(received, first, 'the caller still receives the SAME object, annotated, never a replacement');
+  assert.equal(received.rendezvous, 'owner-alive');
+});
+
+test('a re-bind that fails after the cleanup is `rebind-failed`, with what the unlink met', () => {
+  const second = inUse();
+  let received = null;
+  bind(fakeServer([inUse(), second]), '/tmp/x.sock', () => {}, (err) => { received = err; }, {
+    platform: 'darwin', probe: (_c, done) => done(false), unlink: () => {},
+  });
+  assert.equal(received, second, 'the refusal is the SECOND attempt\'s error');
+  assert.equal(received.rendezvous, 'rebind-failed');
+  assert.equal(received.unlinkCode, null, 'the unlink succeeded: null, never a guessed code');
+
+  const third = inUse();
+  let got = null;
+  bind(fakeServer([inUse(), third]), '/tmp/x.sock', () => {}, (err) => { got = err; }, {
+    platform: 'darwin', probe: (_c, done) => done(false),
+    unlink: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); },
+  });
+  assert.equal(got.unlinkCode, 'EPERM', 'an unlink that failed for a REAL reason is SAID, never swallowed');
+
+  let bare = null;
+  bind(fakeServer([inUse(), inUse()]), '/tmp/x.sock', () => {}, (err) => { bare = err; }, {
+    platform: 'darwin', probe: (_c, done) => done(false),
+    unlink: () => { throw new Error('no code at all'); },
+  });
+  assert.equal(bare.unlinkCode, 'unknown', 'a failure with no code is named as such, never left null');
+});

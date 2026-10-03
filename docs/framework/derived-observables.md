@@ -1,6 +1,7 @@
 ---
 match: [derived-observables.js, derived-observables.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # derived-observables.js — the facts we DERIVE, as a REGISTRY

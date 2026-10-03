@@ -5,7 +5,7 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { decide, docLabel, modeForDoc, thresholdForDoc, driftUnitForDoc } from '../src/gate.js';
+import { decide, docLabel, modeForDoc, thresholdForDoc, driftUnitForDoc, categoryExcluded } from '../src/gate.js';
 
 const DUMB = { mode: 'dumb' };
 
@@ -668,4 +668,25 @@ test('filter 52: a `whitelist` declared in defaults.{source} is RECOGNISED at th
   const cfg = { defaults: { file: { filterMode: 'whitelist', filterList: ['Bash'] } } };
   assert.deepStrictEqual(decide(cfg, { d: DUMB }, ['d'], {}, 0, { d: 'file' }, 'Read').inject, []);
   assert.deepStrictEqual(decide(cfg, { d: DUMB }, ['d'], {}, 0, { d: 'file' }, 'Bash').inject, ['d']);
+});
+
+// ═══ categoryExcluded — the verdict on EVERY session shape (23/09/2026) ═══
+// ⚠️ Found by mutation: four mutants of this predicate survived — no cell ever passed a
+//    session that is NOT a list, nor a doc needing SEVERAL categories of which the session
+//    carries only one. Inputs copied from the real caller (`decide`): a decl as posed by a
+//    source, the owner source, the session's declared list (or nothing at all).
+test('categoryExcluded: an uncategorized doc is never excluded, whatever the session', () => {
+  assert.strictEqual(categoryExcluded({}, {}, 'file', undefined), false);
+  assert.strictEqual(categoryExcluded({}, {}, 'file', ['ops']), false);
+});
+test('categoryExcluded: a categorized doc is EXCLUDED when the session declared nothing (fail-closed)', () => {
+  assert.strictEqual(categoryExcluded({}, { category: ['ops'] }, 'file', undefined), true);
+  assert.strictEqual(categoryExcluded({}, { category: ['ops'] }, 'file', []), true);
+  // A bare STRING is not a declared list: read as a set it would yield its characters,
+  // and a doc requiring `o` would pass for a session that declared "ops".
+  assert.strictEqual(categoryExcluded({}, { category: ['o'] }, 'file', 'ops'), true);
+});
+test('categoryExcluded: ONE shared category is enough (OR), none shared excludes', () => {
+  assert.strictEqual(categoryExcluded({}, { category: ['ops', 'seo'] }, 'skill', ['seo']), false);
+  assert.strictEqual(categoryExcluded({}, { category: ['ops'] }, 'skill', ['seo']), true);
 });

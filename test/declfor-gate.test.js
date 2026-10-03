@@ -39,6 +39,8 @@ const SAMPLE = {
   threshold: 7,
   driftUnit: 'turn',
   enforce: true,
+  category: ['x'],
+  response: { scope: ['x'] },
 };
 
 // The DECISION keys are DERIVED from gate.js: each `xForDoc` resolver

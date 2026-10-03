@@ -1,7 +1,7 @@
 #!/bin/sh
 # ═══════════════════════════════════════════════════════════════════════
 # "DOES THE DAEMON ANSWER?" — the ONE proof, shared by the three OSes.
-# Usage: sh service/verify-responds.sh <port>
+# Usage: sh service/verify-responds.sh <port> [address]
 # ═══════════════════════════════════════════════════════════════════════
 #
 # 🛑 A REAL REQUEST, NEVER "the process exists". A node process whose socket is
@@ -35,7 +35,13 @@
 # ═══════════════════════════════════════════════════════════════════════
 set -eu
 
-PORT="${1:?usage: verify-responds.sh <port>}"
+PORT="${1:?usage: verify-responds.sh <port> [address]}"
+# ⚠️ THE ADDRESS IS RECEIVED TOO, like the port (2026-10-01). The Windows
+#    installer binds a DECLARED address by default (the dedicated adapter, outside
+#    127.0.0.0/8) and prints it; probing the loopback there asks a socket nobody
+#    holds. Absent ⇒ 127.0.0.1, the published default and what the Linux and
+#    macOS units bind. Named ADDRESS and never HOST: some shells export HOST.
+ADDRESS="${2:-127.0.0.1}"
 ATTEMPTS="${CTXROUTE_VERIFY_ATTEMPTS:-30}"
 
 # ⚠️ A PER-ATTEMPT CEILING, AND IT IS NOT DECORATION. Under socket activation the
@@ -47,7 +53,7 @@ ATTEMPTS="${CTXROUTE_VERIFY_ATTEMPTS:-30}"
 #    reads differently from a refusal (exit 7) on purpose: accepted-and-mute is
 #    not the same defect as nothing-is-there.
 ATTEMPT_TIMEOUT="${CTXROUTE_VERIFY_TIMEOUT:-20}"
-URL="http://127.0.0.1:$PORT/?frame=1&frames=1"
+URL="http://$ADDRESS:$PORT/?frame=1&frames=1"
 OUT="ctxroute-verify-response.json"
 
 # ⚠️ A payload of the shape the harness really posts (official hook contract):
@@ -65,7 +71,7 @@ while [ "$i" -lt "$ATTEMPTS" ]; do
     #    stray server could answer anything. The body must PARSE as JSON, the
     #    documented output format of a hook.
     node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$OUT"
-    echo "OK — the daemon answered 200 with parseable JSON on 127.0.0.1:$PORT"
+    echo "OK — the daemon answered 200 with parseable JSON on $ADDRESS:$PORT"
     rm -f "$OUT"
     exit 0
   fi
@@ -74,7 +80,7 @@ while [ "$i" -lt "$ATTEMPTS" ]; do
 done
 
 rm -f "$OUT"
-echo "THE DAEMON NEVER ANSWERED on 127.0.0.1:$PORT after $ATTEMPTS attempts." >&2
+echo "THE DAEMON NEVER ANSWERED on $ADDRESS:$PORT after $ATTEMPTS attempts." >&2
 echo "The unit was accepted by the supervisor and nothing served the lane —" >&2
 echo "that is a DEFECT of the unit or of the wiring, not a missing measurement." >&2
 exit 1

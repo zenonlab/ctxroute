@@ -168,7 +168,9 @@ function parse(text) {
       data[key] = assembleBlock(body, block[1]);
       continue;
     }
-    if (key === 'rules') {
+    // ⚠️ A SETTING declared `inlineJson` in the registry (`response`, 2026-09-23) takes the
+    //    SAME path: one JSON reader for every structured value, never a second dialect.
+    if (key === 'rules' || settingRegistry()[key]?.inlineJson) {
       try {
         data[key] = JSON.parse(raw);
       } catch (e) {
@@ -249,7 +251,18 @@ const DRIFT_UNITS = ['tool', 'turn'];
 // ⚠️ The engine must NEVER depend on it: no decision, no matching,
 //    no sorting. The day a source read it, it would be a config field
 //    disguised as a comment — hence a 2nd truth.
-const KNOWN = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce'];
+// ⚠️ The SETTINGS half is DERIVED from `settingRegistry()` (23/09/2026): a behaviour key
+//    added there is known here with no second edit. The other half stays a closed literal —
+//    triggers and matching operators are not settings and never cascade.
+// ⚠️ A FUNCTION, never a module-level constant: computing it at LOAD would build the
+//    registry outside every test, and Stryker then reports its mutants as STATIC survivors
+//    it never really tried (measured 23/09/2026: 7 false survivors in one run).
+function knownKeys() {
+  // ⚠️ The per-rule OPERATORS come from RULE_KEYS (23/09/2026), the settings from the registry:
+  //    only the triggers and the two meta keys stay written here.
+  const operators = RULE_KEYS.filter((k) => k !== 'pattern');
+  return ['match', 'mcp', 'rules', 'tool', 'inject'].concat(operators, ['note'], Object.keys(settingRegistry()));
+}
 
 // ⚠️ `keys` — WHICH PARAMETER KEYS THIS ENTRY IS ALLOWED TO SEE.
 //    The other operators say WHAT to look for; this one says WHERE to look. Until now that
@@ -327,6 +340,197 @@ function toolList(data) {
   if (typeof data.tool === 'string') return [data.tool];
   return Array.isArray(data.tool) ? data.tool : [];
 }
+
+// ⚠️ `category` (behavior key, NOT a trigger — like `enforce`, it NARROWS an
+//    injection that another trigger already created, it never creates one on
+//    its own). A doc/skill/tool-entry declares WHICH session categories it is
+//    FOR; absent = universal (unchanged behavior, parity). The session's OWN
+//    categories are a fact the engine reads from ELSEWHERE (a session-scoped
+//    store, cf `category-store-pure.js`), never from the gesture — this module
+//    only reads the DECLARATION side.
+// ✅ 23/09/2026: its reading (`categoryList`, same shape as `toolList`) is now the
+//    `take` of `category` in the setting registry below, built on `stringList` — the
+//    ONE place gate.js and every `declFor` read it through. `categoryList` had no
+//    caller left once they did, so it is gone rather than kept as a second door.
+
+// ⚠️ The reading shared by every "string OR list of strings" setting: blanks and
+//    non-strings are dropped, never an error here (FORM errors are `validate`'s job).
+function stringList(raw) {
+  if (typeof raw === 'string') return raw.trim() === '' ? [] : [raw];
+  return Array.isArray(raw) ? raw.filter((c) => typeof c === 'string' && c.trim() !== '') : [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE SETTING REGISTRY (23/09/2026) — a behaviour key is declared ONCE, HERE
+// ═══════════════════════════════════════════════════════════════════════
+//
+// 🔴 WHY IT EXISTS — MEASURED: shipping `category` touched 24 files, and 19 of them only
+//    REPEATED its name in yet another list (KNOWN, the MCP keys, two `declFor`, the form
+//    validator, a resolver per key in gate.js…). One truth held in N places is the drift
+//    class this repository exists to kill, and it made every new word of the language cost
+//    an agent the knowledge of N sites. A setting is now ONE entry below; KNOWN, the MCP
+//    keys, the form validation, the sources' `poseSettings` and gate.js's cascade DERIVE
+//    from it.
+// 🛑 WHAT IS NOT DERIVED, ON PURPOSE — `cadence-spec.js` and `language-spec.js`. They are
+//    the INDEPENDENT judges: a model that read this registry would agree with the engine by
+//    construction and prove nothing (a twin only proves a copy agrees with itself). Teaching
+//    them a new setting stays a hand-written act, and part ⓪ of both differentials turns red
+//    until it is done.
+// ⚠️ A SETTING IS A BEHAVIOUR KEY: an entry POSES it, gate.js RESOLVES it through the
+//    4-authority cascade (entry > `defaults.{source}` > global > framework). A TRIGGER or a
+//    matching operator (`match`/`rules`/`tool`/`scope`/`exclude`/`keys`) is NOT a setting.
+// Fields, all required unless stated:
+//   valid(raw)     → the FORM rule `validate`/`validateMcp` enforce on an author's value.
+//   take(raw)      → what a cascade stage OFFERS: the value, or `undefined` when absent or
+//                    invalid, which lets the NEXT stage exist (TOTAL fallback). Omitted ⇒
+//                    `valid(raw) ? raw : undefined`.
+//   formError(raw) → the validator's message (communication, not behaviour).
+//   global(source) → OPTIONAL. The config key of stage ③ FOR THIS SOURCE, or null; ABSENT
+//                    when the setting has no global stage at all: never for `enforce`/`category` (a global value would bite
+//                    the first gesture of every session on every doc — the system people
+//                    unplug), and not for a `skill`'s `mode` (the measured asymmetry: a
+//                    skill is project knowledge, `once` by default, and a global `mode`
+//                    set for the docs must not flip every skill).
+//                    ⚠️ A FUNCTION, not a key + an exclusion list: the list form needed an
+//                    `|| []` fallback that no input could tell apart (equivalent mutant).
+//   framework      → stage ④ per source; `''` = every other source.
+// ⚠️ A FUNCTION, never a module-level literal: its lambdas run at call time, inside a test.
+function settingRegistry() {
+  const isThreshold = (v) => Number.isInteger(v) && v >= 1;
+  return {
+    mode: {
+      valid: (v) => MODES.includes(v),
+      formError: (v) => `\`mode\` invalid: ${v} (expected: ${MODES.join('|')})`,
+      global: (source) => (source === 'skill' ? null : 'mode'),
+      framework: { skill: 'once', '': 'smart' },
+    },
+    threshold: {
+      valid: isThreshold,
+      formError: (v) => `\`threshold\` must be an integer >= 1 (received: ${JSON.stringify(v)})`,
+      global: () => 'defaultThreshold',
+      framework: { '': 4 },
+    },
+    driftUnit: {
+      valid: (v) => DRIFT_UNITS.includes(v),
+      formError: (v) => `\`driftUnit\` invalid: ${v} (expected: ${DRIFT_UNITS.join('|')})`,
+      global: () => 'defaultDriftUnit',
+      framework: { '': 'tool' },
+    },
+    // ⚠️ `false` is a VALUE, never noise: it CANCELS an inherited `defaults.{source}.enforce`.
+    enforce: {
+      valid: (v) => typeof v === 'boolean',
+      formError: () => '`enforce` must be true or false',
+      framework: { '': false },
+    },
+    // ⚠️ The form is strict (every element a non-empty string) but a stage TAKES the
+    //    normalised list, and an empty one is INVALID: `category: []` cannot be written
+    //    (the schema says minItems 1), so an empty result always means "go down".
+    category: {
+      valid: isMatchDecl,
+      take: (v) => {
+        const l = stringList(v);
+        return l.length > 0 ? l : undefined;
+      },
+      formError: () => '`category` empty or badly typed (non-empty string or list) — it would restrict the doc to NO session, i.e. mute it forever',
+      framework: { '': [] },
+    },
+    // ⚠️ `response` (2026-09-23) — NARROWS a doc to the moment AFTER the tool answered, and to
+    //    the answers its `scope`/`exclude` accept (read by `response-pure.js`, decided by
+    //    gate.js). It is a SETTING and not a per-rule operator on purpose: the answer belongs
+    //    to the ACTION, never to one path of it, and resolving it in gate.js is what gives the
+    //    four sources ONE place where "before or after the answer" is decided.
+    // 🛑 A WORD OF THE LANGUAGE, NEVER A KEY OF THE DATA. It is not reached through `keys`
+    //    (which names the gesture's PARAMETERS): an answer is not a parameter, and a parameter
+    //    named `response` would have been indistinguishable from it — a collision the
+    //    STRUCTURE now makes impossible instead of a reserved character making it rare.
+    // ⚠️ NO global stage (a global `response` would move every doc of the fleet after the
+    //    action), and `null` at the framework stage = "does not wait for an answer": the doc
+    //    is decided BEFORE the action, exactly as before this word existed (parity).
+    // ⚠️ `inlineJson`: written `response: {"scope": ["posted"]}` on ONE line, like `rules` —
+    //    the parser keeps its one JSON path instead of growing a YAML-map dialect.
+    response: {
+      valid: (v) => responseFormError(v) === null,
+      formError: (v) => responseFormError(v),
+      framework: { '': null },
+      inlineJson: true,
+    },
+  };
+}
+
+// ⚠️ THE FORM OF `response`: an object carrying `scope` and/or `exclude`, NOTHING else, each
+//    judged by the SAME validator as the flat frontmatter's (`operatorForms`) — two form
+//    declarations of one operator diverge (class ㊴).
+// 🛑 AT LEAST ONE NON-EMPTY FILTER: `response: {}` would say "after the answer, whatever it
+//    is" — a doc delivered one moment later for no reason, i.e. a timing nobody chose. Refused.
+// Stryker disable StringLiteral: labels = communication (cf validate).
+function responseFormError(v) {
+  if (Object(v) !== v || Array.isArray(v)) {
+    return '`response` must be an INLINE JSON object, e.g. response: {"scope": ["posted"]} — `scope` and/or `exclude`';
+  }
+  const unknown = Object.keys(v).filter((k) => k !== 'scope' && k !== 'exclude');
+  if (unknown.length) return `\`response\`: unknown key(s) ${unknown.join(', ')} (known: scope, exclude)`;
+  // ⚠️ EVERY filter present must hold something, not merely one of them: an empty list is
+  //    "declared and saying nothing", which the schema refuses (`minItems: 1`) — two form
+  //    declarations of one key must refuse the same things (class ㊴).
+  const present = Object.keys(v);
+  if (present.length === 0 || present.some((k) => !Array.isArray(v[k]) || v[k].length === 0)) {
+    return '`response` must carry a NON-EMPTY `scope` and/or `exclude` — an empty filter only delays the doc to after the answer, a timing nobody chose';
+  }
+  const forms = operatorForms();
+  // ⚠️ ONE loop over the two filter names, never a `filter().map().find()` chain: a chain is a
+  //    traversal fed by a traversal, which the complexity gate counts as nested — for a list of
+  //    two constant names. The FIRST error is returned, so the author fixes one thing at a time.
+  for (const k of present) {
+    const e = forms[k](v[k], `response.${k}`);
+    if (e) return e;
+  }
+  return null;
+}
+// Stryker restore StringLiteral
+
+// The value a cascade stage offers for `name`, or `undefined` (absent/invalid ⇒ go down).
+function takeSetting(name, raw) {
+  const s = settingRegistry()[name];
+  if (s.take) return s.take(raw);
+  return s.valid(raw) ? raw : undefined;
+}
+
+// ⚠️ THE ONE `declFor` BODY, shared by every source that copies an entry key by key
+//    (`sources/mcp.js`, `sources/skill.js`). It POSES what the author declared, RAW, and
+//    resolves NOTHING: a valid key passes, an absent or invalid one is OMITTED so the next
+//    cascade stage can exist. Two hand-written copies of this loop let `enforce` go inert
+//    on the MCP channel for 24 h (06/08/2026) — a copied list is the defect.
+function poseSettings(entry) {
+  const data = entry || {};
+  const decl = {};
+  for (const name of Object.keys(settingRegistry())) {
+    if (takeSetting(name, data[name]) !== undefined) decl[name] = data[name];
+  }
+  return decl;
+}
+
+// ⚠️ SINGLE SOURCE of the setting FORM judgement — `validate` (file docs) AND
+//    `validateMcp` (MCP docs). Replaces `cadenceErrors` + the two hand-copied `category`
+//    checks, which already carried two different messages for one rule.
+// Stryker disable StringLiteral: labels = communication (cf validate).
+function settingErrors(data) {
+  const errs = [];
+  const registry = settingRegistry();
+  for (const name of Object.keys(registry)) {
+    if (name in data && !registry[name].valid(data[name])) errs.push(registry[name].formError(data[name]));
+  }
+  // 🛑 `enforce: true` + `response` = REFUSED (2026-09-23). A refusal stops an action BEFORE it
+  //    runs; a doc waiting for the answer is decided AFTER it ran, so the refusal could only
+  //    ever land on the NEXT, unrelated action. And the answer is content no one here controls
+  //    (a web page, a third-party server): a filter over it that could REFUSE would let that
+  //    content block the agent. gate.js never refuses after the answer either — this line is
+  //    the author-facing half, so the contradiction is written down instead of ignored.
+  if (data.enforce === true && 'response' in data) {
+    errs.push('`enforce: true` contradicts `response` — a doc decided AFTER the tool answered cannot refuse that action, and an answer is content no one controls: drop one of the two');
+  }
+  return errs;
+}
+// Stryker restore StringLiteral
 
 // ⚠️ `match` accepts a STRING **or** A LIST — not a whim of flexibility:
 //    measured on 15/07/2026, 98 of the 288 real docs are targeted by SEVERAL patterns
@@ -433,6 +637,33 @@ function scopeFormError(v, ou) {
   }
   return `\`${ou}\`: MIXED forms. Choose — ["a","b"] = a OR b · [["a"],["b"]] = a AND b · [["a","b"],["c"]] = (a OR b) AND c`;
 }
+// ═══ THE PER-RULE OPERATORS' FORMS (23/09/2026) — ONE validator per operator ═══
+// ⚠️ Every operator of RULE_KEYS except `pattern` (the rule's own trigger) has its FORM
+//    judged HERE, for the flat frontmatter AND for each `rules` entry alike. They were
+//    written twice, and the two `exclude` messages had already drifted apart. A cell of
+//    `frontmatter.test.js` reddens if RULE_KEYS gains an operator with no form here.
+// ⚠️ A FUNCTION, never a module-level literal (load-time literals are static mutants).
+function operatorForms() {
+  return {
+    scope: scopeFormError,
+    exclude: (v, where) => (Array.isArray(v) && v.every(usefulString) ? null : `\`${where}\` must be a list of non-empty strings [a, b]`),
+    keys: keysFormError,
+    rank: (v, where) => (typeof v === 'number' ? null : `\`${where}\` must be a number`),
+  };
+}
+
+// The form errors of every operator `holder` declares, each named `<prefix><operator>`.
+function operatorFormErrors(holder, prefix) {
+  const forms = operatorForms();
+  const errs = [];
+  for (const name of Object.keys(forms)) {
+    if (!(name in holder)) continue;
+    const e = forms[name](holder[name], prefix + name);
+    if (e) errs.push(e);
+  }
+  return errs;
+}
+
 function isRulesDecl(rules) {
   const errs = [];
   if (!Array.isArray(rules) || rules.length === 0) {
@@ -452,21 +683,8 @@ function isRulesDecl(rules) {
     }
     // ⚠️ `scope` admits the GROUPED form (㊺①); `exclude` does NOT — it is ∀¬ over a
     //    SINGLE universe (㊼), an "AND of ORs" would make no sense to express there.
-    if ('scope' in r) {
-      const e = scopeFormError(r.scope, `rules[${i}].scope`);
-      if (e) errs.push(e);
-    }
-    if ('exclude' in r && !(Array.isArray(r.exclude) && r.exclude.every(usefulString))) {
-      errs.push(`\`rules[${i}].exclude\` must be a list of non-empty strings`);
-    }
-    // ⚠️ SAME shape as the flat form, SAME validator — a per-entry copy would drift (㊴).
-    if ('keys' in r) {
-      const e = keysFormError(r.keys, `rules[${i}].keys`);
-      if (e) errs.push(e);
-    }
-    if ('rank' in r && typeof r.rank !== 'number') {
-      errs.push(`\`rules[${i}].rank\` must be a number`);
-    }
+    // ⚠️ SAME validators as the flat form, from ONE table — a per-entry copy drifts (㊴).
+    for (const e of operatorFormErrors(r, `rules[${i}].`)) errs.push(e);
     for (const k of Object.keys(r)) {
       if (!RULE_KEYS.includes(k)) errs.push(`\`rules[${i}]\`: unknown key \`${k}\` (known: ${RULE_KEYS.join(', ')})`);
     }
@@ -540,35 +758,28 @@ function validate(data) {
   if ('inject' in data && !INJECT.includes(data.inject)) {
     errs.push(`\`inject\` invalid: ${data.inject} (only admitted value: ${INJECT.join('|')})`);
   }
-  if ('scope' in data) {
-    const e = scopeFormError(data.scope, 'scope');
-    if (e) errs.push(e);
-  }
+  // ⚠️ The FORM of scope/exclude/keys/rank comes from the ONE table (`operatorForms`),
+  //    shared with every `rules` entry.
   // ⚠️ `exclude` = a list of STRINGS, strictly — NO grouped form (㊼: it is
   //    ∀¬ over a SINGLE universe, an "AND of ORs" would have no semantics there).
   // 🛑 The check was `Array.isArray` ALONE until 14/08/2026: `exclude: [["a"]]`
   //    got through and "worked" BY ACCIDENT (`norm(["a"])` returns `"a"`). A form that
   //    works by accident is a form we will one day find broken, with no test.
-  if ('exclude' in data && !(Array.isArray(data.exclude) && data.exclude.every(usefulString))) {
-    errs.push('`exclude` must be a list of non-empty strings [a, b]');
-  }
+  for (const e of operatorFormErrors(data, '')) errs.push(e);
   // ⚠️ `keys` restricts the UNIVERSE the operators read; it triggers nothing on its own.
   //    Declared ALONE it would be INERT — and an inert key is indistinguishable from a
   //    working one, which is the whole class of defects this validator exists to kill.
-  if ('keys' in data) {
-    const e = keysFormError(data.keys, 'keys');
-    if (e) errs.push(e);
-    else if (declares.length === 0 && !('scope' in data) && !('exclude' in data)) {
-      errs.push('`keys` alone changes NOTHING: it narrows WHERE `match`/`scope`/`exclude` look. Add the operator it is meant to restrict.');
-    }
+  if ('keys' in data && !keysFormError(data.keys, 'keys') && declares.length === 0 && !('scope' in data) && !('exclude' in data)) {
+    errs.push('`keys` alone changes NOTHING: it narrows WHERE `match`/`scope`/`exclude` look. Add the operator it is meant to restrict.');
   }
-  for (const e of cadenceErrors(data)) errs.push(e);
+  // ⚠️ Every SETTING (mode/threshold/driftUnit/enforce/category…) is judged by the
+  //    registry — a setting is never a trigger, so a lone one still counts as "no trigger".
+  for (const e of settingErrors(data)) errs.push(e);
   for (const e of noteErrors(data)) errs.push(e);
-  if ('rank' in data && typeof data.rank !== 'number') errs.push('`rank` must be a number');
   // ⚠️ Unknown key = an ERROR, never silently ignored: `mach:` instead of `match:`
   //    would otherwise go unnoticed and the doc would be dead without anyone knowing.
   for (const k of Object.keys(data)) {
-    if (!KNOWN.includes(k)) errs.push(`unknown key: \`${k}\` (known: ${KNOWN.join(', ')})`);
+    if (!knownKeys().includes(k)) errs.push(`unknown key: \`${k}\` (known: ${knownKeys().join(', ')})`);
   }
   return errs;
 }
@@ -582,12 +793,14 @@ function validate(data) {
 function validateMcp(data) {
   // ⚠️ LOCAL const (not module-level): an array at module level = a STATIC
   //    mutant outside the perTest mapping → a guaranteed survivor. Here, covered.
-  const MCP_KEYS = ['mode', 'threshold', 'driftUnit', 'note', 'enforce'];
+  // ⚠️ DERIVED (23/09/2026): `note` + every SETTING of the registry. The MCP path stays the
+  //    ONLY trigger, so no matching operator is admitted here.
+  const MCP_KEYS = ['note'].concat(Object.keys(settingRegistry()));
   const errs = [];
   for (const k of Object.keys(data)) {
     if (!MCP_KEYS.includes(k)) errs.push(`unknown key for an MCP doc: \`${k}\` (admitted: ${MCP_KEYS.join(', ')})`);
   }
-  for (const e of cadenceErrors(data)) errs.push(e);
+  for (const e of settingErrors(data)) errs.push(e);
   for (const e of noteErrors(data)) errs.push(e);
   return errs;
 }
@@ -633,43 +846,30 @@ function noteErrors(data) {
   return ['`note` must be a text, or a list of texts'];
 }
 
-function cadenceErrors(data) {
-  const errs = [];
-  if ('mode' in data && !MODES.includes(data.mode)) {
-    errs.push(`\`mode\` invalid: ${data.mode} (expected: ${MODES.join('|')})`);
-  }
-  if ('threshold' in data && !(Number.isInteger(data.threshold) && data.threshold >= 1)) {
-    errs.push(`\`threshold\` must be an integer >= 1 (received: ${JSON.stringify(data.threshold)})`);
-  }
-  if ('driftUnit' in data && !DRIFT_UNITS.includes(data.driftUnit)) {
-    errs.push(`\`driftUnit\` invalid: ${data.driftUnit} (expected: ${DRIFT_UNITS.join('|')})`);
-  }
-  // ── `enforce` (05/08/2026): the doc REFUSES the tool instead of informing it ──
-  // ⚠️ A BOOLEAN with THREE effects, and `false` is NOT noise: absent = INHERITS
-  //    from the level above (defaults.{source}), `false` = CANCELS that inheritance.
-  //    Without an explicit value, a category moved to `enforce` would be
-  //    UN-OPT-OUT-ABLE — the classic dead end of any cascading system.
-  if ('enforce' in data && typeof data.enforce !== 'boolean') {
-    errs.push('`enforce` must be true or false');
-  }
-  // ⚠️ `enforce` FOLLOWS THE CADENCE — it has NO rhythm of its own (maintainer
-  //    decision 05/08/2026, and he was right against my first version).
-  //    The block happens exactly WHEN the doc injects, because it is
-  //    the same condition. And there is NO loop: injecting marks the doc as seen
-  //    AND resets its counter to zero, so the call the agent redoes right after
-  //    has nothing left to deliver and PASSES.
-  //      `once`  → blocks once per session, then never again.
-  //      `smart` → blocks, passes right away, then re-blocks once after N
-  //                calls of other tools. Perfectly coherent, NOT a trap.
-  //
-  //      `dumb`  → block / pass / block / pass… alternating.
-  // ⚠️ NO combination is forbidden, and that is NOT an oversight: the
-  //    anti-loop guarantee lives in `gate.js` in the form of ALTERNATION (a
-  //    block is never followed by a block), not in the form of a ban.
-  //    A writing rule that rejected `dumb` would cripple the language without
-  //    protecting anything more. Do NOT reintroduce one.
-  return errs;
-}
+// ⚠️ `cadenceErrors` WAS REPLACED BY `settingErrors` (23/09/2026) — the per-key checks it
+//    carried are now the `valid`/`formError` fields of `settingRegistry()`. What it SAID about
+//    `enforce` still holds and stays here, next to the validator it explains:
+// ── `enforce` (05/08/2026): the doc REFUSES the tool instead of informing it ──
+// ⚠️ A BOOLEAN with THREE effects, and `false` is NOT noise: absent = INHERITS
+//    from the level above (defaults.{source}), `false` = CANCELS that inheritance.
+//    Without an explicit value, a category moved to `enforce` would be
+//    UN-OPT-OUT-ABLE — the classic dead end of any cascading system.
+// ⚠️ `enforce` FOLLOWS THE CADENCE — it has NO rhythm of its own (maintainer
+//    decision 05/08/2026, and he was right against my first version).
+//    The block happens exactly WHEN the doc injects, because it is
+//    the same condition. And there is NO loop: injecting marks the doc as seen
+//    AND resets its counter to zero, so the call the agent redoes right after
+//    has nothing left to deliver and PASSES.
+//      `once`  → blocks once per session, then never again.
+//      `smart` → blocks, passes right away, then re-blocks once after N
+//                calls of other tools. Perfectly coherent, NOT a trap.
+//
+//      `dumb`  → block / pass / block / pass… alternating.
+// ⚠️ NO combination is forbidden, and that is NOT an oversight: the
+//    anti-loop guarantee lives in `gate.js` in the form of ALTERNATION (a
+//    block is never followed by a block), not in the form of a ban.
+//    A writing rule that rejected `dumb` would cripple the language without
+//    protecting anything more. Do NOT reintroduce one.
 // Stryker restore StringLiteral
 
-module.exports = { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, KNOWN, TRIGGERS, INJECT, RULE_KEYS, WILDCARD, KEY_REMOVE, KEY_AXES };
+module.exports = { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, knownKeys, operatorForms, settingRegistry, takeSetting, poseSettings, MODES, DRIFT_UNITS, TRIGGERS, INJECT, RULE_KEYS, WILDCARD, KEY_REMOVE, KEY_AXES };

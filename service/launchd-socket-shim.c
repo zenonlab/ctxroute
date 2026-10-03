@@ -158,46 +158,58 @@ int main(int argc, char *argv[]) {
     }
 
     /*
-     * ⚠️ ONLY THE FIRST DESCRIPTOR IS USED, and the plist declares exactly one
-     *    listener. If a future plist declared several this would take the first
-     *    and ignore the rest — STATED, not silently handled, exactly as
-     *    `http-server.js` states it on the systemd side.
+     * 🔴 EVERY DESCRIPTOR IS FORWARDED SINCE 2026-09-19 — this used to take
+     *    `fds[0]` and state that the rest were ignored. That statement was
+     *    honest while the plist declared ONE listener; the day the default
+     *    became FOUR it turned into a boot failure, because the daemon compares
+     *    the count it is handed against the count the configuration declares and
+     *    REFUSES to start on a mismatch. Forwarding one of four is therefore not
+     *    a smaller capacity, it is a service that never comes up.
+     * 🛑 THE RELOCATION PASS IS NOT DEFENSIVE PADDING — WITHOUT IT THIS CLOBBERS
+     *    ITS OWN INPUT. launchd may hand descriptors that already sit inside the
+     *    target range [3, 3+count). Duplicating in place, `dup2(5, 3)` followed
+     *    by `dup2(3, 4)` would copy the socket ALREADY WRITTEN onto 3 instead of
+     *    the one launchd put there — two descriptors pointing at one socket and
+     *    another socket closed, with every observable looking healthy.
+     * ⚠️ IT ALSO RETIRES THE OLD `dup2(3, 3)` EDGE CASE, and that is why no
+     *    branch remains: after relocation no source EQUALS its target, so every
+     *    `dup2` really duplicates — and duplication is precisely what clears
+     *    FD_CLOEXEC (POSIX: the new descriptor does not inherit it). launchd
+     *    hands its descriptors with that flag SET, so a descriptor that was not
+     *    duplicated would be closed by the `execv` below and node would find
+     *    nothing.
+     * ⚠️ THE ORDER launchd RETURNS THEM IN IS NOT RELIED UPON, and it does not
+     *    need to be: every socket is served by the SAME handler sharing ONE
+     *    sequencer table, so which port lands on which descriptor changes
+     *    nothing. Do not add an ordering assumption here.
      */
-    int given = fds[0];
+    for (size_t i = 0; i < count; i += 1) {
+        if (fds[i] >= SD_LISTEN_FDS_START
+            && fds[i] < (int)(SD_LISTEN_FDS_START + (int)count)) {
+            int moved = fcntl(fds[i], F_DUPFD, SD_LISTEN_FDS_START + (int)count);
+            if (moved == -1) {
+                fprintf(stderr,
+                        "launchd-socket-shim: could not move descriptor %d out of the\n"
+                        "  target range [%d, %d): %s\n",
+                        fds[i], SD_LISTEN_FDS_START,
+                        SD_LISTEN_FDS_START + (int)count, strerror(errno));
+                free(fds);
+                return EX_OSERR;
+            }
+            close(fds[i]);
+            fds[i] = moved;
+        }
+    }
 
-    if (given != SD_LISTEN_FDS_START) {
-        /*
-         * ⚠️ `dup2` IS ALSO WHAT CLEARS FD_CLOEXEC, and that is not a side
-         *    effect we tolerate — it is the mechanism. POSIX: the new
-         *    descriptor does NOT inherit the close-on-exec flag. Since launchd
-         *    hands its descriptors with FD_CLOEXEC set, a socket that was not
-         *    duplicated would be CLOSED by the `execv` below and node would
-         *    find nothing on fd 3.
-         */
-        if (dup2(given, SD_LISTEN_FDS_START) == -1) {
+    for (size_t i = 0; i < count; i += 1) {
+        int target = SD_LISTEN_FDS_START + (int)i;
+        if (dup2(fds[i], target) == -1) {
             fprintf(stderr, "launchd-socket-shim: dup2 onto descriptor %d failed: %s\n",
-                    SD_LISTEN_FDS_START, strerror(errno));
+                    target, strerror(errno));
+            free(fds);
             return EX_OSERR;
         }
-        close(given);
-    } else {
-        /*
-         * 🛑 THE EDGE CASE THAT WOULD OTHERWISE BE A SILENT DEAD SOCKET. When
-         *    launchd already handed us descriptor 3, `dup2(3, 3)` is defined as
-         *    a NO-OP — and a no-op does not clear FD_CLOEXEC. The descriptor
-         *    would then be closed by `execv` and node would see nothing, on a
-         *    machine where the numbering happened to line up. Clear the flag
-         *    explicitly instead of relying on a duplication that will not
-         *    happen.
-         */
-        int flags = fcntl(SD_LISTEN_FDS_START, F_GETFD);
-        if (flags == -1
-            || fcntl(SD_LISTEN_FDS_START, F_SETFD, flags & ~FD_CLOEXEC) == -1) {
-            fprintf(stderr,
-                    "launchd-socket-shim: could not clear FD_CLOEXEC on descriptor %d: %s\n",
-                    SD_LISTEN_FDS_START, strerror(errno));
-            return EX_OSERR;
-        }
+        close(fds[i]);
     }
     free(fds);
 
@@ -215,7 +227,20 @@ int main(int argc, char *argv[]) {
      * ⚠️ EXACTLY ONE DESCRIPTOR IS ANNOUNCED because exactly one was taken
      *    above. Announcing more than we placed would send node reading fd 4.
      */
-    if (setenv("LISTEN_FDS", "1", 1) != 0 || setenv("LISTEN_PID", own_pid, 1) != 0) {
+    /*
+     * 🛑 THE COUNT IS THE ONE launchd GAVE US, never a literal. It was `"1"`
+     *    until 2026-09-19, which was true of a one-listener plist and became a
+     *    lie the moment the plist declared four: the daemon would have adopted
+     *    descriptor 3 alone, compared 1 against the 4 its configuration
+     *    declares, and refused to start — with the sockets sitting right there,
+     *    already bound and already handed over.
+     */
+    char handed[32];
+    if (snprintf(handed, sizeof handed, "%zu", count) < 1) {
+        fprintf(stderr, "launchd-socket-shim: could not render the descriptor count.\n");
+        return EX_OSERR;
+    }
+    if (setenv("LISTEN_FDS", handed, 1) != 0 || setenv("LISTEN_PID", own_pid, 1) != 0) {
         fprintf(stderr, "launchd-socket-shim: setenv failed: %s\n", strerror(errno));
         return EX_OSERR;
     }

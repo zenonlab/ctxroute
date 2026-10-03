@@ -393,3 +393,24 @@ ok('refusalNotice: no error at all (an unintelligible answer) → silence, never
   () => lib.refusalNotice(undefined, {}).say === false);
 ok('refusalNotice: a null state (nothing readable) → it speaks, and does not throw',
   () => lib.refusalNotice('ECONNREFUSED', null).say === true);
+
+// ── afterAnswer / momentInvocation (2026-09-23): the moment of the action, in the harness's words ──
+// ⚠️ The dialect is the REAL profile entry and the payloads are the measured Claude Code shapes.
+const { AFTER_ANSWER } = require('../src/harness-profile.js');
+test('afterAnswer: PostToolUse hands the answer over RAW; any other event is "before"', () => {
+  const d = AFTER_ANSWER.claudeCode;
+  assert.deepStrictEqual(lib.afterAnswer({ hook_event_name: 'PostToolUse', tool_response: '{"state":"posted"}' }, d), { response: '{"state":"posted"}' });
+  assert.deepStrictEqual(lib.afterAnswer({ hook_event_name: 'PostToolUse' }, d), { response: undefined }, 'after with no answer is still AFTER');
+  assert.strictEqual(lib.afterAnswer({ hook_event_name: 'PreToolUse', tool_response: 'x' }, d), undefined);
+  assert.strictEqual(lib.afterAnswer({ tool_response: 'x' }, d), undefined, 'no event named: before');
+  // Totality: nothing throws, a missing payload or dialect is "before".
+  assert.strictEqual(lib.afterAnswer(null, d), undefined);
+  assert.strictEqual(lib.afterAnswer({ hook_event_name: 'PostToolUse' }, undefined), undefined);
+  // The field names come from the dialect, never from this module.
+  assert.deepStrictEqual(lib.afterAnswer({ ev: 'After', out: 7 }, { eventField: 'ev', event: 'After', responseField: 'out' }), { response: 7 });
+});
+test('momentInvocation: the moment after the answer is a SECOND invocation; no id stays no id', () => {
+  assert.strictEqual(lib.momentInvocation('toolu_1', { response: 'x' }), 'toolu_1-after');
+  assert.strictEqual(lib.momentInvocation('toolu_1', undefined), 'toolu_1');
+  assert.strictEqual(lib.momentInvocation('', { response: 'x' }), '', 'an empty id must never become a fabricated one');
+});

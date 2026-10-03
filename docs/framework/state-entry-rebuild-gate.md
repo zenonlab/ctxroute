@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"state-entry-rebuild-budget.json","scope":["ctxroute"]},{"pattern":"no-rebuilt-state-entry.yml","scope":["ctxroute"]},{"pattern":"state-entry-rebuild-gate.test.js","scope":["ctxroute"]},{"pattern":"state-entry-rebuild-pure.js","scope":["ctxroute"]},{"pattern":"state-entry-rebuild-pure.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 30
+threshold: 41
 ---
 # state-entry-rebuild — A RECORD IS PROPAGATED, NEVER REBUILT BY LITERAL
 🛑 **THE CLASS IS NOT "this field was forgotten". It is: REBUILDING A RECORD FIELD BY FIELD SILENTLY DROPS EVERY FIELD ABSENT FROM THE LIST.** The literal asserts *here is the whole entry now* — an assertion about fields its author never considered — and nothing goes red: the shape stays valid, the suite stays green, whatever lived in a dropped field is gone.

@@ -1,6 +1,7 @@
 ---
 match: [foreign-identifier-gate.test.js, foreign-identifier-pure.test.js, foreign-identifier-pure.js, foreign-identifier-budget.json, declared-identifier.yml, cspell.json]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # foreign-identifier-gate — the IDENTIFIERS of the code are English, and English is the ONLY reference

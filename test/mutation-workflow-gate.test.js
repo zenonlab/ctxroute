@@ -245,6 +245,85 @@ test('GATE: no Stryker suite imports node:test', () => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 COVERAGE, NOT ONLY COHERENCE — added 2026-09-19 after a pure module
+//    shipped OUTSIDE every mutation perimeter with this gate GREEN.
+//
+// 🔑 EVERY CELL ABOVE ASKS THE SAME QUESTION: *is what IS declared coherent
+//    across the three files?* None of them asks *is anything MISSING?* — so a
+//    `*-pure.js` absent from `mutate`, from the runner's `include` AND from the
+//    workflow's `paths:` is invisible to all of them at once. That is the
+//    repository's own law, paid again: a declaration says what EXISTS, only a
+//    COUNTER sees what is missing, and an absence has no line and no trigger.
+// 🔴 MEASURED: `service/render-units-pure.js` — the module that DECIDES what a
+//    supervisor binds — sat outside all three for a day, with the whole suite
+//    green. The `service/` directory alone was enough to hide it, because every
+//    perimeter had been populated by hand, one module at a time.
+// 🛑 DERIVED FROM THE DISK, NEVER A LIST: the next pure module enters this net
+//    by itself and stays RED until someone mutates it or exempts it IN WRITING.
+//    Scanning the two directories that may hold decisions is deliberate — a
+//    `*-pure.js` under `test/` is a fixture, not a decision.
+// ⚠️ AN EXEMPTION CARRIES ITS REASON AND IS CHECKED IN BOTH DIRECTIONS: a
+//    module named here that IS mutated, or that no longer exists, is RED — a
+//    stale justification is how an exemption outlives the fact that justified it.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Pure modules deliberately kept out of the permanent mutation perimeter. */
+const MUTATION_EXEMPTIONS = {
+  'src/ci-steps-pure.js':
+    'its coverage is proven by a ONE-OFF targeted `--mutate src/ci-steps-pure.js` run: '
+    + "the three workflows' `paths:` blocks are deliberately frozen (only their `run:` "
+    + 'lines moved when the CI became one local command), so wiring it permanently '
+    + 'would edit a block that mission declared untouchable. Suite: test/ci-steps-pure.test.js.',
+};
+
+/** Every `*-pure.js` that may carry a decision, read off the disk. */
+function pureModules() {
+  const out = [];
+  for (const dir of ['src', 'service']) {
+    const root = path.join(RACINE, dir);
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith('-pure.js')) out.push(`${dir}/${entry.name}`);
+    }
+  }
+  return out.sort();
+}
+
+test('GATE: every pure module is mutated, or exempted IN WRITING', () => {
+  const modules = pureModules();
+  // Anti-vacuity: a broken scan finds nothing and would certify everything.
+  assert.ok(modules.length >= 20,
+    `suspicious scan: ${modules.length} pure module(s) found, expected >= 20 — `
+    + 'a scan that reads nothing looks exactly like a perimeter that is complete.');
+  assert.ok(modules.includes('src/lib-pure.js'),
+    'scan broken: src/lib-pure.js is the oldest pure module here and must be found.');
+
+  const declared = new Set(conf.mutate || []);
+  const missing = modules.filter((m) => !declared.has(m) && !(m in MUTATION_EXEMPTIONS));
+  assert.deepStrictEqual(missing, [],
+    `pure module(s) outside EVERY mutation perimeter: ${missing.join(', ')}.\n`
+    + 'A pure module is a DECISION, and an unmeasured decision is a guard nobody proved. '
+    + 'Add it to `stryker.conf.json` `mutate`, to the `include` of `vitest.stryker.config.mjs` '
+    + "(its covering suite) and to `paths:` in mutation.yml — or exempt it in "
+    + 'MUTATION_EXEMPTIONS with the reason, which is then checked in both directions.');
+});
+
+test('GATE: no mutation exemption is stale', () => {
+  const onDisk = new Set(pureModules());
+  const declared = new Set(conf.mutate || []);
+  for (const [mod, reason] of Object.entries(MUTATION_EXEMPTIONS)) {
+    assert.ok(onDisk.has(mod),
+      `\`${mod}\` is exempted from mutation and does not exist: an exemption that names nothing `
+      + 'hides the next module that lands under the same name.');
+    assert.ok(!declared.has(mod),
+      `\`${mod}\` is exempted AND declared in \`mutate\`: the exemption outlived its reason, `
+      + 'delete it rather than let it contradict the perimeter.');
+    assert.ok(typeof reason === 'string' && reason.length >= 60,
+      `\`${mod}\` is exempted without a usable reason: an exemption with no argument is a permit.`);
+  }
+});
+
 test('NEGATIVE-CHECK: the `paths:` parser really reads the file', () => {
   const paths = workflowPaths();
   assert.ok(paths.length >= 10, `suspicious parsing: ${paths.length} paths read, expected >= 10`);

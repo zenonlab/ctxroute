@@ -1,6 +1,6 @@
-# MCP Stripe — invariants (exemple)
+# MCP Stripe — invariants (example)
 
-⚠️ NE JAMAIS cliquer/activer un bouton d'action de PAIEMENT réel sur un portail client (ex: "Payer maintenant", lien Stripe Link) — action IRRÉVERSIBLE, notifie le client immédiatement, aucun mode test sur le portail public.
-⚠️ Pour vérifier qu'une facture/lien fonctionne, s'arrêter à la LECTURE (page chargée, montant correct, bouton présent) — ne jamais cliquer l'action elle-même.
-2FA Stripe = TOTP, non stocké → toujours demander le code en live, jamais le deviner/contourner.
-Clés `sk_test_.../pk_test_...` = sandbox, zéro risque réel. Clés `sk_live_.../pk_live_...` = argent réel — ne jamais les afficher/logger en clair au-delà du strict nécessaire.
+⚠️ NEVER click or activate a REAL PAYMENT button on a customer portal (a "Pay now" button, a Stripe Link) — the action is IRREVERSIBLE, it notifies the customer immediately, and the public portal has no test mode.
+⚠️ To check that an invoice or a link works, stop at READING it (page loaded, amount correct, button present) — never click the action itself.
+Stripe 2FA is TOTP and is not stored, so always ask for the code live; never guess it and never work around it.
+`sk_test_...` / `pk_test_...` keys are the sandbox and carry no real risk. `sk_live_...` / `pk_live_...` keys move real money — never print or log them in clear beyond what is strictly needed.

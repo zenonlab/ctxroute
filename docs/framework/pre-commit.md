@@ -1,7 +1,8 @@
 ---
 match: pre-commit
 scope: ["ctxroute"]
-mode: dumb
+mode: smart
+threshold: 30
 rank: 567
 ---
 # .githooks/pre-commit — one of the TWO BLOCKING gates in the repo

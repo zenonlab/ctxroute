@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"leak-list.js","scope":["ctxroute"]},{"pattern":"leak-list.test.js","scope":["ctxroute"]},{"pattern":"leak-gate.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 25
+threshold: 54
 rank: 566
 ---
 # personal-leak — the gate that stops personal data from reaching a PUBLIC repo

@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"rendezvous-budget.json","scope":["ctxroute"]},{"pattern":"rendezvous-address-gate.test.js","scope":["ctxroute"]},{"pattern":"rendezvous-budget-pure.js","scope":["ctxroute"]},{"pattern":"rendezvous-budget-pure.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 30
+threshold: 65
 ---
 # rendezvous-budget.json — AN ADDRESS DECLARES ITSELF (2026-08-25)
 🛑 **AN ADDRESS IS THE ONE VALUE WHOSE DIVERGENCE SAYS NOTHING.** A host, a port, a URL, a pipe or socket name, a route of our own protocol: two processes must spell it IDENTICALLY, and when they do not there is no exception, no log, no badge — the daemon listens here, the client knocks there, and the injection simply stops. Every such literal is DECLARED here with the rendezvous it names, the value it writes, its origin and its reason.

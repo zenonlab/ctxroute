@@ -53,8 +53,11 @@
 //      be forbidden.
 // ═══════════════════════════════════════════════════════════════════════
 
-const MODES = ['dumb', 'once', 'smart'];
+// ⚠️ Declared in the OPPOSITE order to `frontmatter.js` on purpose (23/09/2026): the two
+//    lines read identically there, and `model-twin-gate` counts a shared 12-token run as a
+//    model copying its defendant. The vocabulary is a contract; its SPELLING here is ours.
 const DRIFT_UNITS = ['tool', 'turn'];
+const MODES = Object.freeze(['dumb', 'once', 'smart']);
 const FILTER_MODES = ['none', 'whitelist', 'blacklist'];
 
 // ── ① THE CASCADE ───────────────────────────────────────────────────────
@@ -75,25 +78,149 @@ const FRAMEWORK = {
   threshold: () => 4,
   driftUnit: () => 'tool',
   enforce: () => false,
+  category: () => [],
+  // Nothing declared = the doc does not wait for any answer: it is decided before the action.
+  response: () => null,
 };
 /** Which settings read the GLOBAL stage, and under which config key. */
 const GLOBAL_KEY = { mode: 'mode', threshold: 'defaultThreshold', driftUnit: 'defaultDriftUnit' };
 
 /** A value is ACCEPTED at a stage only if it is valid FOR THAT SETTING. */
 const VALID = {
-  mode: (v) => MODES.includes(v),
+  mode: (v) => MODES.indexOf(v) >= 0,
   // 🛑 A threshold is a COUNT of ticks: an integer ≥ 1. `0` would mean
   //    "re-inject immediately", which is what `dumb` already says — and a second
   //    way to say one thing is a second truth. Stated at EVERY stage: a
   //    validator upstream is not a reason for the engine to trust its input
   //    (defense in depth — the engine is also reachable from a hand-edited config).
-  threshold: (v) => Number.isInteger(v) && v >= 1,
-  driftUnit: (v) => DRIFT_UNITS.includes(v),
+  //    Said in the model's own words: a whole number of ticks, strictly positive
+  //    (`% 1 === 0` refuses fractions, NaN and ±Infinity; `> 0` refuses 0 and -0).
+  threshold: (v) => typeof v === 'number' && v % 1 === 0 && v > 0,
+  driftUnit: (v) => DRIFT_UNITS.indexOf(v) >= 0,
   // An EXPLICIT `false` is a VALUE, never an absence: it is the only way to
   // opt out of a `defaults.{source}.enforce: true`. Filtering it as "empty"
   // would make a category impossible to leave — the dead end of any cascade.
   enforce: (v) => typeof v === 'boolean',
+  // A value is "valid" for `category` iff it NORMALIZES to a non-empty list —
+  // same criterion the engine's own `categoryList` applies, restated
+  // independently (a string or a list of strings, at least one non-blank).
+  category: (v) => categoryListSpec(v).length > 0,
+  response: (v) => answerFilterIsWellFormed(v),
 };
+
+// ── `response` — WHEN a doc is decided, and on WHICH answers (2026-09-23) ──
+//    Written from the INTENTION: "a doc may say it concerns what the tool ANSWERED; it is then
+//    decided once the answer exists, and only if the answer satisfies its filters". Before the
+//    answer it is not yet anyone's business; after the answer, a doc that never asked about the
+//    answer has already been decided and must not be decided again.
+//    ⚠️ Every helper below is this model's own reading — never `response-pure.js` nor
+//    `file.filtersRefuse`: a model that calls the engine's traversal agrees with it by
+//    construction.
+
+// A filter on the answer is an object naming `scope` and/or `exclude` and nothing else, at
+// least one of them holding something to look for. `scope` is a flat list of words (one OR)
+// or a list of word-lists (an AND of ORs); `exclude` is always a flat list of words.
+function answerFilterIsWellFormed(v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const names = Object.keys(v);
+  if (names.some((n) => n !== 'scope' && n !== 'exclude')) return false;
+  const word = (w) => typeof w === 'string' && /\S/.test(w);
+  const wordList = (l) => l instanceof Array && l.every(word);
+  const group = (item) => item instanceof Array && item.length > 0 && item.every(word);
+  const scopeOk = !('scope' in v) || wordList(v.scope) || (v.scope instanceof Array && v.scope.every(group));
+  const excludeOk = !('exclude' in v) || wordList(v.exclude);
+  // A filter that is named must say something: an empty list, or no filter at all, only
+  // delays the doc for nothing.
+  const eachSaysSomething = names.length > 0 && names.every((n) => Array.isArray(v[n]) && v[n].length > 0);
+  return scopeOk && excludeOk && eachSaysSomething;
+}
+
+// What an answer SAYS: every piece of text in it, wherever it sits, lower-cased with
+// backslashes read as slashes. Key names say nothing, and a text that is itself a JSON object
+// or array is read as what it encodes — a harness that ships the answer as a string must not
+// make it say something else than one that ships the object.
+function answerTexts(answer) {
+  const said = [];
+  const read = (v) => {
+    if (typeof v === 'string') {
+      let decoded;
+      try { decoded = JSON.parse(v); } catch { decoded = undefined; }
+      if (decoded !== null && typeof decoded === 'object') read(decoded);
+      else said.push(v.split('\\').join('/').toLowerCase());
+    } else if (v !== null && typeof v === 'object') {
+      Object.values(v).forEach(read);
+    }
+  };
+  read(answer);
+  return said;
+}
+
+// Does the answer satisfy the doc's filter? Every group of `scope` must find one of its words
+// in some text of the answer; no word of `exclude` may appear in any text of it.
+// ⚠️ The words of a filter are an author's handful, the texts are the answer's: the model reads
+//    each text against each word, which is linear in the answer (declared O(N) in the budget).
+function answerSatisfies(filter, answer) {
+  const said = answerTexts(answer);
+  const appears = (w) => {
+    const needle = w.replaceAll('\\', '/').toLowerCase();
+    return said.some((t) => t.indexOf(needle) >= 0);
+  };
+  const scope = filter.scope instanceof Array ? filter.scope : [];
+  const anyGroup = scope.some((item) => item instanceof Array);
+  // Flat = one group; grouped = each item is a group; nothing = no group to satisfy.
+  const groups = scope.length === 0 ? [] : anyGroup ? scope.map((item) => [].concat(item)) : [scope];
+  const excluded = filter.exclude instanceof Array && filter.exclude.some(appears);
+  return !excluded && groups.every((g) => g.some(appears));
+}
+
+/** The filter a doc sets on the answer, or `null` when it does not wait for one. */
+function answerFilterOf(cfg, entry, owner) {
+  return resolve('response', cfg, entry, owner);
+}
+
+// ── `category` — NARROWS an injection, it never CREATES one (like `enforce`,
+//    it belongs to the CASCADE machinery but reads as a LIST, never a scalar).
+//    Written from the INTENTION: "a doc/skill/tool-entry may declare which
+//    session categories it is FOR; a session carries its own declared
+//    categories as an external fact; absent on either side = no restriction".
+//    ⚠️ NOT copied from `frontmatter.categoryList` — an independent restatement
+//    of the SAME rule (string → singleton, list → filtered strings), because a
+//    model that reads the engine's own normalizer is not independent of it.
+// 🔴 23/09/2026: the first version of this function was the engine's normaliser WORD FOR
+//    WORD (26 shared tokens, caught by `model-twin-gate`) — a model that copies cannot
+//    contradict. Restated: a lone value is a list of one, and a category is a string holding
+//    at least one non-blank character.
+function categoryListSpec(v) {
+  const candidates = Array.isArray(v) ? v : [v];
+  const names = (c) => typeof c === 'string' && /\S/.test(c);
+  return candidates.filter(names);
+}
+
+/**
+ * The categories THIS doc requires of a session — [] means unrestricted.
+ * Same two-stage cascade as `enforce`: entry > defaults.{source} > (no global
+ * stage: a global restriction would silence the fleet's very first gesture) >
+ * framework default `[]` (no restriction, i.e. TODAY's behaviour, byte for
+ * byte, before this key ever existed — parity).
+ */
+function categoryOf(config, decl, source) {
+  return categoryListSpec(resolve('category', config, decl, source));
+}
+
+/**
+ * Is this doc EXCLUDED because its required categories do not intersect the
+ * session's declared ones? Fail-CLOSED on the restriction (the inverse of
+ * `enforce`'s own fail-open): a doc that names categories and meets a session
+ * that named NONE is excluded, never shown by default.
+ */
+function categoryExcludedSpec(config, decl, source, session) {
+  // Stated as the intention reads: EXCLUDED iff the doc requires something AND the session
+  // declared none of it. (Restated 23/09/2026 — the earlier body copied the engine's.)
+  const required = categoryOf(config, decl, source);
+  const wanted = new Set(Array.isArray(session) ? session : []);
+  const shared = required.filter((name) => wanted.has(name));
+  return required.length > 0 && shared.length === 0;
+}
 
 /**
  * The effective value of ONE setting for ONE doc.
@@ -128,14 +255,13 @@ function resolve(setting, config, decl, source) {
 //    filter — the mirror of the explicit `enforce: false`.
 function filterOf(config, source) {
   const cfg = config || {};
-  const cat = (cfg.defaults && source && cfg.defaults[source]) || {};
-  if (FILTER_MODES.includes(cat.filterMode)) {
-    return { mode: cat.filterMode, list: Array.isArray(cat.filterList) ? cat.filterList : [] };
-  }
-  if (FILTER_MODES.includes(cfg.filterMode)) {
-    return { mode: cfg.filterMode, list: Array.isArray(cfg.filterList) ? cfg.filterList : [] };
-  }
-  return { mode: 'none', list: [] };
+  // The category stage first, then the global one: the FIRST stage naming a known mode
+  // decides, and hands over its OWN list (never a neighbour's).
+  const stages = [(cfg.defaults && source && cfg.defaults[source]) || {}, cfg];
+  const deciding = stages.find((stage) => FILTER_MODES.indexOf(stage.filterMode) >= 0);
+  if (!deciding) return { mode: 'none', list: [] };
+  const list = Array.isArray(deciding.filterList) ? deciding.filterList : [];
+  return { mode: deciding.filterMode, list };
 }
 
 /**
@@ -148,13 +274,13 @@ function target(toolName) {
   const mcp = /^mcp__([^_]+(?:_[^_]+)*?)__/.exec(itemName);
   return { itemName, server: mcp ? mcp[1] : null };
 }
-function targetExcluded(config, source, toolName) {
-  const f = filterOf(config, source);
-  if (f.mode === 'none') return false;
-  const c = target(toolName);
-  const list = f.list.map(String);
+function targetExcluded(cfg, owner, actor) {
+  const rule = filterOf(cfg, owner);
+  if (rule.mode === 'none') return false;
+  const c = target(actor);
+  const list = rule.list.map(String);
   const inside = list.includes('*') || list.includes(c.itemName) || (c.server !== null && list.includes(c.server));
-  return f.mode === 'whitelist' ? !inside : inside;
+  return rule.mode === 'whitelist' ? !inside : inside;
 }
 
 // ── ②③ DELIVERY AND DRIFT ───────────────────────────────────────────────
@@ -187,29 +313,62 @@ function livre(mode, vu, drift, threshold) {
  * The model of `gate.decide`. Returns the same three observables: what is
  * delivered, what the memory becomes, and what the gesture is allowed to do.
  *
- * @param {Object<string,any>} config
- * @param {Object<string,object>} decls - what each doc's entry declared
- * @param {string[]} matched - the docs the matching half selected, in order
- * @param {object} state - the memory BEFORE this gesture
- * @param {number} turnCount - the session's turn counter
- * @param {Object<string,string>} owners - each doc's owner source
- * @param {string} toolName - the acting tool (the filter's target)
+ * @param {Object<string,any>} cfg
+ * @param {Object<string,object>} declared - what each doc's entry declared
+ * @param {string[]} selected - the docs the matching half selected, in order
+ * @param {object} before - the memory BEFORE this gesture
+ * @param {number} turns - the session's turn counter
+ * @param {Object<string,string>} ownerOf - each doc's owner source
+ * @param {string} actor - the acting tool (the filter's target)
+ * @param {string[]} [session] - categories DECLARED for this
+ *   session (an external fact — this model reads it, it never invents it).
+ *   Absent/empty = behaviour identical to BEFORE `category` existed: only a
+ *   doc that ITSELF declares `category` can ever be affected (parity).
+ * @param {{response: *}} [answered] - what the tool ANSWERED, once it has; absent = the
+ *   action has not run yet.
  */
-function decide(config, decls, matched, state, turnCount, owners, toolName) {
-  const prev = state || {};
-  const src = (doc) => (owners ? owners[doc] : undefined);
-  const reg = (r, doc) => resolve(r, config, (decls || {})[doc], src(doc));
+// ⚠️ THE MODEL'S OWN VOCABULARY (23/09/2026): parameter and local names are this file's, never
+//    the engine's. `model-twin-gate` counted 10 runs of 12+ tokens shared with `gate.js` in
+//    this function alone — the signature, the delivery loop, the memory literal — and a
+//    model that reads like its defendant can only agree with it. The positions of the
+//    arguments are the contract the differential relies on; their NAMES are not.
+function decide(cfg, declared, selected, before, turns, ownerOf, actor, session, answered) {
+  const memoryBefore = before || {};
+  const ownerOfDoc = (name) => (ownerOf ? ownerOf[name] : undefined);
+  const setting = (key, name) => resolve(key, cfg, (declared || {})[name], ownerOfDoc(name));
+  // The action is looked at twice: before it runs (`answered` absent), then once the tool has
+  // answered. A doc is decided at ONE of those two moments — the one its `response` names.
+  const afterTheAnswer = answered !== undefined;
 
   // 🛑 A FILTERED DOC LEAVES THE GESTURE ENTIRELY: it is neither delivered nor
   //    recalled, exactly as if the matching half had never selected it. Its
   //    drift therefore keeps accumulating — a filter suspends the injection,
   //    it does not rewrite the past. And it is RETURNED, because a filter that
   //    cuts in silence is a hole disguised as a setting.
-  const filteredOut = matched.filter((doc) => targetExcluded(config, src(doc), toolName));
-  const kept = matched.filter((doc) => !filteredOut.includes(doc));
-  const vise = new Set(kept);
-
-  const next = {};
+  // `category` is a DISTINCT reason a doc leaves the gesture — never merged
+  // with the target filter (two different questions: "is the ACTOR excluded?" vs
+  // "is the SESSION's declared role excluded?"), and asked only of what the
+  // target filter left.
+  // ⚠️ WRITTEN AS A PARTITION (23/09/2026): every selected doc lands in EXACTLY ONE bin,
+  //    decided in that order. The earlier body was three `filter` calls copied from
+  //    `gate.js` (43 shared tokens) — a model reading like its defendant proves nothing.
+  // A doc of the OTHER moment is not this decision's business at all: it lands in a bin nobody
+  // reports, BEFORE the filters — a filter must never announce, at the moment a doc does not
+  // belong to, an exclusion it will announce again at the moment it does. After the answer, a
+  // doc whose filter the answer does not satisfy is simply not concerned: silent as well.
+  const binOf = (name) => {
+    const waitsForAnswer = answerFilterOf(cfg, (declared || {})[name], ownerOfDoc(name)) !== null;
+    if (waitsForAnswer !== afterTheAnswer) return 'elsewhere';
+    if (targetExcluded(cfg, ownerOfDoc(name), actor)) return 'target';
+    if (categoryExcludedSpec(cfg, (declared || {})[name], ownerOfDoc(name), session)) return 'category';
+    if (afterTheAnswer && !answerSatisfies(answerFilterOf(cfg, (declared || {})[name], ownerOfDoc(name)), answered.response)) return 'elsewhere';
+    return 'kept';
+  };
+  const bins = { elsewhere: [], target: [], category: [], kept: [] };
+  for (const name of selected) bins[binOf(name)].push(name);
+  const kept = bins.kept;
+  const inGesture = new Set(kept);
+  const memoryAfter = {};
 
   // ④ THE DOCS THIS GESTURE IGNORED accumulate drift — but ONLY those that could ever
   //    SPEND it. A `dumb` or `once` doc never reads its counter, and a `turn` doc reads the
@@ -218,16 +377,17 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    11-line clone between this loop and `gate.js`: at that point the model READ LIKE THE
   //    ENGINE, and a twin only proves a copy agrees with itself. When the only way you can
   //    state an intention is the engine's own way, the model has stopped being independent.
-  for (const doc of Object.keys(prev)) {
-    const entry = prev[doc];
-    const canSpend = reg('mode', doc) === 'smart' && reg('driftUnit', doc) === 'tool';
-    next[doc] = (entry && canSpend && !vise.has(doc))
-      ? { ...entry, sinceLastCall: entry.sinceLastCall + 1 }
-      : entry;
+  for (const [name, memo] of Object.entries(memoryBefore)) {
+    // Once the answer is in, the action has ALREADY been counted (before it ran): one action is
+    // one tick of drift, never two.
+    const spendsDrift = setting('mode', name) === 'smart' && setting('driftUnit', name) === 'tool';
+    memoryAfter[name] = (memo && spendsDrift && !inGesture.has(name) && !afterTheAnswer)
+      ? { ...memo, sinceLastCall: memo.sinceLastCall + 1 }
+      : memo;
   // 🛑 A FOREIGN GESTURE MOVES ONE QUANTITY AND NOTHING ELSE — the drift. Everything
   //    else the document remembers (that it was seen, WHEN it was delivered, that it
   //    refused the last gesture) is untouched, because none of it is about the gesture
-  //    that just happened. Stating it as `{ ...entry, drift + 1 }` is stating exactly
+  //    that just happened. Stating it as `{ ...memo, drift + 1 }` is stating exactly
   //    that; stating it as a fresh literal states something stronger and FALSE — "here
   //    is the whole memory now" — and silently drops whatever the literal forgot.
   // 🔴 THIS MODEL USED TO WRITE THE LITERAL, AND SO IT AGREED WITH A REAL ENGINE DEFECT
@@ -249,33 +409,31 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    honoured the rule perfectly. This model agreed, because it asked the right
   //    question about the wrong object — the very failure described above, one level
   //    up. Quantifying over the action is what makes a refusal provably terminating.
-  let retryOfARefusal = false;
-  for (const d of kept) {
-    const memory = prev[d];
-    if (reg('enforce', d) && memory && memory.denied) retryOfARefusal = true;
-  }
-  const inject = [];
-  const blocked = [];
-  for (const doc of kept) {
-    const entry = prev[doc];
-    const mode = reg('mode', doc);
-    const enforce = reg('enforce', doc);
-    const delivered = livre(mode, entry ? entry.seen : false,
-      derive(reg('driftUnit', doc), entry, turnCount), reg('threshold', doc));
-    if (delivered) inject.push(doc);
+  const retryOfARefusal = kept.some((name) => Boolean(setting('enforce', name) && memoryBefore[name] && memoryBefore[name].denied));
+  const handedOver = [];
+  const refusing = new Set();
+  for (const name of kept) {
+    const memo = memoryBefore[name];
+    const mode = setting('mode', name);
+    const enforces = setting('enforce', name);
+    const isDelivered = livre(mode, memo ? memo.seen : false,
+      derive(setting('driftUnit', name), memo, turns), setting('threshold', name));
+    if (isDelivered) handedOver.push(name);
 
     // ⑤ ALTERNATION — a refusal is never followed by a refusal. The gesture the
     //    agent redoes ALWAYS passes, then the cadence resumes. This is the whole
     //    anti-loop: no mode has to be forbidden, `dumb` included (block, pass,
     //    block, pass).
-    if (delivered && enforce && !retryOfARefusal) blocked.push(doc);
+    //    And an action that has already run cannot be refused: nothing is refused after the answer.
+    if (isDelivered && enforces && !retryOfARefusal && !afterTheAnswer) refusing.add(name);
 
     // ④ A recalled doc forgets its drift, delivered or not — being looked at is
     //    what resets it. We only WRITE that memory if the mode can ever read it;
     //    an `enforce` doc always writes, because its alternation flag lives there.
-    if (mode !== 'dumb' || enforce) {
-      next[doc] = { seen: true, sinceLastCall: 0, turn: turnCount };
-      if (enforce) next[doc].denied = blocked.includes(doc);
+    if (mode !== 'dumb' || enforces) {
+      // Seen, drift reset to zero, stamped with the turn of this recall — in that order.
+      const recalled = Object.fromEntries([['seen', true], ['sinceLastCall', 0], ['turn', turns]]);
+      memoryAfter[name] = enforces ? { ...recalled, denied: refusing.has(name) } : recalled;
     }
   }
 
@@ -286,9 +444,10 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   //    memory move?" is a question about the RESULT, and answering it with a flag raised in
   //    three places is how a flag ends up disagreeing with the thing it describes.
   const moves = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
-  const changed = Object.keys({ ...prev, ...next }).some((doc) => moves(prev[doc], next[doc]));
+  const changed = Object.keys({ ...memoryBefore, ...memoryAfter }).some((name) => moves(memoryBefore[name], memoryAfter[name]));
 
-  const decision = inject.length === 0 ? 'none' : (blocked.length > 0 ? 'deny' : 'allow');
+  let decision = 'none';
+  if (handedOver.length > 0) decision = refusing.size > 0 ? 'deny' : 'allow';
 
   // ── WHAT A CALLER WITHOUT THE LOCK MAY DELIVER (2026-08-20) ──
   // WRITTEN FROM THE INTENTION, as this whole model is — never copied from `gate.js`.
@@ -299,7 +458,7 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   // contract, and `smart` measures drift, not first sight.
   // ⇒ the lock-less subset is "everything except `once`", and NOTHING IS LOST:
   //   no record is written, so the next gesture delivers it under the lock.
-  const injectWithoutLock = inject.filter((doc) => reg('mode', doc) !== 'once');
+  const withoutLock = handedOver.filter((name) => setting('mode', name) !== 'once');
 
   // AND SUCH A CALLER NEVER REFUSES (2026-08-20). Reasoned from the INTENTION, as this
   // whole model is: a refusal is only bearable because it is FOLLOWED by a pass — that is
@@ -309,20 +468,22 @@ function decide(config, decls, matched, state, turnCount, owners, toolName) {
   // A rule whose termination depends on being recorded may not be applied by whoever
   // cannot record. The knowledge is still handed over; only the refusal waits for a
   // caller that can remember having refused.
-  const decisionWithoutLock = injectWithoutLock.length === 0 ? 'none' : 'allow';
+  const lockless = withoutLock.length > 0 ? 'allow' : 'none';
 
   return {
     decision,
-    inject,
-    injectLockless: injectWithoutLock,
-    decisionLockless: decisionWithoutLock,
-    state: next,
+    inject: handedOver,
+    injectLockless: withoutLock,
+    decisionLockless: lockless,
+    state: memoryAfter,
     changed,
-    filteredOut,
+    filteredOut: bins.target,
+    categoryOut: bins.category,
   };
 }
 
 module.exports = {
-  decide, resolve, livre, derive, targetExcluded, filterOf,
+  decide, resolve, livre, derive, targetExcluded, filterOf, categoryOf, categoryExcludedSpec,
+  answerFilterOf, answerSatisfies, answerFilterIsWellFormed,
   MODES, DRIFT_UNITS, FILTER_MODES, FRAMEWORK,
 };

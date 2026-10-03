@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"lib-pure.property.test.js","scope":["ctxroute"],"rank":358},{"pattern":"lib-pure.js","scope":["ctxroute"],"rank":363},{"pattern":"lib-pure.test.js","scope":["ctxroute"],"rank":364}]
-mode: dumb
+mode: smart
+threshold: 30
 rank: 358
 ---
 # lib-pure.js — invariants

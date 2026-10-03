@@ -1,6 +1,7 @@
 ---
 match: pretool-decision-vocabulary
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # pretool-decision-vocabulary.test.js — the PreToolUse decision set is CLOSED

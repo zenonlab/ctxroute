@@ -1,12 +1,13 @@
 ---
 match: [english-only-gate.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # english-only-gate.test.js — the PUBLISHED surface cannot slip out of English
 
 🔴 **BORN OF THE RULE BEING BROKEN THREE TIMES IN FOUR DAYS**, always by an agent that had just READ it. One slip survived a whole session that ended with the agent certifying "everything is clean": a French paragraph in `docs/framework/mutation-floor-gate.md` — the mirror a FORK receives. **A rule that only prose guards is not a rule.**
-🛑 **SCOPE = `docs/framework/` ONLY.** The maintainer's personal fleet docs stay in any language: they never leave the machine. Widening this gate to them makes it red forever, hence ignored, hence dead.
+🛑 **SCOPE = WHAT GIT TRACKS, DERIVED FROM `git ls-files` (corrected 2026-09-19).** It read `docs/framework/*.md` alone, flat, and that scope was NARROWER than the published surface: `docs/mcp/*.md.example` and `docs/session/*` are tracked too, a fork receives them, and THREE of them held whole French paragraphs while this gate stayed green. 🔴 **THE FIRST FIX WAS WRONG AND THE GATE SAID SO IN ONE RUN**: walking `docs/` on DISK immediately accused `docs/mcp/browser-*.md` — the maintainer's PERSONAL docs, gitignored, never published. That is a gate widened wrongly: red on correct content, hence disarmed within the week. **Git is the authority on "what a fork receives"; a path pattern is a guess about it.** ⚠️ Personal fleet docs stay in any language and are now excluded BY CONSTRUCTION rather than by a pattern somebody must maintain. 🛑 **`.js` STAYS OUT, WITH ITS REASON WRITTEN**: several suites must carry French ON PURPOSE (`backlog-coherence-gate` feeds French headings, `leak-gate` French words, `pretool-differential` a French fixture), so a gate there would redden on CORRECT code. Identifiers have their own judge; French prose in a comment is a DECLARED, measured gap — never a silence. ⚠️ **AND IT MOVED LANE**: calling git makes it spawn, so `vitest-projects` classifies it `integration` — `npm test` no longer runs it. It is still covered by `npm run test:all`, which is what the CI's `unit` group runs and what precedes every commit.
 ⚠️ **NOT a French detector — a NOT-ENGLISH detector.** Contributors are international; the next slip may be German or Japanese. `eld` covers 60 languages.
 📐 **THE DEPENDENCY WAS CHOSEN BY MEASUREMENT, AND THE MEASUREMENT REFUTED THE MARKET LEADER.** `franc` = 1,374,671 downloads/month, 4,407 stars (vs 119 for `eld`) — and **97 FALSE POSITIVES** on this corpus, reading English lines as Scots (`sco`), whose trigrams overlap English. `eld`: **0 false positives, 2 real violations caught out of 2.** 🛑 Never swap back on reputation: replay the measurement. (Measured too: the npm package `lingua` is NOT the Lingua detector — unrelated i18n module; real Lingua has no maintained JS port.)
 ⚠️ **`isReliable()` IS LOAD-BEARING, not a refinement** — the detector says ITSELF when the sample is too short to decide. That is precisely what `franc` lacks. A gate that guesses on short text becomes noise, and a noisy gate gets disarmed.

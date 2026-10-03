@@ -76,10 +76,20 @@ function bind(server, address, onListening, onError, options) {
       // ⚠️ ONLY `EADDRINUSE` is worth a second look. Any other failure is a real
       //    problem and is reported as-is: retrying it would hide it.
       if (err && /** @type {any} */ (err).code === 'EADDRINUSE' && leavesFilesystemEntry(platform)) {
+        // 🔴 THE REFUSAL NOW SAYS WHICH BRANCH PRODUCED IT (2026-09-23). On the macOS runner a
+        //    restarting daemon kept dying on `EADDRINUSE` here, and "a living owner" and "the
+        //    re-bind failed after the cleanup" arrived as the SAME bare error: the one fact that
+        //    separates a correct refusal from a defect was thrown away. `rendezvous` names the
+        //    branch, `unlinkCode` what the cleanup met (null = it succeeded). The error object is
+        //    the kernel's own, annotated, never replaced: a caller comparing it still matches.
         probe(filePath, (vivant) => {
-          if (vivant) { onError(err); return; }   // someone IS there: the address is legitimately taken
-          try { effacer(filePath); } catch { /* already gone: another instance won the race */ }
-          server.once('error', onError);
+          if (vivant) { onError(Object.assign(err, { rendezvous: 'owner-alive' })); return; }
+          let unlinkCode = null;
+          try { effacer(filePath); } catch (e) {
+            // already gone is the benign case (another instance won the race); any other code is SAID
+            unlinkCode = (e && /** @type {any} */ (e).code) || 'unknown';
+          }
+          server.once('error', (again) => onError(Object.assign(again, { rendezvous: 'rebind-failed', unlinkCode })));
           server.listen(filePath, onListening);
         });
         return;

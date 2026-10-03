@@ -19,8 +19,9 @@
       "class": "INHERITED_DEBT"
     },
     "src/cadence-spec.js": {
-      "max": 2,
-      "class": "INHERITED_DEBT"
+      "max": 3,
+      "class": "O(N)",
+      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-09-23 when the `response` model arrived, rather than having its ceiling raised. Three nestings, each bounded by author-written constants: the answer model reads every TEXT of a tool answer against every WORD of a doc filter (a handful of words an author typed), and each `scope` group against those texts - linear in the answer, never a pairwise walk of a fleet collection. The third (a filter stage lookup) scans a fixed list of three filter modes. The model only ever runs on the cadence differential domain, a constant table."
     },
     "src/canary.js": {
       "max": 1,
@@ -49,12 +50,17 @@
       "class": "O(N)",
       "why": "The outer walk is over the files the scanner returned (the repository's runtime sources, 57 today) and the inner one over the METHODS met in ONE file, a handful. Neither side grows with the fleet: a client site adds pages, never a source file to this repository."
     },
+    "src/doctor-wiring-pure.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "declaredHostPresence walks this MACHINE's own network interface addresses once to normalise them and once to test membership (`raw.map(normaliseAddress).filter(...)`) — a chain, not a traversal repeated per element of another. Bounded by the number of network adapters on one host, never by client sites or pages. AND hookEventsOf (2026-09-23) looks for one script name in each section of ONE Codex wiring file (`[...matchAll]` then `slice().includes` per section): the sections partition the file, so the total work is the file length, bounded by one harness configuration (a few dozen hook sections), never by client sites or pages."
+    },
     "src/frontmatter.js": {
       "max": 10,
       "class": "INHERITED_DEBT"
     },
     "src/gate.js": {
-      "max": 2,
+      "max": 1,
       "class": "INHERITED_DEBT"
     },
     "src/hooks/ctxroute-reset.js": {
@@ -63,9 +69,9 @@
       "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised, because the nesting that arrived that day is the PreCompact sweep taking the cross-process lock. Three levels, and only the innermost grows: the outer walks the DISTINCT lock addresses of the five stores (two today, and the classes are a closed table in store-resolve.js), the middle walks the five declared store prefixes, and only the last walks the state directory. Both outer collections are constants of this framework, so the cost is LINEAR in the number of state files and can never become a pairwise comparison of two growing sets."
     },
     "src/hooks/http-server.js": {
-      "max": 1,
+      "max": 2,
       "class": "O(N)",
-      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised. The purge route walks the DISTINCT lock addresses of the keys one compaction names (two today, a closed table in store-resolve.js) and, inside each, the keys of that class alone (five stores in total) — constant by constant, and the two loops exist precisely so no lock is ever taken inside another. The stale-code watcher walks require.cache, i.e. the modules THIS repository loaded, with constant work per entry; a client site adds pages, never a module here. Neither side is fed by client volume. ⚠️ LOWERED from 2 to 1 on 2026-08-24: `watchOwnCode` no longer derives the watched directories itself — that traversal moved to `stale-code-pure.watchedDirs`, which the watcher and the freshness check now share, because two spellings of one rule are two rules. The ratchet only ever goes DOWN."
+      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-08-23 rather than having its ceiling raised. The purge route walks the DISTINCT lock addresses of the keys one compaction names (two today, a closed table in store-resolve.js) and, inside each, the keys of that class alone (five stores in total) — constant by constant, and the two loops exist precisely so no lock is ever taken inside another. The stale-code watcher walks require.cache, i.e. the modules THIS repository loaded, with constant work per entry; a client site adds pages, never a module here. Neither side is fed by client volume. ⚠️ LOWERED from 2 to 1 on 2026-08-24: `watchOwnCode` no longer derives the watched directories itself — that traversal moved to `stale-code-pure.watchedDirs`, which the watcher and the freshness check now share, because two spellings of one rule are two rules. The ratchet only ever goes DOWN. ⑨ SECOND NESTING, 2026-09-20: the pool walks the socket ASSIGNMENT — one entry per thread — and inside it maps that thread's socket indices onto the declared endpoints. Both bounds are declared numbers and both are capped: `http.listeners` is refused above 256 and `workers` above 8, so the product is bounded by construction and is the same number whatever the fleet holds. It runs ONCE, at startup, never per request."
     },
     "src/language-spec.js": {
       "max": 9,
@@ -97,12 +103,17 @@
       "max": 2,
       "class": "INHERITED_DEBT"
     },
+    "src/rendezvous-budget-pure.js": {
+      "max": 4,
+      "class": "O(N)",
+      "why": "A PARTITION and never a cross product: the outer walk is over the FILES that hold a declared address and the inner one over the SITES of that one file, so the total work is exactly the number of sites — about twenty-five today, and it grows only when a maintainer writes a new address into this repository. It can never grow with a client site, a page or a fleet member. A flat rewrite would mean joining the file and the site into one string key, which makes the separator part of the contract and splits a site whose text happens to contain it."
+    },
     "src/scope-reach-pure.js": {
       "max": 2,
       "class": "INHERITED_DEBT"
     },
     "src/source-adapters.js": {
-      "max": 2,
+      "max": 1,
       "class": "INHERITED_DEBT"
     },
     "src/sources/file.js": {
@@ -135,6 +146,11 @@
       "class": "O(N)",
       "why": "Every outer collection is the WIRING of one machine and every inner one is either a partition of that same set or a closed list: the harness timeout table crossed with the two known transports, the manifest's consumers crossed with the framework's five events and with one consumer's own arguments, and the splice walking the operator's settings.json (its events, then their blocks, then their entries) where each declaration is visited EXACTLY ONCE. A client site adds pages and a fleet adds sites; neither adds a hook to a wiring."
     },
+    "test/adapter-reconcile-gate.test.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "Both traversals walk arrays written LITERALLY in the file: the three declaration files of the Windows adapter, and the two XML element names a scheduled task substitutes. Neither is a collection the fleet feeds - adding a client site, a page or a machine changes nothing here, and the inner side is read once per fixed name."
+    },
     "test/backlog-coherence-gate.test.js": {
       "max": 13,
       "class": "O(N)",
@@ -153,12 +169,18 @@
       "class": "INHERITED_DEBT"
     },
     "test/cadence-differential.test.js": {
-      "max": 16,
-      "class": "INHERITED_DEBT"
+      "max": 20,
+      "class": "O(N)",
+      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-09-23 rather than having its ceiling raised, when the category cascade cell (22/09/2026) added two levels and the SESSION axis of the same cell (23/09/2026, the exclusion verdict had never been confronted) a third. Every nesting of this file ENUMERATES the exhaustive differential domain: constant tables written in the file itself (VALUES per setting, SOURCES, spec.MODES, spec.DRIFT_UNITS, fixed threshold lists). None walks a fleet collection - no site, page, doc or agent count reaches it - so the cost is fixed by the domain the proof needs, and growing that domain is a deliberate act re-measured by the anti-dormancy floors. On 2026-09-23 the `response` cells added ONE nesting (the moment/answer loop asks whether its constant two-doc result delivered `a`), and built their own axes as a flat Cartesian product so the new domain owed no further level."
     },
     "test/capacity-alarm.test.js": {
       "max": 2,
       "class": "INHERITED_DEBT"
+    },
+    "test/carryover-pure.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "Test scaffolding only: the fixture builder maps a fixed list of chunk ids inside a fixed list of frame groups, both written literally in the file. Neither is a client collection, so the product is a constant of this suite and cannot grow with a fleet's sites or pages."
     },
     "test/cascade-source-gate.test.js": {
       "max": 3,
@@ -237,8 +259,9 @@
       "class": "INHERITED_DEBT"
     },
     "test/english-only-gate.test.js": {
-      "max": 1,
-      "class": "INHERITED_DEBT"
+      "max": 2,
+      "class": "O(N)",
+      "why": "The walks are over the .md files git TRACKS and, inside, over the lines of one of them. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
     },
     "test/explain-payload-parity.test.js": {
       "max": 2,
@@ -284,6 +307,11 @@
     "test/hooks-fleet-gate.test.js": {
       "max": 4,
       "class": "INHERITED_DEBT"
+    },
+    "test/http-carryover.test.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "Test scaffolding only: the absorbers walk the frames returned by ONE action (8 declared) and split each frame's text into lines, so the work is linear in the bytes this suite itself wrote. Bounded by the corpus written a few lines above, never by client volume."
     },
     "test/http-daemon-lifecycle.test.js": {
       "max": 1,
@@ -340,8 +368,9 @@
       "class": "INHERITED_DEBT"
     },
     "test/mutation-workflow-gate.test.js": {
-      "max": 4,
-      "class": "INHERITED_DEBT"
+      "max": 5,
+      "class": "O(N)",
+      "why": "The walks are over the modules `stryker.conf.json` declares, the paths the workflow filters, the suites the Stryker runner includes, and the `*-pure.js` files this repository holds. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
     },
     "test/observable-reach-gate.test.js": {
       "max": 4,
@@ -351,25 +380,30 @@
       "max": 3,
       "class": "INHERITED_DEBT"
     },
+    "test/overrides-gate.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The one nesting walks the `overrides` object of package.json, parent then its children: a handful of entries written by hand in this repository, one today. No client site, page or machine ever enters it, so the inner side stays a constant."
+    },
     "test/pretool-decision-vocabulary.test.js": {
       "max": 5,
       "class": "O(N)",
       "why": "Every crossing pairs the hook shells of src/hooks (five today) or the tracked sources of src/ with the CLOSED decision vocabulary — three words, none/allow/deny, which is the very thing this gate exists to keep closed — or with the paths ONE shell's output() can take. The vocabulary cannot grow without the gate reddening, and a port adds a shell one at a time; no client volume reaches this file."
     },
-    "src/rendezvous-budget-pure.js": {
-      "max": 4,
+    "test/quadratic-gate.test.js": {
+      "max": 1,
       "class": "O(N)",
-      "why": "A PARTITION and never a cross product: the outer walk is over the FILES that hold a declared address and the inner one over the SITES of that one file, so the total work is exactly the number of sites — about twenty-five today, and it grows only when a maintainer writes a new address into this repository. It can never grow with a client site, a page or a fleet member. A flat rewrite would mean joining the file and the site into one string key, which makes the separator part of the contract and splits a site whose text happens to contain it."
+      "why": "The inner collection is the CLOSED two-element list of forbidden rule keys (ignores:, files:) and the outer one is a single rule file read once. Both are constants of the gate itself, so the product cannot grow with any input the repository or the fleet can present."
     },
     "test/rendezvous-address-gate.test.js": {
       "max": 7,
       "class": "O(N)",
       "why": "Five distinct linear walks, each over a collection bounded by this repository and never by a fleet: the tracked-file list trimmed then filtered (one pass per element, chained rather than nested in intent), the declarative OS units crossed with the LINES of one unit (six files of a few dozen lines), the recursive walk of the wiring manifest over its own nodes, and the witness table crossed with the lines of a single witness — the atoms are a closed list of the gate itself. Nowhere is an element compared with another element, so nothing here can reach a quadratic shape as the repository grows."
     },
-    "test/quadratic-gate.test.js": {
-      "max": 1,
+    "test/scale-bench.test.js": {
+      "max": 7,
       "class": "O(N)",
-      "why": "The inner collection is the CLOSED two-element list of forbidden rule keys (ignores:, files:) and the outer one is a single rule file read once. Both are constants of the gate itself, so the product cannot grow with any input the repository or the fleet can present."
+      "why": "Cells E/F/G/H drive a REAL http daemon under simulated connection loss: the outer walk is over a FIXED, hand-written set of test levels (K-levels, burst counts, disputant counts — 4 to 32 items, chosen for the bench, never for a client) and the inner one over a FIXED chunk/tag count (m = 4 or 6) or over the K/32 connections of ONE simulated action. None of these bounds is client data: a fleet with more sites never grows the number of frames in one tool call, the number of loss levels this bench probes, or the number of chunks one test document is split into."
     },
     "test/scope-reach-pure.test.js": {
       "max": 4,
@@ -396,6 +430,11 @@
     "test/spec-differential.test.js": {
       "max": 23,
       "class": "INHERITED_DEBT"
+    },
+    "test/stale-code-guard.test.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "Two POLL loops, not two data traversals. The outer `for(;;)` re-asks the kernel a question about ANOTHER process (is the port bound, has the journal line appeared) and is bounded by the suite timeout, never by a collection. The inner traversal walks the LINES of a journal a single daemon has just written - a handful, bounded by what one process emits during one cell. Neither side grows with client volume: a fleet adds sites, it never adds lines to this journal, so the work is the journal walked once per poll, never a pair of elements compared."
     },
     "test/state-crdt-pure.property.test.js": {
       "max": 2,
@@ -468,26 +507,32 @@
       "class": "O(N)",
       "why": "The crossings are the operator's live wiring (its events, then their blocks) against the manifest's declared consumers, and the generated declarations against ONE substring each. Both sides are sized by how many hooks a single machine declares — a few dozen, of which we own about forty — and a fleet of sites never adds a hook to anybody's settings file."
     },
+    "test/settled-decision-gate.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The outer walk is over the rows of settled-decisions.json — operator decisions, a handful written by hand — and the inner search is a substring lookup in ONE doc of this repository. Both are bounded by THIS REPOSITORY; a client fleet adds sites and pages, never a settled decision nor a framework doc."
+    },
     "test/wiring-harness-portability.test.js": {
       "max": 5,
       "class": "O(N)",
       "why": "Every outer collection is a literal of two to four items — the native spellings the fictional harness's document must NOT contain, the framework events it deliberately omits, the two engine modules that may name no product — and every inner one is the rendered document or the harness names read from the manifests themselves. Nothing here crosses a collection an operator or a client can grow."
     },
     "test/wiring-plan.test.js": {
-      "max": 12,
+      "max": 15,
       "class": "O(N)",
-      "why": "Every nesting filters the declarations plan() returned (36 today: the gate frames plus the manifest's consumers) on ONE substring of a single command line. The outer set is sized by `frames` in ctxroute-config.json and by the consumers the manifest declares — the wiring of one machine — and the inner side is a fixed string, never a second collection. No number of sites or pages reaches this file."
+      "why": "The walks are over the declarations ONE generated plan holds, over the consumers the manifest declares, and over the frames one action carries. All three are configuration values of this repository — a fleet adds neither a consumer nor a frame. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
     },
     "tools/check-collisions.js": {
       "max": 1,
       "class": "INHERITED_DEBT"
     },
     "tools/doctor.js": {
-      "max": 3,
-      "class": "INHERITED_DEBT"
+      "max": 4,
+      "class": "O(N)",
+      "why": "STALE ratchet corrected (measured 4, declared 3 before this entry) rather than left as a phantom INHERITED_DEBT — every occurrence here is genuinely bounded, never by client scale: the network-interface collection loop walks THIS machine's own adapters; the Codex context-ceiling check loops over the 2 fixed emitter names and `.find()`s each one's block in the wiring text; the reduced-measurement flags loop calls `.indexOf` on `process.argv` for a fixed 4-entry flag list. None grows with the number of client sites or pages this framework serves."
     },
     "tools/explain.js": {
-      "max": 5,
+      "max": 4,
       "class": "INHERITED_DEBT"
     },
     "tools/language-doc.js": {
@@ -508,28 +553,84 @@
       "why": "The chained filters walk the files of src/hooks (five today) and read each one looking for a single marker, so the crossing is a directory of the framework's OWN hook shells against one substring per file. A port adds a shell one at a time and a client adds none, so neither side follows the number of sites or pages a fleet carries."
     },
     "vitest-projects.mjs": {
-      "max": 1,
-      "class": "INHERITED_DEBT"
-    },
-    "test/stale-code-guard.test.js": {
       "max": 2,
-      "class": "O(N)",
-      "why": "Two POLL loops, not two data traversals. The outer `for(;;)` re-asks the kernel a question about ANOTHER process (is the port bound, has the journal line appeared) and is bounded by the suite timeout, never by a collection. The inner traversal walks the LINES of a journal a single daemon has just written - a handful, bounded by what one process emits during one cell. Neither side grows with client volume: a fleet adds sites, it never adds lines to this journal, so the work is the journal walked once per poll, never a pair of elements compared."
+      "class": "INHERITED_DEBT",
+      "why": "undefined SECOND NESTING, 2026-09-20: the inspection CLI now prints the THIRD lane too, so it walks the daemon list beside the heavy one. Both are lists of SUITE FILES of this repository, bounded by what `test/` holds — never by a fleet of sites, documents or agents — and the inner work is one `console.log` per entry. The command writes nothing and decides nothing: a lane that the inspector does not NAME is a lane nobody can verify, which is the whole reason it exists."
     },
-    "test/scale-bench.test.js": {
-      "max": 7,
-      "class": "O(N)",
-      "why": "Cells E/F/G/H drive a REAL http daemon under simulated connection loss: the outer walk is over a FIXED, hand-written set of test levels (K-levels, burst counts, disputant counts — 4 to 32 items, chosen for the bench, never for a client) and the inner one over a FIXED chunk/tag count (m = 4 or 6) or over the K/32 connections of ONE simulated action. None of these bounds is client data: a fleet with more sites never grows the number of frames in one tool call, the number of loss levels this bench probes, or the number of chunks one test document is split into."
-    },
-    "test/carryover-pure.test.js": {
+    "src/badge-label-pure.js": {
       "max": 1,
       "class": "O(N)",
-      "why": "Test scaffolding only: the fixture builder maps a fixed list of chunk ids inside a fixed list of frame groups, both written literally in the file. Neither is a client collection, so the product is a constant of this suite and cannot grow with a fleet's sites or pages."
+      "why": "The outer walk is over the SEGMENTS of ONE invocation and the inner one over the labels that invocation itself accumulated — both bounded by the number of frames one action declares (32 today, a configuration value, never a client volume). Doubling the frames doubles the work, it does not square it, and no fleet growth reaches either side."
     },
-    "test/http-carryover.test.js": {
+    "test/fabricated-segment-id-gate.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The walk is over the .js files git tracks, and the inner traversal over the matches ast-grep returned for that one file. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
+    },
+    "test/http-endpoint-single-source-gate.test.js": {
+      "max": 3,
+      "class": "O(N)",
+      "why": "The walks are over the declarations ONE generated wiring fragment holds and over the listen events ONE daemon emitted — both bounded by the declared frame count and the declared listener count, which are configuration values of this repository. A fleet never adds a frame nor a socket."
+    },
+    "test/installer-no-wall-gate.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The walk is over the installer scripts under service/ and the inner one over the lines of one script. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
+    },
+    "test/listeners-count-gate.test.js": {
       "max": 2,
       "class": "O(N)",
-      "why": "Test scaffolding only: the absorbers walk the frames returned by ONE action (8 declared) and split each frame's text into lines, so the work is linear in the bytes this suite itself wrote. Bounded by the corpus written a few lines above, never by client volume."
+      "why": "The walks are over the lines of the two shipped OS units, looking for the declarations they carry. Both files are fixed artefacts of this repository, and the count they declare is the listener count — a configuration value. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
+    },
+    "test/render-units-pure.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The walk is over the endpoints the DEFAULT configuration resolves — the declared listener count, four today — and the inner traversal over the lines of one rendered unit. Neither side grows with client volume. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
+    },
+    "test/shared-sequencer-gate.test.js": {
+      "max": 5,
+      "class": "O(N)",
+      "why": "The walks are over the `createServer` call sites this repository holds in ONE shell file, and over the arguments of one such call. Both are bounded by the source of this repository, and the brace-balance scan reads each character of that file once. What the outer walk enumerates is bounded by THIS REPOSITORY and never by a client fleet: a fleet adds sites and pages, it never adds files to this repository. The inner traversal is over a FIXED structure of the same file (its declared literals, its own fixture list), so the total is the repository walked once, not a pair of files compared."
+    },
+    "src/invocation-snapshot-pure.js": {
+      "max": 2,
+      "class": "O(N)",
+      "why": "The OUTER walk is over a FIXED vocabulary of THREE table names, declared as a constant in the module itself and never grown by anything a client does; the INNER one is over the entries of ONE of those tables, bounded for life at MAX_INVOCATIONS because the tables it mirrors are LRU evicted at that same ceiling. Total work is therefore 3 x N with N capped by the memory it restores into - linear, and bounded twice over. A fleet adds sites and pages; it adds neither a table to this module nor an invocation past that ceiling. It runs exactly twice in a daemon life, at startup and at exit, never on a request."
+    },
+    "test/invocation-snapshot-wiring-gate.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The outer walk is over THREE sabotage cases written in the cell itself, and the inner one is a substring scan of ONE source file of this repository. Both are bounded by this repository and by a literal written beside them — a fleet adds sites and pages, it adds neither a sabotage case nor a daemon shell. The scan reads each character of that file once per case, so the total is three passes over one file, never a pair of anything compared."
+    },
+    "test/split-scope.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The outer loop walks five ceiling values written LITERALLY in the cell and the inner one fills a table up to MAX_ENTRIES + 3, a constant of the module under test. Neither bound is a collection the fleet feeds: adding a document, a site or an agent changes neither, so the product stays a fixed number of iterations for ever."
+    },
+    "test/worker-pool-pure.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "Cell 7 walks five (listeners, workers) pairs written LITERALLY in the cell, and flattens each assignment to prove every socket is held exactly once. Both bounds are constants of the cell — the largest is twelve sockets over five threads. Neither is a collection the fleet feeds: adding a document, a site or an agent changes neither, so the product stays a fixed number of iterations for ever. The function under test is itself O(listeners), and the ceiling on workers is 8 by declaration."
+    },
+    "test/state-owner-thread.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The scripted sequence is walked once per arm, and inside each step the wire name is split into its group and its function. The script is a LITERAL of the cell — fifteen operations, written out — and the inner work is a fixed string split, never a collection. Neither bound moves with a document, a site or an agent: adding content to the fleet changes nothing here."
+    },
+    "test/thread-pool-differential.test.js": {
+      "max": 4,
+      "class": "O(N)",
+      "why": "Three nestings, all bounded by constants of the cell. ① `ready()` polls the declared sockets inside its bounded attempt loop — two sockets, four hundred attempts at most, and it STOPS at the first round where every socket answers. ② `wholeAction()` posts each declared frame in turn, six of them, choosing its socket by a modulo. ③ the chunk scan reads one regular expression per answer collected. The outer bounds are LISTENERS and FRAMES, both literals of this file; the inner work is a single connect or a single POST. A larger corpus makes each answer bigger, never the number of iterations — which is exactly the distinction this budget exists to make. ④ FOURTH NESTING, added with the bounded retry: POST_RETRIES attempts around ONE frame, inside the loop that sends the frames. Both bounds are constants of this file (25 and FRAMES), and the retry only ever runs on a KERNEL code meaning the attempt never reached the daemon — on a healthy run the inner loop returns on its first pass. Nothing here grows with a document, a site or an agent."
+    },
+    "src/hooks/owner-client.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The facade is BUILT by walking the closed wire vocabulary and, inside, splitting each name into its group and its function. Nine operations, listed in `owner-ops.OP_NAMES`, walked ONCE when a client is created — never per request. A tenth operation costs one more iteration, and there is no collection anywhere near it: this is the derivation that replaces a hand-written twin, which is precisely what keeps a renamed operation from becoming a method that silently does not exist."
+    },
+    "src/hooks/state-owner-thread.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The serving scan walks the CLIENT SLOTS and, inside, applies the one operation posted in that slot. The outer bound is the number of participants — at most nine, the worker ceiling plus the main thread, and refused above it — and the inner work is ONE table or store call, never a traversal. A full scan is deliberate: a queue would be shared mutable state between threads, i.e. exactly the thing this design exists to have precisely one of."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

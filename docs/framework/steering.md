@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"FILE-MAP.md","scope":["ctxroute"]},{"pattern":"REFACTOR-PLAN.md","scope":["ctxroute"]},{"pattern":"REFACTOR-ARCHIVE.md","scope":["ctxroute"]},{"pattern":"steering-single-copy.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 30
+threshold: 91
 ---
 # FILE-MAP.md / REFACTOR-PLAN.md — the repo's 2 STEERING documents
 ⚠️ **`FILE-MAP.md` = EXHAUSTIVENESS net** : 1 line per file, NEVER a judgment of importance — a file outside the list is a hole BY DEFINITION. Add/delete/rename ⇒ UPDATE **in the same action**. Sealed by part ② of `coverage-gate.test.js` (it reads this file AND the skill).

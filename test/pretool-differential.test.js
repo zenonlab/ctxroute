@@ -300,17 +300,44 @@ test.skipIf(!fleetPresent)('WRITE: decision mirroring the real rush, same docs',
     const action2 = await driveActionFrames(payload, WRITE_SESSION_ID);
     fresh = action2.first;
     frames = action2.texts;
+    // 🛑 THE ALTERNATION IS A CONTRACT: a block is NEVER followed by a block.
+    //    A second deny here is the infinite refusal this repository has already
+    //    measured in production — it must stay red whatever else happens.
+    assert.notStrictEqual(action2.decision, 'deny',
+      'the retried action was REFUSED AGAIN — that is the infinite block the alternation forbids');
   }
-  assert.ok(old && fresh, 'both engines must react on a documented write');
+  // 🔴 THE RETRIED ACTION MAY LEGITIMATELY BE SILENT, AND ASSERTING OTHERWISE
+  //    IS WHAT MADE THIS CELL RED ON A CORRECT ENGINE (measured 2026-09-19).
+  //    The guard read `old && fresh`. On the real fleet TODAY the denied action
+  //    delivers 181,167 characters — a deny's `permissionDecisionReason` carries
+  //    the same sealed body an allow puts in `additionalContext` — and every
+  //    matching doc is `once`/`smart`, so NOTHING is owed on the retry and the
+  //    engine correctly says nothing. The comment above already described that
+  //    mechanism; it simply never covered the case where ALL the docs are
+  //    consumed. 🛑 What must never be relaxed is the CONTENT comparison below:
+  //    the oracle's docs are still required, byte for byte, in one of the two
+  //    actions. Silence is admitted for the ACTION, never for the CORPUS.
+  assert.ok(old, 'the FROZEN ORACLE went silent on a documented write — that is a real divergence');
   if (RUSH) {
     assert.strictEqual(old.hookSpecificOutput.permissionDecision, 'allow');
-    assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
-    const res = reassemble(frames);
-    assert.ok(res.ok, `REASSEMBLY REFUSED — ${res.reason}`);
     const oldRaw = old.hookSpecificOutput.additionalContext;
     assert.ok(oldRaw.startsWith(RUSH_PREFIX), `oracle output missing the RUSH prefix: ${JSON.stringify(oldRaw.slice(0, 80))}`);
     const oldDocs = docMap(oldRaw.slice(RUSH_PREFIX.length));
-    const freshDocs = docMap(withoutOrdinal(res.text));
+    // 🛑 ANTI-VACUITY: an oracle delivering nothing would make every loop below
+    //    pass while measuring nothing at all.
+    assert.ok(oldDocs.size > 0, 'the oracle delivered no parsable doc: nothing is being compared');
+    let freshDocs = new Map();
+    if (fresh) {
+      assert.strictEqual(fresh.hookSpecificOutput.permissionDecision, 'allow');
+      const res = reassemble(frames);
+      assert.ok(res.ok, `REASSEMBLY REFUSED — ${res.reason}`);
+      freshDocs = docMap(withoutOrdinal(res.text));
+    } else {
+      // 🛑 SILENT RETRY ⇒ THE DENIED ACTION IS THE ONLY WITNESS LEFT. With no
+      //    content there either, this cell would compare two voids and pass.
+      assert.ok(deniedContent,
+        'the retried action is silent AND the denied one delivered nothing: the engine really is mute');
+    }
     const deniedDocs = deniedContent ? docMap(deniedContent) : new Map();
     // Every doc the OLD (stateless) oracle delivers must be found, byte
     // identical, either in THIS action's content or in the earlier denied

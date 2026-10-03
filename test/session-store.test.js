@@ -211,15 +211,85 @@ test('THE WINDOW IS CROSSED: an absence that ENDS is not "never injected"', () =
     if (remainingOnes-- > 0) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; }
     return JSON.stringify(state);
   };
-  assert.deepStrictEqual(store.readThrough(reader, 'peu-importe'), state,
+  assert.deepStrictEqual(store.readThrough(reader, 'peu-importe', () => true), state,
     'a name that reappears must be read: without the retry, a state being replaced reads as '
     + '"never injected" and its document is delivered a second time');
 });
 
 test('AN ABSENCE THAT LASTS STAYS AN ABSENCE — the retry invents nothing', () => {
   const reader = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
-  assert.deepStrictEqual(store.readThrough(reader, 'jamais-ecrit'), {},
+  assert.deepStrictEqual(store.readThrough(reader, 'jamais-ecrit', () => true), {},
     'a state that never existed must still answer {} — a TRUE {}');
+});
+
+// 🔴 REPRODUCED LOCALLY 2026-10-02: a 10 s race read {} 28 times out of 83,245 on
+//    Windows, each after EXACTLY 20 consecutive ENOENT — the immediate-retry count
+//    running out while the window lasted 8-17 ms. The bound is now a FACT asked of
+//    the disk (`writeInFlight`), never a count of reads; these cells pin it.
+const missingFile = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
+
+test('NO WRITE IN FLIGHT: a missing name is a TRUE absence, answered after ONE read', () => {
+  let reads = 0;
+  let asked = 0;
+  const reader = () => { reads += 1; return missingFile(); };
+  assert.deepStrictEqual(store.readThrough(reader, 'jamais-ecrit', () => { asked += 1; return false; }), {});
+  assert.strictEqual(reads, 1, 'nothing is being written: retrying would only delay a true {}');
+  assert.strictEqual(asked, 1, 'the disk must be asked, once, before concluding');
+});
+
+test('THE 2026-10-02 DEFECT: a window that outlasts any burst of reads is crossed by asking the disk', () => {
+  // The MEASURED mechanism, not a count: the writer lost the processor mid-rename and
+  // the name stayed absent for 8-17 ms, longer than ANY number of immediate reads.
+  // What ends the window is time passing for the writer — and on Windows, listing the
+  // directory is what gives it that time. So here the name reappears ONLY once the
+  // disk has been consulted, however many reads come first. 🛑 SEEN RED on the
+  // pre-fix code (20 reads, never a question to the disk ⇒ {} ⇒ re-delivery).
+  const state = { 'docs/a.md': { seen: true } };
+  let writerDone = false;
+  const reader = () => (writerDone ? JSON.stringify(state) : missingFile());
+  const writeInFlight = () => { writerDone = true; return true; };
+  assert.deepStrictEqual(store.readThrough(reader, 'en-cours', writeInFlight), state,
+    'a state being replaced read as {} — "never injected" — and its document goes out twice');
+});
+
+test('THE TMP saveState WRITES IS THE TMP THE READER RECOGNISES — one name, two sides', () => {
+  // The fix rests on a pairing: `saveState` names its temporary with `tmpFileFor`,
+  // the reader spots a write in flight with `isTmpOf`. Rename one side alone and the
+  // reader goes blind again, silently. This cell drives the REAL author and the REAL
+  // detector against a real directory.
+  const dir = fs.mkdtempSync(path.join(TMP, 'pairing-'));
+  const dest = path.join(dir, 'doc-seen-pair.json');
+  const tmp = store.tmpFileFor(dest);
+  assert.strictEqual(path.dirname(tmp), dir, 'the temporary must live beside its destination');
+  assert.ok(store.isTmpOf(dest, path.basename(tmp)), 'the reader does not recognise the tmp the writer writes');
+  assert.ok(!store.isTmpOf(path.join(dir, 'doc-seen-pai.json'), path.basename(tmp)),
+    'the tmp of one key must not be read as a write of a key whose name is its prefix');
+  fs.writeFileSync(tmp, '{}');
+  let reads = 0;
+  store.readThrough(() => { reads += 1; return missingFile(); }, dest);
+  assert.ok(reads > 1, 'with the writer\'s own tmp on disk, the reader must see a write in flight and retry');
+});
+
+test('A WRITER KILLED MID-WRITE leaves a tmp: the read is BOUNDED and still answers {}', () => {
+  let reads = 0;
+  const reader = () => { reads += 1; return missingFile(); };
+  assert.deepStrictEqual(store.readThrough(reader, 'orphelin', () => true), {});
+  assert.ok(reads > 1 && reads <= 20, `an orphan tmp must cost a bounded number of reads, got ${reads}`);
+});
+
+test('writeInFlight READS THE DISK: a sibling tmp of THIS key, and only of this key', () => {
+  const dir = fs.mkdtempSync(path.join(TMP, 'inflight-'));
+  const dest = path.join(dir, 'doc-seen-abc.json');
+  const probe = (p) => {
+    let n = 0;
+    store.readThrough(() => { n += 1; return missingFile(); }, p);
+    return n;
+  };
+  assert.strictEqual(probe(dest), 1, 'empty directory: one read, no wait');
+  fs.writeFileSync(path.join(dir, 'doc-seen-abcd.json.1.x.tmp'), '{}');
+  assert.strictEqual(probe(dest), 1, 'the tmp of ANOTHER key must not make this one wait');
+  fs.writeFileSync(path.join(dir, 'doc-seen-abc.json.4242.k9.tmp'), '{}');
+  assert.ok(probe(dest) > 1, 'a tmp of THIS key means a write is in flight: the reader must retry');
 });
 
 // 🛑 ONLY absence is retried. `EPERM`, `EACCES` or a truncated JSON are REAL

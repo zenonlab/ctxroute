@@ -283,6 +283,36 @@ if (config) {
 {
   const schema = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'ctxroute-config.schema.json'), 'utf8'));
   const skills = schema.properties.skills.additionalProperties;
+  // ── `http.workers` — the pool size, declared 2026-09-19 ──
+  // 🔑 PINNED FOR THE SAME REASON `scope` IS: nothing here validates a config
+  //    VALUE at runtime (no ajv, by design), so a schema that quietly lost its
+  //    ceiling or its `auto` would leave the vocabulary open with nobody saying
+  //    so. 🛑 It proves the DECLARATION, never a running refusal — that one lives
+  //    in `worker-pool-pure.poolSize` and is unreachable until the pool is wired.
+  const workers = schema.properties.http.properties.workers;
+  ok('schema: `http.workers` is DECLARED, beside `listeners` (the two are a pair)',
+    Boolean(workers) && Boolean(schema.properties.http.properties.listeners));
+  ok('schema: `workers` = EXACTLY 2 shapes (a count, or the word auto) — never a 3rd',
+    Array.isArray(workers.oneOf) && workers.oneOf.length === 2);
+  ok('schema: the COUNT shape is an integer from 0 (an explicit zero is a DECLARATION, not an absence)',
+    workers.oneOf[0].type === 'integer' && workers.oneOf[0].minimum === 0);
+  ok('schema: the count is CAPPED — every worker is a V8 isolate on a machine shared with the agents',
+    workers.oneOf[0].maximum === 8);
+  ok('schema: the WORD shape is a closed enum holding exactly "auto" (nginx convention)',
+    workers.oneOf[1].type === 'string'
+    && Array.isArray(workers.oneOf[1].enum) && workers.oneOf[1].enum.length === 1
+    && workers.oneOf[1].enum[0] === 'auto');
+  ok('schema: `oneOf` (never `anyOf`, never a bare `type`) — what REFUSES anything else',
+    !('anyOf' in workers) && !('type' in workers));
+  // 🔑 THE DECLARATION EXPIRED ON 2026-09-20, AND THE CELL TURNED OVER WITH IT.
+  //    It used to REQUIRE the words "NOT WIRED YET" so a live pool could not ship
+  //    advertising itself inert; now it FORBIDS them, so an unwired key can never
+  //    come back wearing a wired description. 🛑 Both directions matter: the
+  //    first half stopped a lie about the present, this one stops a lie about a
+  //    regression — and a cell that simply disappeared would have stopped both.
+  ok('schema: the pool is WIRED, so `workers` may no longer call itself inert',
+    !workers.description.includes('NOT WIRED YET') && workers.description.includes('WIRED 2026-09-20'));
+
   const scopeSkill = skills.properties.scope;
   const scopeRule = skills.properties.rules.items.properties.scope;
 

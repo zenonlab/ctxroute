@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"collisions.js","scope":["ctxroute"]},{"pattern":"collisions.test.js","scope":["ctxroute"]},{"pattern":"check-collisions.js","scope":["ctxroute"]},{"pattern":"doc-write-guard.js","scope":["ctxroute"]},{"pattern":"doc-write-guard.test.js","scope":["ctxroute"]},{"pattern":"guard-core.js","scope":["ctxroute"]},{"pattern":"codex-doc-write-guard.js","scope":["ctxroute"]},{"pattern":"codex-doc-write-guard.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # collisions.js / check-collisions.js / doc-write-guard.js — fleet analysis & guard (0-human)
 

@@ -56,7 +56,9 @@ const { DEFAULT_PROFILE } = require('./harness-profile.js');
 // ⚠️ The DERIVED half of the universe — declaration shared, algebra not (see below).
 const { DERIVED_OBSERVABLES } = require('./derived-observables.js');
 
-const norm = (v) => String(v == null ? '' : v).toLowerCase().replace(/\\/g, '/');
+// ⚠️ The model's own spelling (23/09/2026): split/join, never the engine's `replace` — a model
+//    that reads like its defendant can only agree with it (`model-twin-gate`).
+const norm = (v) => String(v == null ? '' : v).toLowerCase().split('\\').join('/');
 const contains = (u, motif) => norm(u).includes(norm(motif));
 
 // ── THE PROJECTIONS OF A GESTURE ────────────────────────────────────────
@@ -110,7 +112,8 @@ const filterDefault = (key) => !DEFAULT_PROFILE.contentKeys.includes(key);
 
 /** The declaration for ONE axis: flat list = the three axes, object = one per axis. */
 function declAxe(keysDecl, axis) {
-  const d = Object(keysDecl) === keysDecl && !Array.isArray(keysDecl) ? keysDecl[axis] : keysDecl;
+  const perAxis = keysDecl !== null && typeof keysDecl === 'object' && !Array.isArray(keysDecl);
+  const d = perAxis ? keysDecl[axis] : keysDecl;
   // 🛑 An EMPTY list is INERT, never a whitelist of nothing — same decision as the engine.
   return Array.isArray(d) && d.length > 0 ? d : null;
 }
@@ -137,8 +140,8 @@ function guard(keysDecl, axis) {
   const decl = declAxe(keysDecl, axis);
   if (!decl) return filterDefault;
   const { banned, additions, adjusted } = parts(decl);
-  if (!adjusted) return (key) => additions.includes(key);
-  return (key) => additions.includes(key) || (filterDefault(key) && !banned.includes(key));
+  if (!adjusted) return (name) => additions.indexOf(name) >= 0;
+  return (name) => additions.indexOf(name) >= 0 || (filterDefault(name) && banned.indexOf(name) < 0);
 }
 
 /** A LIST of keys, for the TRIGGER axis (its default universe IS a list). */
@@ -150,7 +153,8 @@ function universeTrigger(keysDecl, sourceDefaults) {
   // ⚠️ No de-duplication: the universe is only ever consulted by membership, so a name listed
   //    twice decides like a name listed once. The engine agrees, and Stryker is what proved the
   //    filter decided nothing.
-  return sourceDefaults.filter((k) => !banned.includes(k)).concat(additions);
+  const survivors = sourceDefaults.filter((name) => banned.indexOf(name) < 0);
+  return survivors.concat(additions);
 }
 
 /**
@@ -160,15 +164,26 @@ function universeTrigger(keysDecl, sourceDefaults) {
  *    (51). That is ㊵ uncorrected on the trigger side — the filters, for their part, already
  *    descended. An array element INHERITS the name of its parent key.
  */
+// ⚠️ WRITTEN AS A WALK WITH AN EXPLICIT STACK (23/09/2026), not as the engine's recursion —
+//    the recursion was shared word for word with `sources/file.js` (42 + 25 + 23 + 17 tokens).
+//    Same visiting order: children are pushed in reverse so they are popped in document order.
 function keyValues(value, keys, maxDepth, key, out) {
-  const acc = out || [];
-  if (typeof value === 'string') { if (keys.includes(key)) acc.push(value); }
-  else if (value && typeof value === 'object' && (maxDepth > 0)) {
-    for (const [k, v] of Object.entries(value)) {
-      keyValues(v, keys, maxDepth - 1, Array.isArray(value) ? key : k, acc);
+  const found = out || [];
+  const pending = [[value, key, maxDepth]];
+  while (pending.length > 0) {
+    const [node, name, room] = pending.pop();
+    if (typeof node === 'string') {
+      if (keys.indexOf(name) >= 0) found.push(node);
+      continue;
+    }
+    if (!node || typeof node !== 'object' || room <= 0) continue;
+    const childNames = Object.keys(node);
+    for (let i = childNames.length - 1; i >= 0; i -= 1) {
+      const child = childNames[i];
+      pending.push([node[child], Array.isArray(node) ? name : child, room - 1]);
     }
   }
-  return acc;
+  return found;
 }
 
 /**
@@ -193,11 +208,11 @@ function candidates(toolName, toolInput, keysDecl) {
   // ⚠️ NO `cwd` special case: it is a DECLARED path key of the profile (19/08/2026),
   //    hence read by `keyValues` above like any other — and therefore NARROWABLE by
   //    `keys`. A parameter the operator cannot address is a boundary nobody declared.
-  if (DEFAULT_PROFILE.patchTools.includes(toolName)) {
-    const patch = toolInput.input || toolInput.patch || toolInput.command || '';
-    const re = /\*\*\* (?:Update|Add|Delete) File:\s*(.+)/g;
-    let m;
-    while ((m = re.exec(String(patch))) !== null) out.push(m[1].trim());
+  if (DEFAULT_PROFILE.patchTools.indexOf(toolName) >= 0) {
+    // The patch body is the FIRST non-empty of the three places a harness puts it.
+    const body = String([toolInput.input, toolInput.patch, toolInput.command].find(Boolean) || '');
+    // The patch grammar written the model's way: three stars, one of the three verbs, the path.
+    for (const hit of body.matchAll(/[*]{3} (?:Add|Delete|Update) File:(?:\s*)(.+)/g)) out.push(hit[1].trim());
   }
   // ⚠️ ㊽: a shell gesture is recognised by its SHAPE (presence of a `command`), never
   //    by the tool's NAME — otherwise PowerShell and SSH stay invisible (18 % measured).
@@ -219,11 +234,10 @@ function candidates(toolName, toolInput, keysDecl) {
   // ⚠️ The input is the FULL command list, NOT `clesCommandes`: dropping the raw half must
   //    NOT drop where the gesture works, otherwise the operator loses 47.7 % of real work
   //    (measured on 28,703 actions) and becomes unusable — which is the whole point.
-  for (const obs of DERIVED_OBSERVABLES) {
-    if (!universeTrigger(keysDecl, [obs.name]).includes(obs.name)) continue;
-    for (const command of keyValues(toolInput, DEFAULT_PROFILE[obs.from], 20)) {
-      for (const candidate of obs.derive(command)) out.push(candidate);
-    }
+  for (const observable of DERIVED_OBSERVABLES) {
+    const visible = universeTrigger(keysDecl, [observable.name]).indexOf(observable.name) >= 0;
+    if (!visible) continue;
+    keyValues(toolInput, DEFAULT_PROFILE[observable.from], 20).forEach((text) => out.push(...observable.derive(text)));
   }
   return out;
 }
@@ -241,9 +255,11 @@ const triggered = (motif, candidates) => candidates.some((c) => contains(c, moti
  *    would turn it into an AND and would flip the meaning of all the existing rules.
  */
 function scopeSatisfied(scope, vals) {
-  if (!Array.isArray(scope) || scope.length === 0) return true; // no filter
-  const groups = scope.some((g) => Array.isArray(g)) ? scope.map((g) => (Array.isArray(g) ? g : [g])) : [scope];
-  return groups.every((g) => g.some((s) => vals.some((v) => contains(v, s))));
+  if (!(Array.isArray(scope) && scope.length > 0)) return true; // no filter
+  // A list holding at least one list is GROUPED; each element then becomes a group of its own.
+  const grouped = scope.filter((item) => Array.isArray(item)).length > 0;
+  const groups = grouped ? scope.map((item) => [].concat(item)) : [scope];
+  return groups.every((alternatives) => alternatives.some((wanted) => vals.some((v) => contains(v, wanted))));
 }
 
 /**
@@ -302,8 +318,8 @@ function injects(rule, geste, bounds) {
  */
 function targetsTool(names, toolName) {
   if (!Array.isArray(names)) return false;
-  if (names.includes(toolName)) return true;
-  return names.includes('*') && typeof toolName === 'string' && toolName !== '';
+  const named = typeof toolName === 'string' && toolName !== '';
+  return names.indexOf(toolName) >= 0 || (named && names.indexOf('*') >= 0);
 }
 
 /** Reading of the `tool:` declaration — one name OR a list of names. */

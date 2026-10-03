@@ -147,6 +147,16 @@
       },
       "policy": "bounded-count",
       "why": "Operator-invoked and DRY-RUN by default (`--write` to apply). It copies exactly one new file (`deadline.js`) into the operator's hook folder and patches existing hooks IN PLACE, idempotently — replaying converges and never doubles a banner, so the file count does not grow with the number of runs. WI-VENDOR-PATH CLOSED 2026-08-21: the target used to be rebuilt here from `os.homedir()` under a local env var, a SECOND definition of a directory `paths.js` already owned — and on the one script that WRITES into it, where a divergence would arm the wrong fleet in silence."
+    },
+    "src/hooks/state-owner-entry.js": {
+      "path": "paths.stateDir()",
+      "class": "state",
+      "budget": {
+        "maxFiles": 1,
+        "maxBytes": 262144
+      },
+      "policy": "bounded-count",
+      "why": "The owner thread saves the three invocation tables on its way out (`daemon-invocations.json`, ONE file, rewritten in place). It is the same file `src/hooks/http-server.js` writes when no pool exists, so the count does not grow with the pool: one owner, one file, whichever road. AT DEATH, NEVER PER FRAME — per-frame writes would be 32 disk writes per action on a machine whose SSD wear is a declared budget. The SIZE is bounded by the tables themselves, not by an intention: `invocation-snapshot-pure.MAX` caps how many invocations are encoded, and each entry is an id plus three small numbers. A truncated file fails `JSON.parse`, the decode is fail-open to empty and the next clean exit rewrites it whole — which is why it needs no tmp+rename and no retention: nothing accumulates, the worst loss is exactly the behaviour from before the snapshot existed."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else, and it has TWO halves. ① Every `pattern:` atom of `rules/fs-call.yml` (the RECEIVER-anchored family) MUST be paired below with a line of code whose detection is REQUIRED. An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. ② The METHOD-anchored family carries NO table here on purpose: its witnesses are FABRICATED from each write primitive itself, in both forms (`M(dest, payload)` for the destructured import and `aliased.M(dest, payload)` for any receiver), so a method classified `write` tomorrow is proven the same second and no list can fall out of step. Both halves write to the OS tmpdir and never to `state/`: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible — measured in this repository on 2026-08-06.",

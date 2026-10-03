@@ -197,6 +197,6 @@ test('every declared event is EMITTED by the daemon shell (no inert vocabulary e
   // vocabulary entry, and an event emitted but never declared would write
   // nothing at all — a silent daemon, which is the defect this closes.
   assert.deepEqual(distinct,
-    ['bind-refused', 'code-unchanged', 'lane-degraded', 'signal-exit', 'stale-code-exit',
-      'start', 'watch-lost']);
+    ['bind-refused', 'code-unchanged', 'idle-exit', 'lane-degraded', 'loop-block', 'serve-stall',
+      'signal-exit', 'socket-cut', 'stale-code-exit', 'start', 'watch-lost']);
 });

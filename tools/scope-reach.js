@@ -80,12 +80,18 @@ function main() {
   const docsDir = paths.fileDocsDir();
   if (!fs.existsSync(docsDir)) {
     console.log('NOT MEASURED — no fleet corpus at ' + docsDir);
-    process.exit(2);
+    // 🛑 EXIT CODE SET, NEVER FORCED (2026-10-01): `process.exit` cut the output
+    //    on a POSIX pipe. No handle is held, so the process ends naturally.
+    process.exitCode = 2;
+    return;
   }
   const rules = rulesFromCorpus(readCorpus(docsDir, ''));
 
   let config = { skills: {} };
-  const cfgPath = process.env.CTXROUTE_CONFIG_PATH || path.join(__dirname, '..', 'ctxroute-config.json');
+  // 🛑 FROM `paths.configPath()`, the one resolution point (2026-10-01): the
+  //    repo-root file this line rebuilt was REMOVED on 2026-08-24, so the
+  //    measurement silently counted ZERO skills — an answer about nothing.
+  const cfgPath = paths.configPath();
   try { config = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch { /* absent = no skills */ }
 
   // ⚠️ THE TRANSCRIPT ROOT IS ADDRESSED BY `paths.js`, NEVER REBUILT HERE.
@@ -110,7 +116,8 @@ function main() {
     console.log('  (resolved by paths.transcriptsDir(); override CTXROUTE_TRANSCRIPTS_DIR)');
     console.log('The tool names cannot be derived, and this tool NEVER falls back to a');
     console.log('hand-written list (that is defect 48).');
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   const measurement = observedToolNames(transcripts);
   if (!measurement) {
@@ -120,7 +127,8 @@ function main() {
     console.log('NOT MEASURED — transcript corpus at ' + transcripts + ' yielded no tool call.');
     console.log('The `"type":"tool_use"` anchor no longer matches: the shape changed, the');
     console.log('harness did not stop calling tools. NEVER report 0 here.');
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   const tools = [...measurement.itemNames];
 

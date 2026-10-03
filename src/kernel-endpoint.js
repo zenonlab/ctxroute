@@ -56,6 +56,10 @@ const paths = require('./paths');
 // 12 hex characters: 48 bits. Far beyond what is needed to separate the handful
 // of clones on one machine, and short enough to stay under every path limit.
 const FINGERPRINT = 12;
+// ⚠️ `sizeof(sockaddr_un.sun_path) - 1` on macOS and the BSDs (Node's doc: "103 bytes on macOS";
+//    Linux allows 107, so the smaller bound is safe everywhere a socket FILE is used). Bytes,
+//    never characters: a non-ASCII user name counts double.
+const MAX_SOCKET_PATH_BYTES = 103;
 
 /** @param {string} directory @returns {string} */
 function fingerprint(directory) {
@@ -82,7 +86,8 @@ function fingerprint(directory) {
  *    each one's code was loaded from — which is the production case since the
  *    daemon runs from a frozen copy. NEVER reintroduce the code path here.
  *
- * @param {{ platform?: string, stateDir?: string }} [options]
+ * @param {{ platform?: string, stateDir?: string, tmpdir?: string }} [options] `tmpdir` is
+ *   injectable so the second rung of the socket-file ladder is testable on every OS.
  * @returns {string}
  */
 function endpoint(options) {
@@ -103,8 +108,24 @@ function endpoint(options) {
   if (platform === 'linux') return `@ctxroute-${print}`;
 
   // macOS (and any other POSIX): a real socket file. Kept in the state
-  // directory — the place already reserved for what this framework writes.
-  return path.join(served, `ctxroute-${print}.sock`);
+  // directory — the place already reserved for what this framework writes —
+  // WHEN IT FITS.
+  // 🔴 AND IT DID NOT ALWAYS FIT — MEASURED ON THE macOS RUNNER 2026-09-23. Node's own doc:
+  //    a socket path *"gets truncated to an OS-dependent length of sizeof(sockaddr_un.sun_path)
+  //    - 1 … 103 bytes on macOS"*, SILENTLY. A 105-byte path bound a TRUNCATED name, so on the
+  //    next start `kernel-bind` probed, then unlinked the FULL name (ENOENT: it never existed)
+  //    and re-bound into the truncated leftover (EADDRINUSE): the daemon never came back, and a
+  //    deeper state directory is all it takes on a real machine. ⇒ the FIRST place of a fixed
+  //    ladder that fits: the state directory, then the user's own temp directory (private on
+  //    macOS), then `/tmp` (always short). Deterministic from the same inputs, so the daemon and
+  //    every client still compute ONE address; the fingerprint still names the data served.
+  // 🛑 NEVER THROW HERE: a spawned client calls this on every hook and must stay fail-open.
+  const name = `ctxroute-${print}.sock`;
+  const fits = (p) => Buffer.byteLength(p) <= MAX_SOCKET_PATH_BYTES;
+  const inState = path.join(served, name);
+  if (fits(inState)) return inState;
+  const inTemp = path.join(o.tmpdir || os.tmpdir(), name);
+  return fits(inTemp) ? inTemp : path.posix.join('/tmp', name);
 }
 
 /**
@@ -133,4 +154,4 @@ function kernelAddress(address) {
   return address.startsWith('@') ? `\0${address.slice(1)}` : address;
 }
 
-module.exports = { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, FINGERPRINT };
+module.exports = { endpoint, kernelAddress, fingerprint, leavesFilesystemEntry, FINGERPRINT, MAX_SOCKET_PATH_BYTES };

@@ -1,0 +1,14 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a forced exit. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+# Paired with `stream-write.yml`; the policy lives in
+# `test/stdout-exit-gate.test.js`. No `files:`/`ignores:` here, ever.
+# ⚠️ AST, NEVER REGEX: the files quote `process.exit` in their own comments.
+id: process-exit
+language: JavaScript
+severity: error
+message: >-
+  A FORCED EXIT. It does not wait for stdout/stderr on a POSIX pipe — in a file
+  that writes a stream, use `exitAfterFlush` or `process.exitCode`.
+rule:
+  pattern: process.exit($$$)

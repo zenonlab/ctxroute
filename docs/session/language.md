@@ -6,7 +6,7 @@
 
 ## Vocabulary (CLOSED)
 <!-- AUTO:vocabulary -->
-File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
+File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `rank` · `note` · `mode` · `threshold` · `driftUnit` · `enforce` · `category` · `response`
 `rules` entry keys: `pattern` · `scope` · `exclude` · `keys` · `rank`
 Triggers: `match` · `rules` · `tool` · tool wildcard `*` · `inject: never` disarms
 Unknown key ⇒ doc REJECTED (never silently ignored).
@@ -86,12 +86,22 @@ action you suspect, and an exclusion aimed at the wrong one changes nothing.
 PLACE has already been measured harmful here: it silenced agents genuinely working in the repo.
 Prefer what a path can decide; measure any exclusion on REAL actions before keeping it.
 
+## Reacting to what a tool ANSWERED — `response`
+Every other word reads what the agent SENT. `response: {"scope": [...], "exclude": [...]}` (inline JSON, one
+line) makes a doc wait for the tool's ANSWER: it is decided AFTER the action, and only if the answer satisfies
+its filters — same semantics as `scope`/`exclude`, over every text of the answer (a JSON text is read as the
+structure it encodes; key names never match). Absent = decided before the action, as always.
+🛑 It is a word of the language, NEVER reached through `keys`: an answer is not a parameter, so no parameter
+name can ever collide with it. It narrows, it never triggers — pair it with `tool` (or an MCP doc's path).
+⚠️ `enforce: true` + `response` is refused: an action that already ran cannot be refused, and an answer is
+content no one controls. One action ticks the `smart` drift ONCE, never again after the answer.
+
 ## Cadence
 <!-- AUTO:cadence -->
 `mode`: `dumb` · `once` · `smart` · `driftUnit`: `tool` · `turn`
 Cascade: entry > `defaults.{source}` > global > framework default.
 <!-- /AUTO -->
-`dumb` = every action · `once` = once, reset at compaction · `smart` = plus re-injection after `threshold`. ⚠️ `threshold` is DEAD outside `smart`, and no gate says so. `enforce: true` ⇒ `deny`; a block is never followed by a block.
+`dumb` = every action · `once` = once, reset at compaction · `smart` = plus re-injection after `threshold`. ⚠️ `threshold` is DEAD outside `smart`, and no gate says so. `enforce: true` ⇒ `deny`; a block is never followed by a block. `enforce` exists because intent is only observable AT the real call — no harness exposes it sooner. It denies THAT call once, then steps aside: the retry always passes.
 
 ⚠️ **The injection lands AFTER the action** it targets (it protects the next one); only `enforce` stops one. Fail-open gate = a guardrail, never a security boundary.
 

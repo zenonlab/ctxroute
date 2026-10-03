@@ -12,7 +12,7 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { parse, validate, validateMcp, isMatchDecl, toolList, MODES, DRIFT_UNITS, KNOWN, TRIGGERS, WILDCARD } from '../src/frontmatter.js';
+import { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, knownKeys, TRIGGERS, WILDCARD, settingRegistry, poseSettings, operatorForms, RULE_KEYS } from '../src/frontmatter.js';
 
 // ── parse: detection of the block ──
 test('parse: frontmatter at the head → data + body separated', () => {
@@ -168,7 +168,9 @@ test('validate: all the COMPATIBLE keys accepted together', () => {
   //    others look (which parameter keys an entry may see). Whitelist `["file_path"]`
   //    REPLACES the universe, blacklist `["-command"]` removes from it; per axis via
   //    `{match, scope, exclude}`. This test turned red first, which is its job.
-  assert.deepStrictEqual(KNOWN, ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'mode', 'rank', 'threshold', 'driftUnit', 'note', 'enforce']);
+  // ⚠️ DELIBERATE UPDATE (23/09/2026): `response` added — the setting that narrows a doc to
+  //    the moment AFTER the tool answered, and to the answers its scope/exclude accept.
+  assert.deepStrictEqual(knownKeys(), ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude', 'keys', 'rank', 'note', 'mode', 'threshold', 'driftUnit', 'enforce', 'category', 'response']);
   // The operator composes with everything, on both shapes.
   assert.deepStrictEqual(validate({ match: 'a', keys: ['-command'] }), []);
   assert.deepStrictEqual(validate({ match: 'a', scope: ['s'], keys: { match: ['file_path'], scope: ['-content'] } }), []);
@@ -510,7 +512,7 @@ test('`enforce` is admitted in an MCP doc TOO (the same vocabulary everywhere)',
 test('SYMMETRY: the cadence is IDENTICAL in both doc corpora', () => {
   // These 5 keys have the SAME meaning everywhere ⇒ they MUST be everywhere.
   for (const k of ['mode', 'threshold', 'driftUnit', 'note', 'enforce']) {
-    assert.ok(KNOWN.includes(k), `\`${k}\` absent from the file docs`);
+    assert.ok(knownKeys().includes(k), `\`${k}\` absent from the file docs`);
   }
   assert.deepStrictEqual(validateMcp({ mode: 'once', threshold: 2, driftUnit: 'turn', note: 'x', enforce: true }), [],
     'an MCP doc must accept the WHOLE cadence, enforce included');
@@ -529,7 +531,7 @@ test('ANTI-RETURN: `confirm` is no longer vocabulary, in NO corpus', () => {
   // ⚠️ The need "stop a gesture" is covered by `enforce`: automatic,
   //    identical on both harnesses, and it DELIVERS the knowledge with the refusal.
   //    Two words for one need = the anti-synonym law violated.
-  assert.ok(!KNOWN.includes('confirm'), 'confirm must no longer be an admitted key');
+  assert.ok(!knownKeys().includes('confirm'), 'confirm must no longer be an admitted key');
   assert.ok(validate({ match: 'a.js', confirm: true }).length > 0, 'confirm must be REFUSED in a file doc');
   assert.ok(validateMcp({ confirm: true }).length > 0, 'confirm must be REFUSED in an MCP doc');
 });
@@ -567,7 +569,7 @@ const MATCHING = ['match', 'mcp', 'rules', 'tool', 'inject', 'scope', 'exclude',
 
 // A VALID sample per behaviour key. Any key without a sample = RED
 // (part ⓪): impossible to add a key by making it invisible to the gate.
-const SAMPLE = { mode: 'once', threshold: 2, driftUnit: 'turn', note: 'x', enforce: true };
+const SAMPLE = { mode: 'once', threshold: 2, driftUnit: 'turn', note: 'x', enforce: true, category: 'x', response: { scope: ['x'] } };
 
 // 🛑 THE ONLY ADMITTED ASYMMETRIES — each with its MEASURED REASON.
 //    Adding an entry here is a DECISION, never a workaround.
@@ -633,7 +635,7 @@ test('validate `keys`: declared ALONE it is refused — an inert key looks like 
 });
 
 test('SYMMETRY GATE ⓪: every behaviour key has a sample (nothing can hide)', () => {
-  const behavior = KNOWN.filter((k) => !MATCHING.includes(k));
+  const behavior = knownKeys().filter((k) => !MATCHING.includes(k));
   for (const k of behavior) {
     assert.ok(k in SAMPLE,
       `\`${k}\` is a BEHAVIOUR key without a sample: add it to ECHANTILLON, otherwise the symmetry gate does not see it.`);
@@ -948,4 +950,136 @@ test('㊺① MUTANTS — ONE invalid entry is enough to refuse (every, never som
   assert.ok(validate({ match: 'a.js', scope: [['ok', '']] }).length > 0, 'group [ok, ""] accepted');
   assert.ok(validate({ match: 'a.js', exclude: ['ok', ''] }).length > 0, 'exclude [ok, ""] accepted');
   assert.ok(validate({ match: 'a.js', scope: ['ok', ''] }).length > 0, 'flat [ok, ""] accepted');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE SETTING REGISTRY ↔ THE CONFIG SCHEMA (23/09/2026)
+// ═══════════════════════════════════════════════════════════════════════
+// ⚠️ A setting's SHAPE is declared ONCE in the schema (`definitions.cadence`) and the skill
+//    entry REFERENCES it — two copies of one shape was class ㊴ (a gate probing presence
+//    never sees a form that drifted). The list of settings comes from the REGISTRY, never
+//    from this file: a setting added there is judged here with no edit.
+function settingSchemaGaps(sch, names) {
+  const cadence = sch.definitions.cadence.properties;
+  const skill = sch.properties.skills.additionalProperties.properties;
+  const gaps = [];
+  for (const n of names) {
+    if (!cadence[n]) gaps.push(`\`${n}\` has no shape in definitions.cadence`);
+    if (!skill[n] || skill[n].$ref !== `#/definitions/cadence/properties/${n}`) {
+      gaps.push(`the skill entry's \`${n}\` is not a $ref to definitions.cadence.properties.${n}`);
+    }
+  }
+  return gaps;
+}
+
+test('SETTING REGISTRY: every setting has ONE shape in the schema, referenced by the skill entry', async () => {
+  const sch = (await import('../ctxroute-config.schema.json', { with: { type: 'json' } })).default;
+  const names = Object.keys(settingRegistry());
+  assert.ok(names.length >= 5, 'the registry lost its settings — this cell would judge nothing');
+  assert.deepStrictEqual(settingSchemaGaps(sch, names), []);
+  // NEGATIVE-CHECK, in memory: a copied shape, and a setting the schema never heard of, are both seen.
+  const copy = JSON.parse(JSON.stringify(sch));
+  copy.properties.skills.additionalProperties.properties.mode = { enum: ['once'] };
+  assert.strictEqual(settingSchemaGaps(copy, names).length, 1, 'a hand-copied shape went unseen');
+  assert.strictEqual(settingSchemaGaps(sch, names.concat('invented')).length, 2, 'an undeclared setting went unseen');
+});
+
+test('SETTING REGISTRY: poseSettings POSES every valid setting raw and OMITS the invalid ones', () => {
+  // ⚠️ Inputs copied from the real callers' shape: a frontmatter / a registry entry, raw.
+  assert.deepStrictEqual(
+    poseSettings({ mode: 'once', threshold: 3, driftUnit: 'turn', enforce: false, category: 'ops', match: 'x' }),
+    { mode: 'once', threshold: 3, driftUnit: 'turn', enforce: false, category: 'ops' });
+  assert.deepStrictEqual(
+    poseSettings({ mode: 'loud', threshold: 0, driftUnit: 'day', enforce: 'yes', category: ['', 7] }), {});
+  assert.deepStrictEqual(poseSettings(undefined), {});
+  // ⚠️ BLANK is not a category: a whitespace-only string or element would otherwise restrict
+  //    the doc to a session category nobody can ever declare — muted forever, in silence.
+  assert.deepStrictEqual(poseSettings({ category: '   ' }), {});
+  assert.deepStrictEqual(poseSettings({ category: ['  ', 'ops'] }), { category: ['  ', 'ops'] });
+  assert.deepStrictEqual(poseSettings({ category: ['  '] }), {});
+});
+
+test('OPERATOR FORMS: every per-rule operator of RULE_KEYS (but the pattern) has ONE form validator', () => {
+  assert.deepStrictEqual(Object.keys(operatorForms()), RULE_KEYS.filter((k) => k !== 'pattern'));
+  // The flat frontmatter and a `rules` entry share the validator — so the same mistake reads the same.
+  assert.ok(validate({ match: 'x', exclude: [''] }).includes('`exclude` must be a list of non-empty strings [a, b]'));
+  assert.ok(isRulesDecl([{ pattern: 'x', exclude: [''] }]).includes('`rules[0].exclude` must be a list of non-empty strings [a, b]'));
+  assert.ok(validate({ match: 'x', rank: 'high' }).includes('`rank` must be a number'));
+  assert.ok(isRulesDecl([{ pattern: 'x', rank: 'high' }]).includes('`rules[0].rank` must be a number'));
+});
+
+test('keys: accepted beside a trigger, refused ALONE (it narrows, it never triggers)', () => {
+  assert.deepStrictEqual(validate({ match: 'x', keys: ['-command'] }), []);
+  assert.ok(validate({ keys: ['-command'], inject: 'never' }).some((e) => e.startsWith('`keys` alone changes NOTHING')));
+  // A MALFORMED `keys` gets its FORM error only — never a second, misleading "alone" error on top.
+  const malformed = validate({ keys: [''], inject: 'never' });
+  assert.ok(malformed.some((e) => e.startsWith('`keys`: every entry must be a non-empty string')));
+  assert.ok(!malformed.some((e) => e.startsWith('`keys` alone changes NOTHING')));
+});
+
+test('SETTING REGISTRY: each form error NAMES its key and what is expected', () => {
+  // ⚠️ The message is the author's only way out of a red doc (paved road): an empty or
+  //    anonymous error would leave them guessing which of five settings is wrong.
+  const err = (fm) => validate({ match: 'x', ...fm }).join('\n');
+  assert.match(err({ mode: 'loud' }), /`mode` invalid: loud \(expected: dumb\|once\|smart\)/);
+  assert.match(err({ threshold: 0 }), /`threshold` must be an integer >= 1 \(received: 0\)/);
+  assert.match(err({ driftUnit: 'day' }), /`driftUnit` invalid: day \(expected: tool\|turn\)/);
+  assert.match(err({ enforce: 'yes' }), /`enforce` must be true or false/);
+  assert.match(err({ category: [] }), /`category` empty or badly typed/);
+  assert.match(validateMcp({ category: 7 }).join('\n'), /`category` empty or badly typed/);
+});
+
+// ── `response` (2026-09-23): the setting that waits for the tool's ANSWER ──
+// ⚠️ Inputs are what an author WRITES in a real doc header, parsed by the real `parse` — the
+//    inline-JSON path is the part a hand-built object would never exercise.
+test('`response` is parsed as INLINE JSON, like `rules`, and a broken JSON stays a refused string', () => {
+  const ok = parse('---\ntool: ["mcp__odoo__odoo_call"]\nresponse: {"scope": ["posted"], "exclude": ["draft"]}\n---\nbody');
+  assert.deepStrictEqual(ok.data.response, { scope: ['posted'], exclude: ['draft'] });
+  assert.deepStrictEqual(validate(ok.data), []);
+  const grouped = parse('---\nmatch: x\nresponse: {"scope": [["a", "b"], ["c"]]}\n---\n');
+  assert.deepStrictEqual(grouped.data.response, { scope: [['a', 'b'], ['c']] });
+  assert.deepStrictEqual(validate(grouped.data), []);
+  const broken = parse('---\nmatch: x\nresponse: {"scope": ["posted"\n---\n');
+  assert.strictEqual(typeof broken.data.response, 'string');
+  assert.ok(validate(broken.data).some((e) => /INLINE JSON object/.test(e)));
+});
+
+test('`response` refuses every form that would say nothing or say it ambiguously', () => {
+  const refused = [
+    [{}, /NON-EMPTY/],
+    [{ scope: [] }, /NON-EMPTY/],
+    [{ scope: ['x'], exclude: [] }, /NON-EMPTY/],
+    [{ scope: 'x' }, /NON-EMPTY/],
+    [{ foo: ['x'] }, /unknown key/],
+    [{ scope: ['a', ['b']] }, /MIXED/],
+    [{ exclude: [['a']] }, /response\.exclude/],
+    // A VALID first filter must not hide an invalid second one (the loop keeps looking).
+    [{ scope: ['ok'], exclude: [['a']] }, /response\.exclude/],
+    [{ scope: [''] }, /MIXED|non-empty/],
+    [['posted'], /INLINE JSON object/],
+    ['posted', /INLINE JSON object/],
+    [null, /INLINE JSON object/],
+  ];
+  for (const [value, why] of refused) {
+    assert.match(validate({ match: 'x', response: value }).join('\n'), why, `${JSON.stringify(value)} must be refused`);
+  }
+  assert.deepStrictEqual(validate({ match: 'x', response: { exclude: ['error'] } }), [], 'exclude alone is a filter');
+});
+
+test('`response` + `enforce: true` is a CONTRADICTION, on file docs AND MCP docs; `enforce: false` is fine', () => {
+  const r = { scope: ['posted'] };
+  assert.ok(validate({ match: 'x', enforce: true, response: r }).some((e) => /contradicts `response`/.test(e)));
+  assert.ok(validateMcp({ enforce: true, response: r }).some((e) => /contradicts `response`/.test(e)));
+  assert.deepStrictEqual(validate({ match: 'x', enforce: false, response: r }), []);
+  assert.deepStrictEqual(validateMcp({ response: r }), [], 'an MCP doc may wait for its server\'s answer');
+  // A lone `response` is a setting, never a trigger: the doc still needs one.
+  assert.ok(validate({ response: r }).some((e) => /no trigger/.test(e)));
+});
+
+test('`response` is a SETTING: posed raw by the sources, never a per-rule operator', () => {
+  assert.deepStrictEqual(poseSettings({ response: { scope: ['x'] }, match: 'y' }), { response: { scope: ['x'] } });
+  assert.deepStrictEqual(poseSettings({ response: {} }), {}, 'an invalid filter is omitted so the next stage can exist');
+  assert.ok(!RULE_KEYS.includes('response'));
+  assert.ok(validate({ rules: [{ pattern: 'p', response: { scope: ['x'] } }] }).some((e) => /unknown key `response`/.test(e)),
+    'inside a rules entry it is refused: the answer belongs to the ACTION, never to one path of it');
 });

@@ -1,6 +1,7 @@
 ---
 match: turn-count.js
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # turn-count.js — the LAST witness of a dead authority
 

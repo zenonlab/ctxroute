@@ -1,7 +1,8 @@
 ---
 match: [vendor-deadline.js, vendor-deadline.test.js, deadline-vendor.test.js, hooks-fleet-gate.test.js]
 scope: [ctxroute]
-mode: dumb
+mode: smart
+threshold: 30
 rank: 541
 ---
 # vendor-deadline.js + fleet gates — vendoring the deadline

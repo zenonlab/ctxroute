@@ -219,6 +219,56 @@ test('TRI-STATE: refusal() of an unavailable verdict is the EXACT four-line cont
   assert.equal(text, expected);
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// THE PRESENT PATH, ON EVERY MACHINE — through the injected `guard` seam.
+// 🔴 The cells above skip wherever the sibling package is absent, i.e. on EVERY
+//    clean clone and CI runner: this module's whole present path was never run
+//    there, and the CI's mutation report read 14 `NoCoverage` mutants for a
+//    month while the maintainer's machine read 100 % (measured 2026-10-02). The
+//    REAL matcher stays proven by the cells above wherever it exists; these
+//    cells prove what THIS module does around it, everywhere.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** A guard that records exactly what it was asked to scan, and finds what it is told to. */
+const recordingGuard = (found) => {
+  const seen = [];
+  return { seen, scan: (text, motifs) => { seen.push({ text, motifs }); return found; } };
+};
+
+test('SEAM: verdict() hands the guard the message MINUS its trailer block, and the caller\'s motifs', () => {
+  const guard = recordingGuard([]);
+  const motifsGiven = [{ name: 'term', re: /acme/ }];
+  const msg = 'fix: something real\n\nBody line.\n\nCo-Authored-By: Someone <bot' + '@' + 'vendor.com>';
+  assert.deepEqual(verdict(msg, motifsGiven, guard), { violations: [] });
+  assert.equal(guard.seen.length, 1, 'the guard must be asked exactly once');
+  assert.equal(guard.seen[0].text, 'fix: something real\n\nBody line.\n',
+    'the trailer block must be cut, and ONLY the trailer block');
+  assert.strictEqual(guard.seen[0].motifs, motifsGiven, 'the caller\'s motifs must reach the guard untouched');
+});
+
+test('SEAM: a message with NO trailer block reaches the guard whole', () => {
+  const guard = recordingGuard([]);
+  verdict('fix: one line\n\nand a body', [], guard);
+  assert.equal(guard.seen[0].text, 'fix: one line\n\nand a body');
+});
+
+test('SEAM: what the guard finds is what verdict() reports, and an explicit null is ABSENT', () => {
+  const found = [{ name: 'client term', excerpt: 'acme' }];
+  assert.deepEqual(verdict('fix: acme', [], recordingGuard(found)), { violations: found });
+  assert.deepEqual(verdict('fix: acme', [], null), { violations: [], unavailable: true });
+});
+
+test('SEAM: the violation refusal is the EXACT contract, every line, on every machine', () => {
+  const text = refusal({ violations: [{ name: 'client term', excerpt: 'acme' }, { name: 'email', excerpt: 'a@b' }] });
+  assert.equal(text, [
+    'COMMIT REFUSED — the message carries personal data.',
+    'This repository is PUBLIC: a pushed message survives in history for ever (git log -p).',
+    'Remove the data below from the message, then commit again.',
+    '  client term (acme)',
+    '  email (a@b)',
+  ].join('\n'));
+});
+
 test.skipIf(matcherAbsent)('refusal: the violation refusal text is the EXACT contract, every line', () => {
   const v = verdict('deploy: fix the pipeline for acme-widgets', motifs());
   const text = refusal(v);

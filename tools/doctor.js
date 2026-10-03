@@ -43,6 +43,7 @@ const { spawnSync } = require('child_process');
 //    measured by nothing. `checkWiring` used to hold ~325 lines of pure judgement — the fleet's
 //    dead-man switch judging itself with no mutation at all. 🛑 Never bring a decision back here.
 const wiringPure = require('../src/doctor-wiring-pure');
+const deployedScan = require('../src/deployed-scan');
 
 // ⚠️ SINGLE HOOK since the merge (17/07/2026): doc-inject.js (the gate)
 //    injects ALL docs — file (frontmatters) AND MCP (docs/mcp/).
@@ -82,15 +83,23 @@ const say = (msg) => { if (!QUIET) console.log(msg); };
 //    model = only the canary sees it, in real use) — never promised.
 // ⚠️ `--harness` is the public flag; `--harnais` accepted for retro-compat (renamed 2026-08-16).
 const idxH = (() => { const i = process.argv.indexOf('--harness'); return i !== -1 ? i : process.argv.indexOf('--harnais'); })();
-if (idxH !== -1 && process.argv[idxH + 1]) {
+// 🛑 EVERY exit of this diagnostic goes through `exitAfterFlush` (2026-10-01):
+//    `process.exit` cut its report on a POSIX pipe — a CI log, or the SessionStart
+//    wiring, would show half of WHICH path is dead. It RETURNS, so the two modes
+//    are an `if/else` below, never "exit and fall through".
+const { exitAfterFlush } = require('../src/stdout-exit');
+const HARNESS_MODE = idxH !== -1 && Boolean(process.argv[idxH + 1]);
+
+/** @returns {number} the exit code of the conformance mode */
+function harnessConformance(file) {
   const { conformance } = require('../src/harness-conformance.js');
   let payload;
   try {
-    payload = JSON.parse(fs.readFileSync(process.argv[idxH + 1], 'utf8'));
+    payload = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
     // FAIL-LOUD, like any diagnostic: a mute report reads as a verdict.
     console.error('🚨 TOOL FAILURE — unreadable payload: ' + e.message);
-    process.exit(2);
+    return 2;
   }
   const r = conformance(payload);
   console.log('\nHARNESS CONFORMANCE — verdict: ' + r.verdict.toUpperCase());
@@ -101,8 +110,86 @@ if (idxH !== -1 && process.argv[idxH + 1]) {
     console.log('  📎 path-SHAPED keys unknown to the profile (candidates for `pathKeys` in harness-profile.js — YOURS to decide, never guessed): ' + r.candidateKeys.join(', '));
   }
   console.log('  ℹ this test proves the PRESENCE of the contract fields. That the injected context is CONSUMED by the model is proven in real use (canary).');
-  process.exit(r.verdict === 'incompatible' ? 1 : 0);
+  return r.verdict === 'incompatible' ? 1 : 0;
 }
+if (HARNESS_MODE) exitAfterFlush(harnessConformance(process.argv[idxH + 1]));
+
+// ⚠️ EVENT-DRIVEN, NEVER A GUESSED DURATION (2026-09-14, SECOND attempt — the FIRST used a fixed
+//    "20 × 250 ms" delay sized to ONE measured stall (3828 ms) on ONE machine. The operator named
+//    the flaw directly: a slower or busier machine can need far more, so a constant chosen from a
+//    single measurement is the same bug with a bigger number, not a fix.
+// ⚠️ SHARED by every `readSettingsThrough` call site in this file (settings.json / Codex hooks /
+//    Codex config). Reacts to the REAL kernel signal (`fs.watch` on the file's parent directory —
+//    a rename/create there is exactly the fact this diagnostic waits on) instead of estimating how
+//    long a rename window lasts. The ONLY number left is `plafondMs`: a generous safety CEILING to
+//    eventually give up, legitimate under motive `undecidable` (we cannot tell whether the file
+//    will EVER become readable) precisely BECAUSE it does not need to be "right" — only large
+//    enough that it never fires on a healthy machine, however slow or loaded.
+// ⚠️ THE FALLBACK TICK is not a duration guess either: `fs.watch` is documented (nodejs.org/api/fs,
+//    read 2026-09-14) as NOT 100% consistent across platforms — Linux/inotify, macOS/FSEvents and
+//    Windows/ReadDirectoryChangesW each report differently, and the cross-platform reference for
+//    this exact problem (`chokidar`) exists PRECISELY because it pairs a native watcher with a
+//    polling fallback rather than trusting the watcher alone. So this is a low-cost periodic
+//    double-check in case ONE event is missed — being "wrong" about it costs a bit of latency,
+//    never a false verdict (same shape as `test/stale-code-guard.test.js`'s "yield between two
+//    observations of a foreign process", already accepted in `temporal-budget.json`).
+// ⚠️ THE FALLBACK TICK USES EXPONENTIAL BACKOFF WITH FULL JITTER, not a fixed interval — the
+//    documented industry pattern for spacing retries against a transient condition (AWS/Google
+//    Cloud SDK retry guidance, read 2026-09-14): doubling base, capped, randomised so many
+//    concurrent doctor runs never tick in lockstep. `fs.watch` stays the PRIMARY signal (reacts in
+//    milliseconds on a real event); this tick only covers the case it misses one.
+// ⚠️ WATCHER LEAK: `close()` MUST be called once the caller is done — a live `fs.watch` handle
+//    would otherwise keep this short-lived diagnostic process from exiting.
+function createEventWaiter(filePath, plafondMs) {
+  const startedAt = Date.now();
+  let attempt = 0;
+  let watcher;
+  try { watcher = fs.watch(path.dirname(filePath)); } catch { /* watch unavailable on this fs: the ceiling alone still bounds the wait */ }
+  // 🔴 THE WAIT ANNOUNCES ITSELF, AND IT IS NOT DECORATION — MEASURED 2026-09-19.
+  //    `test/doctor.test.js` case 14a hides the file, spawns this diagnostic and
+  //    puts the file back; 14c is its negative check. Both restored it after a
+  //    LITERAL 400 ms, i.e. they raced this process's own startup — and on this
+  //    machine startup WINS: the read lands after the restore, the absence is
+  //    never encountered, and 14a passes while measuring NOTHING. 14c is what
+  //    said so, by failing. ⇒ a test now has a REAL OBSERVATION of the child to
+  //    synchronise on instead of a guessed duration, which is the same law this
+  //    file already follows everywhere else: ask what KNOWS, never a clock.
+  // ⚠️ ONCE PER WAITER, on the SUCCESS channel — so `--quiet` (the SessionStart
+  //    wiring) stays totally silent, and a human reading a slow run learns why.
+  let announced = false;
+  const nextSignal = () => /** @type {Promise<void>} */ (new Promise((resolve) => {
+    if (!announced) {
+      announced = true;
+      say(`  … waiting for a real filesystem signal on ${filePath}`);
+    }
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(tick);
+      if (watcher) watcher.off('change', settle);
+      resolve();
+    };
+    attempt += 1;
+    const doublingBase = Math.min(1000, 25 * (2 ** attempt));
+    const withJitter = Math.random() * doublingBase;
+    const remaining = plafondMs - (Date.now() - startedAt);
+    const tick = setTimeout(settle, Math.max(0, Math.min(withJitter, remaining)));
+    if (watcher) watcher.on('change', settle);
+  }));
+  const giveUp = () => Date.now() - startedAt >= plafondMs;
+  const close = () => { try { if (watcher) watcher.close(); } catch { /* already closed */ } };
+  return { nextSignal, giveUp, close };
+}
+
+// ⚠️ 2 MINUTES: generous on purpose (see comment above) — this is a SessionStart diagnostic run
+//    once, never a hot path. Widening it costs nothing on a healthy machine; narrowing it would
+//    reintroduce exactly the bug this fix closes.
+// 🛑 `CTXROUTE_TEST_CEILING_MS` IS RESERVED FOR TESTS (same convention as `CTXROUTE_CONFIG_PATH` —
+//    see paths.js): a real integration test cannot wait out a real 2-minute ceiling to prove the
+//    genuine-absence path, so it shortens the ceiling for its OWN spawned process only. Never a
+//    user setting.
+const FILE_WAIT_CEILING_MS = Number(process.env.CTXROUTE_TEST_CEILING_MS) || 120000;
 
 const problems = [];
 const checks = [];
@@ -396,11 +483,26 @@ function probe() {
 // ⚠️ The wiring lives OUTSIDE the repo → NO test in the repo can see it.
 // That is precisely where silent death strikes (moved file, stale absolute
 // path). Hence the explicit check, opt-in through --settings.
-function checkWiring(settingsPath) {
+async function checkWiring(settingsPath) {
   say(`\nwiring (${settingsPath}):`);
-  let raw = null;
-  try { raw = fs.readFileSync(settingsPath, 'utf8'); } catch { /* raw stays null */ }
-  if (raw === null) { check('settings.json readable', false, `settings.json not found: ${settingsPath}`); return; }
+  // ⚠️ Reads THROUGH the rename window (src/doctor-wiring-pure.js::readSettingsThrough) — a
+  //    single bare readFileSync used to report ANY transient error as "not found", screaming
+  //    BROKEN over a file that was fine a second later (measured 2026-09-13). A first fix (a fixed
+  //    delay sized to ONE measured stall) was itself a guess about a duration that varies with the
+  //    machine — see `createEventWaiter` above for why this now reacts to a real fs event.
+  const waiter = createEventWaiter(settingsPath, FILE_WAIT_CEILING_MS);
+  let settingsRead;
+  try {
+    settingsRead = await wiringPure.readSettingsThrough(
+      (p) => fs.readFileSync(p, 'utf8'), settingsPath, waiter.nextSignal, waiter.giveUp,
+    );
+  } finally { waiter.close(); }
+  if (settingsRead.raw === null) {
+    const failure = /** @type {{raw: null, detail: string}} */ (settingsRead);
+    check('settings.json readable', false, failure.detail);
+    return;
+  }
+  const raw = settingsRead.raw;
 
   let settings = null;
   try { settings = JSON.parse(raw); } catch { /* settings stays null */ }
@@ -417,11 +519,7 @@ function checkWiring(settingsPath) {
 
   // ⚠️ The declared bandwidth: `ctxroute-config.json` carries the user's INTENT, `settings.json`
   //    carries the WIRING the harness executes. Key absent = no opinion, no blame.
-  let wantedFrames = null;
-  try {
-    const cfg = require('../src/collect-core').loadConfig();
-    if (cfg && Number.isInteger(cfg.frames) && cfg.frames >= 1) wantedFrames = cfg.frames;
-  } catch { /* unreadable config: the config gate says so, not this one */ }
+  const { frames: wantedFrames, afterFrames: wantedAfterFrames } = declaredBandwidth();
 
   // ⚠️ `LANE_FLAG` is READ from `client-core.js`, never re-spelled here: four shells and one judge
   //    must not be able to drift apart. Unreadable ⇒ null ⇒ the anti-vacuity check turns RED.
@@ -443,7 +541,7 @@ function checkWiring(settingsPath) {
   }
 
   const findings = wiringPure.wiringFindings({
-    settings, wantedFrames, laneFlag: LANE_FLAG, consumers, repoDir: __dirname,
+    settings, wantedFrames, wantedAfterFrames, laneFlag: LANE_FLAG, consumers, repoDir: __dirname,
   });
   for (const f of findings) {
     if (f.kind === 'check') { check(f.name, f.ok, f.detail); continue; }
@@ -456,6 +554,61 @@ function checkWiring(settingsPath) {
     check(f.copyName,
       path.resolve(f.file) === path.resolve(path.join(__dirname, '..', 'src', 'hooks', f.base)),
       f.copyDetail);
+  }
+
+  // ── THE DECLARED LISTENING ADDRESS MUST STILL EXIST ON THIS MACHINE ──
+  // 🔑 The Windows profile leaves `127.0.0.0/8` for a DEDICATED adapter, because libuv disables SYN
+  //    retransmission on any address whose first byte is 127. The day that adapter is removed — or
+  //    its address reverts to an auto-assigned one — the daemon cannot bind, the whole fleet loses
+  //    its injection, and NOTHING says why. This is the one question no repo test can answer: it is
+  //    about the live machine, exactly like the wiring above.
+  // ⚠️ The DECISION is pure (`declaredHostPresence`, mutated); this shell only OBSERVES. It is
+  //    TRI-STATE on purpose — a name, or an unreadable interface list, answers `unmeasured` WITH its
+  //    reason rather than accusing a healthy machine.
+  let declaredHost = null;
+  try { ({ host: declaredHost } = require('../src/paths').httpEndpoint()); } catch { /* stays null */ }
+
+  let localAddresses = [];
+  try {
+    const byInterface = Object.values(os.networkInterfaces());
+    for (const addrs of byInterface) for (const a of addrs || []) localAddresses.push(a.address);
+  } catch { localAddresses = []; }
+
+  const presence = wiringPure.declaredHostPresence({ host: declaredHost, localAddresses });
+  if (presence.state === 'unmeasured') {
+    say(`  ℹ the declared listening address was NOT judged: ${presence.reason}.`);
+  } else {
+    check('the declared listening address exists on this machine',
+      presence.state === 'present',
+      `the wiring POSTs to ${presence.host} and the daemon BINDS it, but NO interface on this `
+      + `machine carries that address — the daemon cannot listen and every frame of every action is `
+      + `lost, in silence. Present here: ${(presence.available || []).join(', ')}. `
+      + 'Reinstall the dedicated adapter (service/install-windows.ps1), or declare an address that '
+      + 'exists in `http.host`.');
+  }
+
+  // ⏻ CAN THE SUPERVISOR START THE DAEMON AT ALL? (2026-09-29)
+  // 🔴 BORN OF A MEASURED OUTAGE: a third-party "do not disturb" mode paused the
+  //    task at logon, the daemon never came up, and every check above stayed
+  //    GREEN — they judge the WIRING, never whether anything can serve it. A
+  //    disabled task is a fact the scheduler states in its own XML, so this asks
+  //    it; the decision (and the OS knowledge) lives in `lifecycle-pure.js`.
+  // ⚠️ `unmeasured` is SAID, never counted as healthy: no probe exists yet for
+  //    the Linux and macOS supervisors.
+  const daemonLifecycle = require('../src/lifecycle-pure');
+  const ask = daemonLifecycle.supervisorQuery(process.platform);
+  let taskXml = null;
+  if (ask !== null) {
+    try {
+      const answer = spawnSync(ask.file, ask.args, { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+      taskXml = answer.status === 0 ? answer.stdout : null;
+    } catch { /* stays null: the scheduler could not be asked, which the verdict reports */ }
+  }
+  const supervisor = daemonLifecycle.supervisorVerdict(process.platform, taskXml);
+  if (supervisor.verdict === 'unmeasured') {
+    say(`  ℹ whether the OS supervisor can start the daemon was NOT judged: ${supervisor.reason}.`);
+  } else {
+    check('the OS supervisor can start the daemon', supervisor.verdict === 'armed', supervisor.reason);
   }
 }
 
@@ -471,11 +624,40 @@ function checkWiring(settingsPath) {
 // rule: the old mechanism (protect-files.js copy in ~/.codex) must NO LONGER
 // be wired at the same time as codex-doc-inject — otherwise each doc arrives
 // TWICE on every tool call (tokens burned in silence).
-function checkCodexWiring(hooksPath) {
+/**
+ * The bandwidth the user DECLARED in `ctxroute-config.json`, read ONCE for every wiring judged.
+ * ⚠️ Key absent = no opinion, no blame (`null`). The moment AFTER the tool answered has its own
+ *    key (`afterFrames`, 2026-09-23). ONE reader for the Claude AND the Codex check: two copies of
+ *    "what did the user ask for" would let the two harnesses be judged against different intents.
+ * @returns {{frames: number|null, afterFrames: number|null}}
+ */
+function declaredBandwidth() {
+  const out = { frames: null, afterFrames: null };
+  try {
+    const cfg = require('../src/collect-core').loadConfig();
+    if (cfg && Number.isInteger(cfg.frames) && cfg.frames >= 1) out.frames = cfg.frames;
+    if (cfg && Number.isInteger(cfg.afterFrames) && cfg.afterFrames >= 1) out.afterFrames = cfg.afterFrames;
+  } catch { /* unreadable config: the config gate says so, not this one */ }
+  return out;
+}
+
+async function checkCodexWiring(hooksPath) {
   say(`\nCODEX wiring (${hooksPath}):`);
-  let raw = null;
-  try { raw = fs.readFileSync(hooksPath, 'utf8'); } catch { /* raw stays null */ }
-  if (raw === null) { check('Codex hooks config readable', false, `file not found: ${hooksPath}`); return; }
+  // ⚠️ Same rename-window class as checkWiring()'s settings.json read — one bare readFileSync
+  //    for every optional-flag reader in this file would be one more silent-diagnostic hole.
+  const waiter = createEventWaiter(hooksPath, FILE_WAIT_CEILING_MS);
+  let hooksRead;
+  try {
+    hooksRead = await wiringPure.readSettingsThrough(
+      (p) => fs.readFileSync(p, 'utf8'), hooksPath, waiter.nextSignal, waiter.giveUp,
+    );
+  } finally { waiter.close(); }
+  if (hooksRead.raw === null) {
+    const failure = /** @type {{raw: null, detail: string}} */ (hooksRead);
+    check('Codex hooks config readable', false, failure.detail);
+    return;
+  }
+  const raw = hooksRead.raw;
 
   // Deliberately TEXTUAL matching (like checkWiring): JSON (hooks.json) AND
   // TOML (config.toml) without a dedicated parser — we look for file
@@ -497,6 +679,10 @@ function checkCodexWiring(hooksPath) {
 
   check('the CODEX shell (codex-doc-inject.js) is wired on PreToolUse', wired('codex-doc-inject.js'),
     'codex-doc-inject.js missing from the Codex wiring: NO doc injected on the Codex side, in silence.');
+  // ⚠️ The SAME script serves the moment after the tool answered (2026-09-23): "wired anywhere"
+  //    stays true when only that block is dropped, so the moment is judged by its own SECTION.
+  const after = wiringPure.codexAfterFinding(raw, 'codex-doc-inject.js', declaredBandwidth().afterFrames);
+  if (after) check(after.name, after.ok, after.detail);
   check('the CODEX guard (codex-doc-write-guard.js) is wired on PostToolUse', wired('codex-doc-write-guard.js'),
     'codex-doc-write-guard.js missing: apply_patch writes without a real-time net.');
   check('the reset (ctxroute-reset.js, REUSED GATE) is wired on PreCompact', wired('ctxroute-reset.js'),
@@ -579,11 +765,22 @@ function checkCodexWiring(hooksPath) {
 //    name `codex_hooks` to explain why it must no longer be written (that is
 //    the case in the reference config.toml). Same lesson as the
 //    protect-files false positive of 19/07/2026 → anchored at line start.
-function checkCodexFeatures(configPath) {
+async function checkCodexFeatures(configPath) {
   say(`\nCODEX feature flag (${configPath}):`);
-  let raw = null;
-  try { raw = fs.readFileSync(configPath, 'utf8'); } catch { /* raw stays null */ }
-  if (raw === null) { check('Codex config readable', false, `file not found: ${configPath}`); return; }
+  // ⚠️ Same rename-window class as checkWiring()'s settings.json read.
+  const waiter = createEventWaiter(configPath, FILE_WAIT_CEILING_MS);
+  let configRead;
+  try {
+    configRead = await wiringPure.readSettingsThrough(
+      (p) => fs.readFileSync(p, 'utf8'), configPath, waiter.nextSignal, waiter.giveUp,
+    );
+  } finally { waiter.close(); }
+  if (configRead.raw === null) {
+    const failure = /** @type {{raw: null, detail: string}} */ (configRead);
+    check('Codex config readable', false, failure.detail);
+    return;
+  }
+  const raw = configRead.raw;
 
   check('[features].hooks = true is DECLARED (without it, NO Codex hook runs)',
     /^[ \t]*hooks[ \t]*=[ \t]*true[ \t]*$/m.test(raw),
@@ -596,6 +793,83 @@ function checkCodexFeatures(configPath) {
     + 'Codex only announces it on stderr at startup (nothing is persisted) and will remove it: '
     + 'that day the whole Codex injection dies IN SILENCE. Rename it to `hooks = true`.');
 }
+
+// ── 2quater. DEPLOYED DRIFT (--deployed <ABSOLUTE dir>) ───────────────
+// ⚠️ RAISON D'ÊTRE: `0quater` (skill) makes a delivery to production a GESTURE the operator
+//    chooses (`git archive HEAD` + `npm ci`, then a restart) — never an automatic consequence of
+//    editing this repo. So the two CAN diverge, silently, for as long as nobody re-checks. Every
+//    other check here proves the ENGINE decides right; this one is the only one that asks whether
+//    the bytes ACTUALLY SERVING PRODUCTION are the ones this repo describes.
+// ⚠️ SCOPE = `git ls-files` under `src/`, THE AUTHORITY — never a hand-rolled glob, which is a list
+//    and only knows what existed the day it was written.
+// ⚠️ MEASURED FACT: a real deployed copy and this repo differ by LINE-ENDING STYLE on some files
+//    (repo `\r\n`, deployed `\n`) while carrying identical CONTENT once `\r` is stripped — hash the
+//    NORMALISED text, never the raw bytes, or this check is red on day one and gets ignored.
+// ⚠️ THE SCAN ITSELF (git ls-files + the paired hashing) IS `src/deployed-scan.js` (2026-09-03) —
+//    `tools/deploy.js` needs the SAME reading to build its copy plan, and two copies of it would
+//    be two truths that diverge. This function only asks the questions specific to a READ-ONLY
+//    comparison (does the directory exist, is the scope non-empty) and calls `check()`.
+function checkDeployed(deployedDir) {
+  say(`\ndeployed drift (${deployedDir}):`);
+  let isDir = false;
+  try { isDir = fs.statSync(deployedDir).isDirectory(); } catch { /* isDir stays false */ }
+  if (!isDir) {
+    check('the --deployed directory exists', false,
+      `--deployed points at a directory that does not exist (or is not a directory): ${deployedDir} `
+      + '— nothing was compared. "I could not measure" is never "it matches".');
+    return;
+  }
+
+  // ⚠️ TEST-ONLY OVERRIDE (mirrors paths.js's `CTXROUTE_CONFIG_PATH` convention): an env var
+  //    reserved for the test suite, never read as an ambient production setting. Lets
+  //    `test/deploy.test.js` point this SAME comparison at a throwaway fake repo instead of the
+  //    real checkout, without which `tools/deploy.js` re-running THIS judge would always compare
+  //    against the real repo regardless of `cwd`.
+  const repoDir = process.env.CTXROUTE_REPO_DIR || path.join(__dirname, '..');
+  const scanned = deployedScan.scan(repoDir, deployedDir);
+  // ⚠️ `scanned.ok === false`, NEVER `!scanned.ok`: under this repo's `strictNullChecks: false`,
+  //    `tsc` narrows a discriminated union across a `require()` boundary on an EQUALITY check
+  //    only — negation leaves `scanned.error` unprovable below (measured 2026-09-03).
+  if (scanned.ok === false) {
+    check('git ls-files (the AUTHORITY for the src/ scope) is readable', false,
+      `git ls-files failed in ${repoDir}: ${scanned.error}.`);
+    return;
+  }
+  const { relPaths, entries } = scanned;
+
+  // 🛑 ANTI-VACUITY FLOOR: `git ls-files src` on this repo can never be empty (measured), so a
+  //    healthy run always exercises this. "I could not measure" is never "it matches".
+  check(`the src/ scope read from git ls-files is not empty (${relPaths.length} tracked path(s))`,
+    entries.length > 0,
+    `git ls-files src reported ${relPaths.length} tracked path(s) but NONE could be read from the repo `
+    + '— nothing was compared, and an unmeasured drift is never silently assumed healthy.');
+  if (entries.length === 0) return;
+
+  const verdict = wiringPure.deployedDriftVerdict(entries);
+  // ⚠️ UNREACHABLE IN PRACTICE (the floor above already refused an empty `entries`), but the return
+  //    type of `deployedDriftVerdict` is a real tri-state union: narrowing it EXPLICITLY here is
+  //    what lets `tsc` prove `verdict.count` exists below, instead of trusting a control-flow fact
+  //    it cannot see across the pure module's own boundary.
+  if (verdict.state === 'unmeasured') {
+    check('the deployed copy matches the repo, file for file, line-ending NORMALISED', false,
+      'internal error: entries were non-empty but the verdict came back unmeasured — this should never happen.');
+    return;
+  }
+  check(`the deployed copy matches the repo, file for file, line-ending NORMALISED (${verdict.count} file(s) compared)`,
+    verdict.state === 'match',
+    verdict.state === 'drift'
+      ? `DEPLOYED COPY DIVERGES from the repo on ${verdict.paths.length}/${verdict.count} file(s): `
+        + `${verdict.paths.join(', ')}. Production is NOT running what this repository describes.`
+      : 'unmeasured — see the floor check above.');
+}
+
+// ⚠️ ASYNC TOP LEVEL (2026-09-14): `checkWiring`/`checkCodexWiring`/`checkCodexFeatures` now await
+//    a real filesystem signal instead of blocking synchronously — everything below must `await`
+//    them in the same order as before, and the exit-code contract (0 healthy / 1 broken) is
+//    preserved byte-for-byte by keeping the SAME exits at the SAME points — through
+//    `exitAfterFlush` since 2026-10-01, so the report reaches the reader whole.
+// ⚠️ Skipped in `--harness` mode: that mode is a different act with its own exit above.
+if (!HARNESS_MODE) (async () => {
 
 say('ctxroute doctor\n');
 probe();
@@ -617,16 +891,26 @@ function checkInstall() {
 }
 
 const idx = process.argv.indexOf('--settings');
-if (idx !== -1 && process.argv[idx + 1]) { checkInstall(); checkWiring(process.argv[idx + 1]); }
+if (idx !== -1 && process.argv[idx + 1]) { checkInstall(); await checkWiring(process.argv[idx + 1]); }
 // Codex wiring: opt-in, independent of --settings (a machine may have only
 // one harness). Usage: node doctor.js --codex-hooks ~/.codex/hooks.json
 const idxC = process.argv.indexOf('--codex-hooks');
-if (idxC !== -1 && process.argv[idxC + 1]) checkCodexWiring(process.argv[idxC + 1]);
+if (idxC !== -1 && process.argv[idxC + 1]) await checkCodexWiring(process.argv[idxC + 1]);
 // Codex feature flag: opt-in SEPARATE from the wiring, because it lives in
 // ANOTHER file (config.toml) than the managed hooks (requirements.toml).
 // Usage: node doctor.js --codex-config ~/.codex/config.toml
 const idxF = process.argv.indexOf('--codex-config');
-if (idxF !== -1 && process.argv[idxF + 1]) checkCodexFeatures(process.argv[idxF + 1]);
+if (idxF !== -1 && process.argv[idxF + 1]) await checkCodexFeatures(process.argv[idxF + 1]);
+// Deployed drift: opt-in, independent of everything above — it compares the LIVE deployment
+// against this repo, never the wiring against itself. A malformed argument is a NAMED REFUSAL
+// (`deployedArgument`), never a silent skip: it becomes a failed check, exactly like every other
+// diagnostic here. Usage: node doctor.js --deployed C:/absolute/path/to/ctxroute-release
+try {
+  const declaredDeployed = wiringPure.deployedArgument({ argv: process.argv, isAbsolute: path.isAbsolute });
+  if (declaredDeployed !== undefined) checkDeployed(declaredDeployed);
+} catch (e) {
+  check('the --deployed argument is well-formed', false, e.message);
+}
 
 
 // ── A REDUCED MEASUREMENT MUST DECLARE ITSELF REDUCED (2026-08-22) ───────
@@ -656,7 +940,7 @@ if (idxF !== -1 && process.argv[idxF + 1]) checkCodexFeatures(process.argv[idxF 
     settingsExists = fs.existsSync(settingsPath);
   } catch { /* address unknown ⇒ the notice says nothing about it, it never guesses */ }
   const given = [];
-  for (const flag of ['--settings', '--codex-hooks', '--codex-config']) {
+  for (const flag of ['--settings', '--codex-hooks', '--codex-config', '--deployed']) {
     const i = process.argv.indexOf(flag);
     if (i !== -1 && process.argv[i + 1]) given.push(flag);
   }
@@ -681,6 +965,14 @@ if (failed > 0) {
   //    problems, on the other hand, was correct.
   console.error('\n🚨 ctxroute is BROKEN — one or more paths of the framework are dead:');
   for (const p of problems) console.error(`   • ${p}`);
-  process.exit(1);
+  exitAfterFlush(1);
+  return;
 }
 say('✅ framework alive: the hook runs AND really injects.');
+
+})().catch((e) => {
+  // ⚠️ FAIL-LOUD, like every other exit of this diagnostic — an unhandled rejection here (e.g. the
+  //    event-driven wait itself throwing) must scream, never resolve to a silent, ambiguous exit.
+  console.error('\n🚨 TOOL FAILURE — the doctor itself crashed: ' + (e && e.stack || e));
+  exitAfterFlush(2);
+});

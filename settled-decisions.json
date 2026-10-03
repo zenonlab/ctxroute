@@ -1,0 +1,30 @@
+{
+  "$comment": "Operator decisions that are SETTLED: each row is a sentence that must stay, verbatim, in the doc an agent receives at the gesture. Deleting or rewording it is a red gate (test/settled-decision-gate.test.js). Reopening a decision means changing THIS file in the same commit, which makes the reopening a visible, reviewable act instead of a quiet edit.",
+  "rows": [
+    {
+      "decision": "econnreset-not-the-project (2026-09-24)",
+      "file": "docs/framework/SKILL.md",
+      "marker": "`read ECONNRESET` ON THE HTTP LANE IS CLOSED — THE PROJECT IS NOT RESPONSIBLE"
+    },
+    {
+      "decision": "econnreset-not-the-project (2026-09-24)",
+      "file": "docs/framework/SKILL.md",
+      "marker": "FINAL, NOTHING REOPENS IT: the KM-TEST adapter is the only viable choice (127.0.0.1 measured worse — refusals without SYN retry; a named pipe is impossible for HTTP hooks; the `command` lane was rejected by the operator), so no measurement could lead to an action on our side"
+    },
+    {
+      "decision": "econnreset-not-the-project (2026-09-24)",
+      "file": "docs/framework/http-lane.md",
+      "marker": "AND `read ECONNRESET` IS CLOSED, SEPARATELY (2026-09-24): the project is NOT responsible."
+    },
+    {
+      "decision": "econnreset-not-the-project (2026-09-24)",
+      "file": "docs/framework/http-lane.md",
+      "marker": "you MUST NOT reopen this — FINAL, NOTHING REOPENS IT"
+    },
+    {
+      "decision": "econnreset-not-the-project (2026-09-24)",
+      "file": "docs/framework/adapter-windows.md",
+      "marker": "SINCE 2026-09-23 12:42 local THE KERNEL RESETS CONNECTIONS ON THIS ADAPTER"
+    }
+  ]
+}

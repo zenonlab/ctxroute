@@ -55,11 +55,25 @@ project has actually committed.
 
 ## Vocabulary (CLOSED — one concept, one word, everywhere)
 <!-- AUTO:vocabulary -->
-File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `mode` · `rank` · `threshold` · `driftUnit` · `note` · `enforce`
+File doc keys: `match` · `mcp` · `rules` · `tool` · `inject` · `scope` · `exclude` · `keys` · `rank` · `note` · `mode` · `threshold` · `driftUnit` · `enforce` · `category` · `response`
 `rules` entry keys: `pattern` · `scope` · `exclude` · `keys` · `rank`
 Triggers: `match` · `rules` · `tool` · tool wildcard `*` · `inject: never` disarms
 Unknown key ⇒ doc REJECTED (never silently ignored).
 <!-- /AUTO -->
+
+**Reacting to what a tool ANSWERED — `response`.** Every other word reads what the agent SENT.
+`response: {"scope": [...], "exclude": [...]}` (inline JSON, one line) makes a doc wait for the
+tool's answer: it is decided AFTER the action, only if the answer satisfies its filters (same
+semantics as `scope`/`exclude`, over every text of the answer; a JSON text is read as what it
+encodes, key names never match). It narrows, never triggers. It cannot be combined with
+`enforce: true` (an action that already ran cannot be refused). A harness whose post-tool hook
+cannot add context never delivers such a doc — `doctor --harness` names it.
+
+**Off by default, and NOT recommended on an http-lane harness (Claude Code).** The moment after the
+answer only exists when `afterFrames` is declared (absent or `0` = off). Measured on Claude Code: every
+tool call then pays extra POSTs to the daemon (~20-30 ms) and prints extra status lines, and a chunk the
+daemon finished sending can still be lost to a reset connection (the harness never acknowledges receipt).
+On a `command`-lane harness (Codex) none of that applies. Turn it on only for a real `response` doc.
 
 ## Cadence
 <!-- AUTO:cadence -->

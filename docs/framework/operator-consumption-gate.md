@@ -1,6 +1,7 @@
 ---
 match: operator-consumption-gate.test.js
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # operator-consumption-gate.test.js — "declared" must mean "consumed", ON EVERY DIMENSION

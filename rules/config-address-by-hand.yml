@@ -1,0 +1,24 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of the configuration's address rebuilt by hand.
+# NO POLICY HERE (perimeter + the one owner live in test/config-address-gate.test.js).
+# ═══════════════════════════════════════════════════════════════════════
+# 🔴 WHY (2026-10-01): `tools/lint-corpus.js` and `tools/scope-reach.js` joined
+#    `ctxroute-config.json` to the repository root. That file was REMOVED on
+#    2026-08-24 when the configuration moved to the OS-conventional address, so
+#    both ran on an EMPTY configuration for five weeks — no error, no red. The
+#    address has ONE owner, `paths.configPath()`, which carries the whole
+#    precedence (test variable > launch argument > OS file > repo root).
+# ⚠️ AST, NEVER REGEX: docs and comments quote the file name.
+id: config-address-by-hand
+language: JavaScript
+severity: error
+message: >-
+  THE CONFIGURATION'S ADDRESS IS REBUILT BY HAND — it lives at the
+  OS-conventional address since 2026-08-24, and only `paths.configPath()`
+  knows the precedence. Ask it.
+rule:
+  any:
+    - pattern: path.join($$$, 'ctxroute-config.json')
+    - pattern: path.resolve($$$, 'ctxroute-config.json')
+    - pattern: path.join($$$, "ctxroute-config.json")
+    - pattern: path.resolve($$$, "ctxroute-config.json")

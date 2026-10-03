@@ -1,12 +1,15 @@
 ---
 rules: [{"pattern":"explain.js","scope":["ctxroute"]},{"pattern":"explain.test.js","scope":["ctxroute"]},{"pattern":"explain-payload-parity.test.js","scope":["ctxroute"]},{"pattern":"explain-reason-coverage.test.js","scope":["ctxroute"]},{"pattern":"collect-core.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 15
+threshold: 45
 ---
 # explain.js / collect-core.js — "why does this inject (or not)?"
 
 ⚠️ **BEFORE concluding that a doc is mute or that the engine has a bug: `node explain.js --doc <name> --tool X --input '{"command":"…"}'`.** It returns the EXACT reason (invalid frontmatter · `inject: never` · empty body · inert trigger · tool not targeted · scope · exclude · pattern absent + contexts tested · git command ignored).
 ✅ **INVOKE IT HOWEVER YOU LIKE — the bypass is CLOSED (㊼, 2026-08-14).** `cd ~/Desktop/ctxroute && node explain.js` used to pull in 53 KB of skill despite its `exclude`, the single word `node` was enough; `exclude` is now **∀¬ over all params ∪ the context**, so the way the action is written changes nothing any more. The "absolute path, never from the repo" recipe is no longer an obligation, only a habit with no effect.
+🛑 **RUN IT WITH `NOSKILL` IN THE COMMAND.** The line above covers the `exclude` of THIS tool, NOT the other trigger: **`cwd` fires a skill on its own**, so one earlier command run from the repo leaves that directory current and every later gesture delivers **~90 KB of skill for a routine check** (measured twice, 2026-09-10). `NOSKILL` anywhere in the action drops EVERY skill, whatever fired it — declared in `defaults.skill.exclude` AND on the three entries owning an `exclude`, since an entry OVERRIDES its category.
+🔑 **Why a token and not an operator**: *working in* and *passing through* a project are the SAME observable action. Only the INTENT differs, and no operator fabricates a fact — declaring it is the only way to make it measurable.
+⚠️ **OPT-OUT, never a habit**: add it when you TRAVERSE (diagnostic, suite, one file), NEVER when you WORK there — the skill is then the knowledge that stops you breaking something. It depends on whoever types the command, so the first parade stays: do not change directory at all (`npm --prefix <path>`, absolute paths).
 ⚠️ **WHAT THIS CASE COST, worth keeping**: I first served a FALSE cause ("language limitation"), then the "deliberate asymmetry" line of OUR doc as a VERDICT; the code gave the real answer in 3 minutes. **Facing OUR engine, the code is the authority and the doc is only a witness** — settle it with `explain.js` (A/B control), never by re-reading.
 ⚠️ **Do NOT run a diagnostic to "validate" that injection works**: the framework proves itself THROUGH USE (memory `feedback-framework-preuve-par-usage`) — show what has ALREADY been injected in the session, and instrument only if something is MISSING.
 ⚠️ **NEVER reimplement the engine to probe it**: cost MEASURED on 2026-07-31 = a whole session, 3 false probes, a FALSE conclusion "the engine must be modified". A homemade harness gets the format wrong and returns a "mute" that is taken for a verdict.

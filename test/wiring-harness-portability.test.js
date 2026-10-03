@@ -62,7 +62,9 @@ function run(o) {
   } = o || {};
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiring-port-'));
   const cfg = path.join(dir, 'ctxroute-config.json');
-  fs.writeFileSync(cfg, JSON.stringify({ enabled: true, frames }));
+  // `afterFrames` too (2026-09-23): the real manifest wires the moment after the answer, and the
+  // generator refuses to guess its bandwidth. A fictional manifest never reads it.
+  fs.writeFileSync(cfg, JSON.stringify({ enabled: true, frames, afterFrames: 2 }));
   const outPath = path.join(dir, write === null ? 'document.out' : write);
   if (seed !== null) fs.writeFileSync(outPath, seed);
   const argv = ['tools/wiring-generate.js'];

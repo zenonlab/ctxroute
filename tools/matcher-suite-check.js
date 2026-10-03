@@ -110,9 +110,12 @@ function decide(dir, exists) {
   return { action: 'run', dir, vitestEntry };
 }
 
+// 🛑 Through `exitAfterFlush` (2026-10-01): `process.exit` cut stderr on a POSIX
+//    pipe, so the SKIPPED notice — the only thing saying the matcher went unjudged
+//    — could vanish. It RETURNS: every caller below ends its path after it.
 function degrade(reason) {
   process.stderr.write(`[matcher-suite-check] SKIPPED — ${reason}. The matcher's own tests did NOT run this pass.\n`);
-  process.exit(0);
+  require('../src/stdout-exit').exitAfterFlush(0);
 }
 
 /* c8 ignore start -- process entry point, exercised by the .test.js via spawn, never by import */
@@ -136,8 +139,9 @@ if (require.main === module) {
     if (result.error) {
       const code = /** @type {NodeJS.ErrnoException} */ (result.error).code;
       degrade(`could not spawn the sibling suite (${code || result.error.message})`);
+    } else {
+      require('../src/stdout-exit').exitAfterFlush(typeof result.status === 'number' ? result.status : 1);
     }
-    process.exit(typeof result.status === 'number' ? result.status : 1);
   }
 }
 /* c8 ignore stop */

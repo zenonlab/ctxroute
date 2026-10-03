@@ -26,7 +26,17 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import gate from '../src/gate.js';
 import * as spec from '../src/cadence-spec.js';
-import { KNOWN } from '../src/frontmatter.js';
+import { knownKeys } from '../src/frontmatter.js';
+
+// ⚠️ A BOUND, NEVER A WAIT: no test here is slowed down, only one that exceeds it is cut.
+//    MEASURED 2026-10-02: the whole-domain cell takes 3.1 s cold on the maintainer's machine,
+//    and ~30 s on a GitHub runner during Stryker's dry run (instrumentation + perTest coverage
+//    + 3 runners). Its domain doubled on 2026-09-23 (408,996 → 883,386 cases) and nobody moved
+//    the old 30 s bound: the dry run passed on 2026-10-01 and timed out on 2026-10-02, so the
+//    WHOLE mutation verdict died on a ceiling, not on a defect. Four times the observed worst.
+// 🛑 If the domain grows again, re-measure under instrumentation and move THIS line, never
+//    shrink the domain to fit the clock.
+const EXHAUSTIVE_BOUND_MS = 120000;
 
 // The owner sources of the real registry, plus `undefined` = the parity path
 // (no `owners` passed at all, i.e. what every differential replays).
@@ -40,6 +50,20 @@ const VALUES = {
   threshold: [undefined, 0, 1, 3, 'x'],
   driftUnit: [undefined, 'tool', 'turn', 'x'],
   enforce: [undefined, true, false, 'x'],
+  // `category` NORMALIZES to a list (string → singleton, list → filtered), so
+  // its own DEDICATED cascade test (①bis, below) compares by VALUE, never by
+  // `!==` — an array is never `===` its own equal twin. The generic loop of
+  // ① stays scalar-only on purpose; adding category there would silently
+  // pass by REFERENCE inequality on every single case (a vacuous green).
+  category: [undefined, 'x', ['x'], ['x', 'y'], '', [], 'bogus'],
+  // `response` is an OBJECT, compared BY VALUE in its own test (①ter) for the same reason as
+  // `category`. The invalid forms are the load-bearing half: an empty filter, an empty `scope`,
+  // an unknown key, a mixed `scope`, a grouped `exclude`, a bare string.
+  response: [
+    undefined, { scope: ['posted'] }, { exclude: ['error'] }, { scope: [['a', 'b'], ['c']] },
+    { scope: ['x'], exclude: ['y'] }, {}, { scope: [] }, { foo: ['x'] }, { scope: ['a', ['b']] },
+    { exclude: [['a']] }, 'posted', null,
+  ],
 };
 const GLOBAL_KEY = { mode: 'mode', threshold: 'defaultThreshold', driftUnit: 'defaultDriftUnit', enforce: 'enforce' };
 
@@ -72,7 +96,7 @@ const HORS_CADENCE = {
 test('⓪ the DOMAIN exercises every CADENCE key of the vocabulary', () => {
   const exercised = new Set(Object.keys(VALUES));
   assert.ok(exercised.size >= 3, `suspicious domain: only ${exercised.size} settings exercised`);
-  const missing = KNOWN.filter((k) => !(k in HORS_CADENCE) && !exercised.has(k));
+  const missing = knownKeys().filter((k) => !(k in HORS_CADENCE) && !exercised.has(k));
   assert.deepStrictEqual(
     missing, [],
     `cadence key(s) the exhaustive domain NEVER exercises: ${missing.join(', ')} — this differential therefore measures a cadence that is not ours. Extend the domain, or declare the key in HORS_CADENCE WITH ITS REASON. Shipping a behaviour INCLUDES its judges.`,
@@ -92,7 +116,7 @@ const RESOLVERS = {
   enforce: gate.enforceForDoc,
 };
 
-test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting', { timeout: 30000 }, () => {
+test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const divergences = [];
   let cas = 0;
   for (const setting of Object.keys(RESOLVERS)) {
@@ -123,8 +147,91 @@ test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting',
     `${divergences.length} cascade divergence(s). DECIDE which side is right, never align the spec on the engine.`);
 });
 
+// ── ①bis THE `category` CASCADE, EXHAUSTIVE — compared BY VALUE ─────────
+// ⚠️ `category` has ONLY 2 stages (entry > defaults.{source}), same asymmetry
+//    as `enforce` (no global: a global restriction would silence the fleet's
+//    very first gesture) — so this domain has NO `globale` dimension at all,
+//    unlike the generic loop above.
+// The SESSION side of `category`: nothing declared, an empty list, one shared name, one
+// foreign name, several (partly shared), and a bare STRING (not a list: never read as one).
+const SESSIONS = [undefined, [], ['x'], ['y'], ['x', 'y'], ['z'], 'x', ['', 'y']];
+
+test('CADENCE ⟷ ENGINE ①bis: `category` cascade, EXHAUSTIVE', () => {
+  const divergences = [];
+  let cas = 0;
+  let exclusions = 0;
+  for (const entryValue of VALUES.category) {
+    for (const defaultsValue of VALUES.category) {
+      for (const source of SOURCES) {
+        const config = source ? { defaults: { [source]: { category: defaultsValue } } } : {};
+        const decl = { category: entryValue };
+        const engine = gate.categoryForDoc(config, decl, source);
+        const model = spec.categoryOf(config, decl, source);
+        cas++;
+        if (JSON.stringify(engine) !== JSON.stringify(model)) {
+          divergences.push(`entry=${JSON.stringify(entryValue)} defaults=${JSON.stringify(defaultsValue)} source=${source} engine=${JSON.stringify(engine)} spec=${JSON.stringify(model)}`);
+        }
+        // 🔴 23/09/2026 — THE EXCLUSION ITSELF WAS NEVER CONFRONTED. This cell compared only
+        //    the REQUIRED list; the verdict against a SESSION lived in two hand-picked cases,
+        //    so turning the engine's "one shared category is enough" into "all are required"
+        //    stayed GREEN here (measured by sabotage). Every session shape is now crossed.
+        for (const session of SESSIONS) {
+          const engineOut = gate.categoryExcluded(config, decl, source, session);
+          const modelOut = spec.categoryExcludedSpec(config, decl, source, session);
+          exclusions++;
+          if (engineOut !== modelOut) {
+            divergences.push(`EXCLUSION entry=${JSON.stringify(entryValue)} defaults=${JSON.stringify(defaultsValue)} source=${source} session=${JSON.stringify(session)} engine=${engineOut} spec=${modelOut}`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(cas >= 200, `suspicious domain: ${cas} cases`);
+  // ANTI-DORMANCY for the exclusion half: a session list emptied by mistake would pass by vacuity.
+  assert.ok(exclusions >= cas * 5, `suspicious exclusion domain: ${exclusions} cases for ${cas} cascades`);
+  console.log(`  → category exclusion: ${exclusions} cases`);
+  console.log(`  → category cascade: ${cas} cases`);
+  assert.deepStrictEqual(divergences.slice(0, 5), [],
+    `${divergences.length} category-cascade divergence(s). DECIDE which side is right, never align the spec on the engine.`);
+});
+
+// ── ①ter THE `response` CASCADE, EXHAUSTIVE — compared BY VALUE ─────────
+// ⚠️ Two stages like `category` (entry > defaults.{source}), then the framework's `null`: no
+//    global stage, and the domain proves it by never reading one.
+// 🛑 A CARTESIAN PRODUCT AS ONE FLAT LIST, never one `for` per axis: the quadratic ratchet of
+//    this file only goes down, and a new axis of a domain owes it nothing. Row `i` is decoded
+//    from its index (mixed radix), so no traversal ever sits inside another.
+const pickRow = (axes, i) => {
+  let rest = i;
+  return axes.map((axis) => {
+    const value = axis[rest % axis.length];
+    rest = Math.floor(rest / axis.length);
+    return value;
+  });
+};
+const product = (axes) => Array.from({ length: axes.reduce((n, axis) => n * axis.length, 1) }, (_, i) => pickRow(axes, i));
+
+test('CADENCE ⟷ ENGINE ①ter: `response` cascade and form, EXHAUSTIVE', () => {
+  const divergences = [];
+  let cas = 0;
+  for (const [entryValue, defaultsValue, source] of product([VALUES.response, VALUES.response, SOURCES])) {
+    const config = source ? { defaults: { [source]: { response: defaultsValue } } } : {};
+    const decl = { response: entryValue };
+    const engine = gate.responseForDoc(config, decl, source);
+    const model = spec.answerFilterOf(config, decl, source);
+    cas++;
+    if (JSON.stringify(engine) !== JSON.stringify(model)) {
+      divergences.push(`entry=${JSON.stringify(entryValue)} defaults=${JSON.stringify(defaultsValue)} source=${source} engine=${JSON.stringify(engine)} spec=${JSON.stringify(model)}`);
+    }
+  }
+  assert.ok(cas >= 500, `suspicious domain: ${cas} cases`);
+  console.log(`  → response cascade: ${cas} cases`);
+  assert.deepStrictEqual(divergences.slice(0, 5), [],
+    `${divergences.length} response-cascade divergence(s). DECIDE which side is right, never align the spec on the engine.`);
+});
+
 // ── ②③ DELIVERY AND DRIFT, THROUGH THE REAL `decide` ────────────────────
-test('CADENCE ⟷ ENGINE ②③: delivery and drift, EXHAUSTIVE (both units)', { timeout: 30000 }, () => {
+test('CADENCE ⟷ ENGINE ②③: delivery and drift, EXHAUSTIVE (both units)', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const divergences = [];
   let cas = 0;
   for (const mode of spec.MODES) {
@@ -201,7 +308,7 @@ const FILTERS = () => [
   { filterMode: 'bogus', filterList: ['Bash'] },
 ];
 
-test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { timeout: 30000 }, () => {
+test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const divergences = [];
   let cas = 0;
   for (const mode of spec.MODES) {
@@ -242,10 +349,98 @@ test('CADENCE ⟷ ENGINE ④⑤: memory, alternation and filter, EXHAUSTIVE', { 
     `${divergences.length} decision divergence(s). DECIDE which side is right.`);
 });
 
+// ── ⑥ THE TWO MOMENTS OF ONE ACTION: before it runs, after it answered ──
+// ⚠️ THE ANSWERS CARRY EVERY FORM A HARNESS HANDS OVER, measured 2026-09-23: plain text, the
+//    MCP structured result SERIALISED as a string (Claude Code 2.1.280), an object with the
+//    text nested in `content` (a Read, a Gemini `llmContent`), a key that names the pattern
+//    WITHOUT the text saying it (must NOT satisfy), a backslash path, a JSON string of a
+//    string, a number, `null`. Without the key-only answer the "keys say nothing" clause is
+//    unreachable; without the serialised form, harness independence is.
+const ANSWERS = () => [
+  'invoice F42 state: posted',
+  '{"state":"posted"}',
+  '{"posted":1}',
+  { content: [{ type: 'text', text: 'Error: port taken' }] },
+  { file: { content: 'C:\\Deploy\\POSTED.txt' } },
+  '"posted"',
+  42,
+  null,
+];
+// ⚠️ `a` waits for an answer, `b` never does — so every case holds one doc of EACH moment, and
+//    the "a doc of the other moment is not this decision's business" clause is always reachable.
+//    `b` sits in memory too, so the "one action is one tick of drift" clause is reachable.
+// 🛑 BUILT AS ONE FLAT LIST OF CASES, never a new nesting level: the quadratic ratchet of this
+//    file only goes down, and a new axis of a domain owes it nothing.
+const MOMENT_CASES = () => {
+  const moments = [undefined].concat(ANSWERS().map((response) => ({ response })));
+  const filters = [{ scope: ['posted'] }, { exclude: ['error'] }, { scope: [['posted'], ['state']] }, { scope: ['port'], exclude: ['posted'] }, undefined];
+  const memos = [{}, { a: { seen: true, sinceLastCall: 1, turn: 0 }, b: { seen: true, sinceLastCall: 1, turn: 0 } }];
+  return product([moments, filters, spec.MODES, [undefined, true], memos])
+    .map(([moment, filter, mode, enforce, memo]) => ({ moment, filter, mode, enforce, memo }));
+};
+
+test('CADENCE ⟷ ENGINE ⑥: the moment of the action and the answer\'s filter, EXHAUSTIVE', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
+  const divergences = [];
+  let cas = 0;
+  let delivered = 0;
+  for (const c of MOMENT_CASES()) {
+    const decls = {
+      a: { mode: c.mode, threshold: 2, driftUnit: 'tool', enforce: c.enforce, response: c.filter },
+      b: { mode: 'smart', threshold: 2, driftUnit: 'tool', enforce: c.enforce },
+    };
+    const args = [{}, decls, ['a', 'b'], c.memo, 3, { a: 'mcp', b: 'file' }, 'mcp__odoo__call', undefined, c.moment];
+    const m = gate.decide(...args);
+    const s = spec.decide(...args);
+    cas++;
+    if (c.moment !== undefined && m.inject.includes('a')) delivered++;
+    if (JSON.stringify(m) !== JSON.stringify(s)) {
+      divergences.push(`moment=${JSON.stringify(c.moment)} filter=${JSON.stringify(c.filter)} mode=${c.mode} enforce=${c.enforce} memo=${JSON.stringify(c.memo)}\n    engine=${JSON.stringify(m)}\n    spec  =${JSON.stringify(s)}`);
+    }
+  }
+  assert.ok(cas >= 400, `suspicious domain: ${cas} cases`);
+  // ⚠️ ANTI-VACUITY: a filter that NEVER lets an answer through would agree with a model that
+  //    never does either. The domain must deliver after the answer, and not always.
+  assert.ok(delivered > 20 && delivered < cas / 2, `suspicious delivery count after the answer: ${delivered}/${cas}`);
+  console.log(`  → moment/answer: ${cas} cases, ${delivered} deliveries after the answer`);
+  assert.deepStrictEqual(divergences.slice(0, 3), [],
+    `${divergences.length} moment/answer divergence(s). DECIDE which side is right.`);
+});
+
 // ── NEGATIVE-CHECKS: a differential never seen turning red proves nothing ──
 test('NEGATIVE-CHECK: the differential DETECTS a false cadence semantics', () => {
   // Each sabotage is a REAL defect this repo has lived, or its exact mirror.
   const sabotages = [
+    // ── `response` (2026-09-23): the three clauses of the two moments of one action ──
+    {
+      itemName: 'the action ticks a SECOND time once the tool answered (a `smart` doc returns after half its threshold)',
+      decide: (config, decls, matched, state, turn, owners, tool, cats, after) => {
+        const r = spec.decide(config, decls, matched, state, turn, owners, tool, cats, after);
+        return { ...r, state: { ...r.state, b: { ...state.b, sinceLastCall: state.b.sinceLastCall + 1 } } };
+      },
+      config: {},
+      decls: { a: { mode: 'dumb', response: { scope: ['posted'] } }, b: { mode: 'smart', threshold: 4 } },
+      state: { b: { seen: true, sinceLastCall: 1, turn: 0 } },
+      after: { response: 'state: posted' },
+    },
+    {
+      itemName: 'a doc is REFUSED after the tool answered (the refusal lands on an unrelated action)',
+      decide: (config, decls, matched, state, turn, owners, tool, cats, after) => {
+        const r = spec.decide(config, decls, matched, state, turn, owners, tool, cats, after);
+        return { ...r, decision: r.inject.length ? 'deny' : r.decision };
+      },
+      config: {},
+      decls: { a: { mode: 'dumb', enforce: true, response: { scope: ['posted'] } } },
+      after: { response: 'state: posted' },
+    },
+    {
+      itemName: 'a doc waiting for the answer is delivered BEFORE the action (the filter is never consulted)',
+      decide: (config, decls, matched, state, turn, owners, tool, cats) => {
+        const r = spec.decide(config, decls, matched, state, turn, owners, tool, cats, { response: 'posted' });
+        return r;
+      },
+      config: {},
+      decls: { a: { mode: 'dumb', response: { scope: ['posted'] } } },
+    },
     {
       itemName: 'the cascade skips the `defaults.{source}` stage (defect ㊳: an INERT stage)',
       decide: (config, decls, matched, state, turn, owners, tool) => {
@@ -285,10 +480,23 @@ test('NEGATIVE-CHECK: the differential DETECTS a false cadence semantics', () =>
       config: { mode: 'bogus' },
       decls: { a: {} },
     },
+    {
+      itemName: 'a categorized doc is shown to a session that never declared that category',
+      decide: (config, decls, matched, state, turn, owners, tool, sessionCategories) => {
+        const r = spec.decide(config, decls, matched, state, turn, owners, tool, sessionCategories);
+        // it ignores the session's declared categories entirely — the doc
+        // would be delivered to EVERY session, exactly like `category` never
+        // existed on it.
+        return { ...r, categoryOut: [], inject: [...new Set([...r.inject, 'a'])] };
+      },
+      config: {},
+      decls: { a: { mode: 'dumb', category: ['infra'] } },
+      sessionCategories: ['seo'],
+    },
   ];
 
   for (const s of sabotages) {
-    const args = [s.config, s.decls, ['a'], s.state || {}, 3, { a: 'file' }, 'Bash'];
+    const args = [s.config, s.decls, s.matched || ['a'], s.state || {}, 3, { a: 'file', b: 'file' }, 'Bash', s.sessionCategories, s.after];
     const trueOne = gate.decide(...args);
     const faux = s.decide(...args);
     assert.notStrictEqual(
@@ -296,6 +504,33 @@ test('NEGATIVE-CHECK: the differential DETECTS a false cadence semantics', () =>
       `SABOTAGE UNDETECTED — "${s.itemName}": the differential would have let this defect through, so it proves nothing about it.`,
     );
   }
+});
+
+// ── THE SCENARIO THIS FEATURE EXISTS FOR (operator, 2026-09-22) ─────────
+// A skill declares its OWN project category and matches normally on a PATH
+// (`match`/`keys`, the trigger). A session belonging to a DIFFERENT project
+// must NOT receive it, even though the trigger fires — that is the whole
+// point: `category` NARROWS what a trigger already selected, it never lets
+// a trigger through on its own. Run on the REAL engine (`gate.decide`), not
+// the spec — this is the behavioural proof the mandate asked for, and it is
+// the case the whole file exists to protect.
+test('CATEGORY: a trigger-positive doc is still EXCLUDED when the session category does not match', () => {
+  const decls = { a: { mode: 'dumb', category: ['projet-a'] } };
+  const owners = { a: 'file' };
+
+  const wrongSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', ['projet-b']);
+  assert.deepStrictEqual(wrongSession.inject, [], 'wrong category: must NOT inject despite the trigger firing');
+  assert.deepStrictEqual(wrongSession.categoryOut, ['a'], 'the exclusion must be OBSERVABLE, never silent');
+
+  const rightSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', ['projet-a']);
+  assert.deepStrictEqual(rightSession.inject, ['a'], 'matching category: must inject');
+  assert.deepStrictEqual(rightSession.categoryOut, []);
+
+  const noSessionCategory = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', []);
+  assert.deepStrictEqual(noSessionCategory.inject, [], 'no category declared for the session: a categorized doc stays hidden');
+
+  const uncategorizedDoc = gate.decide({}, { a: { mode: 'dumb' } }, ['a'], {}, 0, owners, 'Bash', ['projet-b']);
+  assert.deepStrictEqual(uncategorizedDoc.inject, ['a'], 'PARITY: a doc without `category` is universal, whatever the session carries');
 });
 
 test('NEGATIVE-CHECK: the model is NOT a copy — it decides on its own', () => {

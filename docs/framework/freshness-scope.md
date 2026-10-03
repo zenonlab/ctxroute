@@ -1,6 +1,7 @@
 ---
 match: [freshness-scope-pure.js, freshness-scope.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # freshness-scope-pure.js — the code is verified ONCE PER ACTION, never per frame
 

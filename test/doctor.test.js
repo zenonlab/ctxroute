@@ -15,12 +15,12 @@
 // `console.log("all is well")` without anybody noticing.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { test } from 'vitest';
+import { test, afterAll } from 'vitest';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 
 const DOCTOR = path.join(import.meta.dirname, '..', 'tools', 'doctor.js');
 
@@ -31,8 +31,19 @@ function ok(name, cond) {
   test(name, () => { assert.ok(cond, name); });
 }
 
-function runDoctor(cwdDoctor, args = []) {
-  const r = spawnSync(process.execPath, [cwdDoctor, ...args], { encoding: 'utf8' });
+// 🔴 THE DOCTOR READS `ctxroute-config.json` (the declared bandwidth), AND THESE CELLS USED TO READ
+//    THE OPERATOR'S REAL ONE — measured 2026-09-23: the day that file gained `afterFrames`, two
+//    Codex cells went red on this machine and would have stayed green on a clean clone. A suite
+//    whose verdict depends on the machine it runs on is judging the machine. ⇒ every spawn gets a
+//    NEUTRAL config by default (`{}`: no declared bandwidth, hence no blame — exactly what a clean
+//    clone sees); a cell that needs a declaration passes its own.
+const NEUTRAL_CONFIG = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-doctor-cfg-')), 'neutral.json');
+fs.writeFileSync(NEUTRAL_CONFIG, '{}');
+afterAll(() => { fs.rmSync(path.dirname(NEUTRAL_CONFIG), { recursive: true, force: true }); });
+
+function runDoctor(cwdDoctor, args = [], config = NEUTRAL_CONFIG) {
+  const r = spawnSync(process.execPath, [cwdDoctor, ...args],
+    { encoding: 'utf8', env: { ...process.env, CTXROUTE_CONFIG_PATH: config } });
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
 }
 
@@ -334,6 +345,21 @@ process.stdin.on('end', () => {
     fs.writeFileSync(toml, wiring(0, 0));
     ok('CODEX TOML wiring with additionalContextLimit = 0 everywhere → doctor exit 0',
       runDoctor(DOCTOR, ['--codex-hooks', toml]).status === 0);
+
+    // 7d-bis — THE MOMENT AFTER THE ANSWER (2026-09-23), through the REAL shell: the config
+    //    declares `afterFrames`, and the SAME injector must also sit in a PostToolUse section.
+    //    The pure verdict is mutated in `doctor-wiring-pure`; this proves `doctor.js` reads the
+    //    config and asks it. Seen red on the real managed file with that one block removed.
+    const afterCfg = path.join(tmp, 'config-after.json');
+    fs.writeFileSync(afterCfg, JSON.stringify({ afterFrames: 2 }));
+    fs.writeFileSync(toml, wiring(0, 0));
+    const rNoAfter = runDoctor(DOCTOR, ['--codex-hooks', toml], afterCfg);
+    ok('afterFrames declared, injector only BEFORE the answer → doctor exit ≠ 0', rNoAfter.status !== 0);
+    ok('… and the doctor names the missing after-answer wiring',
+      (rNoAfter.stdout + rNoAfter.stderr).includes('is ALSO wired after the tool answered (PostToolUse)'));
+    fs.writeFileSync(toml, wiring(0, 0) + block('codex-doc-inject.js', 0).replace('hooks.PreToolUse', 'hooks.PostToolUse'));
+    ok('afterFrames declared, injector ALSO after the answer → doctor exit 0',
+      runDoctor(DOCTOR, ['--codex-hooks', toml], afterCfg).status === 0);
 
     // 7d-2 — setting ABSENT everywhere → red, and the doctor names BOTH.
     fs.writeFileSync(toml, wiring(null, null));
@@ -685,4 +711,292 @@ process.stdin.on('end', () => {
     ok('coherent daemon wiring → the coherence check still had something to judge',
       !r.stderr.includes('UNMEASURABLE'));
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+// ── Case 12 — NEGATIVE: the declared listening address is NOT on this machine ──
+// 🔑 THE FAILURE THIS COVERS IS THE ONE THAT WILL ACTUALLY HAPPEN. The Windows profile leaves
+//    `127.0.0.0/8` for a DEDICATED adapter (libuv disables SYN retransmission on any address whose
+//    first byte is 127). The day that adapter is removed, or its address reverts to an
+//    auto-assigned one, the daemon cannot bind, the whole fleet loses its injection, and without
+//    this check NOTHING says why — the doctor would report a dead framework and leave the reader
+//    hunting.
+// ⚠️ THE PAIR IS THE PROOF, never the red alone: the SAME wiring with a loopback address must NOT
+//    produce the message. Without that control the cell would pass on a doctor that always shouts.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-adresse-'));
+  try {
+    const settings = path.join(tmp, 'settings.json');
+    fs.writeFileSync(settings, JSON.stringify({
+      hooks: { PreToolUse: [{ hooks: [{ type: 'http', url: 'http://10.99.99.99:8787/pretool?frame=1&frames=1' }] }] },
+    }));
+
+    // 🛑 `CTXROUTE_CONFIG_PATH` is the variable RESERVED for tests and doctor.js — the real
+    //    configuration is never read, never written. 10.99.99.99 is a private address that no
+    //    machine running this suite can plausibly carry.
+    const absent = path.join(tmp, 'config-absent.json');
+    fs.writeFileSync(absent, JSON.stringify({ http: { host: '10.99.99.99', port: 8787 } }));
+    const present = path.join(tmp, 'config-present.json');
+    fs.writeFileSync(present, JSON.stringify({ http: { host: '127.0.0.1', port: 8787 } }));
+
+    const run = (cfg) => spawnSync(process.execPath, [DOCTOR, '--settings', settings],
+      { encoding: 'utf8', env: { ...process.env, CTXROUTE_CONFIG_PATH: cfg } });
+
+    const dead = run(absent);
+    const said = (dead.stdout || '') + (dead.stderr || '');
+    ok('address absent from this machine → doctor exit ≠ 0', dead.status !== 0);
+    ok('address absent → the doctor NAMES the dead address',
+      said.includes('10.99.99.99'));
+    ok('address absent → the doctor says the frames are lost IN SILENCE',
+      said.includes('lost') && said.includes('silence'));
+    ok('address absent → the doctor says what to DO about it',
+      said.includes('install-windows.ps1') || said.includes('http.host'));
+
+    // ── THE CONTROL: loopback exists everywhere, so the message must be ABSENT ──
+    const alive = run(present);
+    const saidAlive = (alive.stdout || '') + (alive.stderr || '');
+    ok('a loopback address produces NO address complaint (anti-vacuity control)',
+      !saidAlive.includes('NO interface on this machine carries that address'));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+// ── Case 13 — DEPLOYED DRIFT (--deployed <ABSOLUTE dir>) ──────────────
+// ⚠️ Runs the REAL repo's doctor.js (never a clone): `git ls-files src` is the AUTHORITY for the
+//    scope, and only the real repo is a real git checkout — a `cloneFramework()` tmpdir copy has
+//    no `.git` at all, so `git ls-files` there would prove nothing about the mechanism.
+// ⚠️ MEASURED FACT reproduced here on purpose: a real deployed copy differs from the repo by
+//    LINE-ENDING STYLE on some files while carrying identical content. The CRLF cell below proves
+//    that alone never reddens the check — a judge blind to that would be red on day one, ignored,
+//    dead.
+{
+  const REPO = path.join(import.meta.dirname, '..');
+  // 🛑 SCRUB THE WHOLE `GIT_*` FAMILY — inherited, and they BEAT `cwd`, so this
+  //    perimeter would describe whichever repository the parent hook was acting on.
+  // ⚠️ `env: env`, never the `{ env }` shorthand: the judge reads the explicit property.
+  const gitEnv = { ...process.env };
+  for (const k of Object.keys(gitEnv)) if (k.startsWith('GIT_')) delete gitEnv[k];
+  const ls = spawnSync('git', ['ls-files', 'src'], { cwd: REPO, env: gitEnv, encoding: 'utf8' });
+  // ⚠️ THREE separate statements, never chained — `no-undeclared-quadratic` reads a
+  //    `.split().map().filter()` chain as a nested traversal even though the cost is linear.
+  const lsLines = (ls.stdout || '').split('\n');
+  const lsTrimmed = lsLines.map((s) => s.trim());
+  const relPaths = lsTrimmed.filter(Boolean);
+  ok('setup: git ls-files src reports a non-empty scope on the real repo (anti-vacuity precondition)',
+    ls.status === 0 && relPaths.length > 0);
+
+  function copyDeployed() {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-deployed-'));
+    for (const rel of relPaths) {
+      const dest = path.join(tmp, rel);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(REPO, rel), dest);
+    }
+    return tmp;
+  }
+
+  // ── Case 13a — MATCH: a byte-for-byte copy compares clean ──
+  {
+    const deployed = copyDeployed();
+    try {
+      const r = runDoctor(DOCTOR, ['--deployed', deployed]);
+      ok('identical deployed copy → doctor exit 0', r.status === 0);
+      ok('identical deployed copy → the check says it MATCHES', r.stdout.includes('matches the repo'));
+    } finally { fs.rmSync(deployed, { recursive: true, force: true }); }
+  }
+
+  // ── Case 13b — CRLF ALONE IS NOT DRIFT (the fact this task must not rediscover as a bug) ──
+  {
+    const deployed = copyDeployed();
+    try {
+      const target = path.join(deployed, relPaths[0]);
+      const withCrlf = fs.readFileSync(target, 'utf8').replace(/\r?\n/g, '\r\n');
+      fs.writeFileSync(target, withCrlf);
+      const r = runDoctor(DOCTOR, ['--deployed', deployed]);
+      ok('CRLF-only difference on the deployed side → doctor STILL exit 0 (line endings are normalised before hashing)',
+        r.status === 0);
+      ok('CRLF-only difference → the check still says it MATCHES', r.stdout.includes('matches the repo'));
+    } finally { fs.rmSync(deployed, { recursive: true, force: true }); }
+  }
+
+  // ── Case 13c — NEGATIVE: a real content drift is named and turns the doctor red ──
+  {
+    const deployed = copyDeployed();
+    try {
+      const target = path.join(deployed, relPaths[0]);
+      // ⚠️ Printed BEFORE trusting the run: a sabotage that silently fails to apply would leave
+      //    the suite green and prove nothing.
+      console.log(`SABOTAGE: appended a line to deployed copy of ${relPaths[0]} (${target})`);
+      fs.appendFileSync(target, '\n// sabotage — this line must never be seen in the repo copy\n');
+      const r = runDoctor(DOCTOR, ['--deployed', deployed]);
+      ok('sabotaged deployed file → doctor exit ≠ 0', r.status !== 0);
+      ok('sabotaged deployed file → the drifted path is NAMED on stderr',
+        r.stderr.includes(relPaths[0]) && r.stderr.includes('DEPLOYED COPY DIVERGES'));
+    } finally { fs.rmSync(deployed, { recursive: true, force: true }); }
+  }
+
+  // ── Case 13d — NEGATIVE: a MISSING file on the deployed side is drift, never silence ──
+  {
+    const deployed = copyDeployed();
+    try {
+      fs.rmSync(path.join(deployed, relPaths[0]));
+      const r = runDoctor(DOCTOR, ['--deployed', deployed]);
+      ok('a file absent from the deployed copy → doctor exit ≠ 0', r.status !== 0);
+      ok('a file absent from the deployed copy → it is NAMED, not silently skipped',
+        r.stderr.includes(relPaths[0]));
+    } finally { fs.rmSync(deployed, { recursive: true, force: true }); }
+  }
+
+  // ── Case 13e — NEGATIVE: --deployed at a directory that does not exist ──
+  {
+    const missing = path.join(os.tmpdir(), 'ctxroute-deployed-does-not-exist-' + Date.now());
+    const r = runDoctor(DOCTOR, ['--deployed', missing]);
+    ok('--deployed at a non-existent directory → doctor exit ≠ 0', r.status !== 0);
+    ok('--deployed at a non-existent directory → NAMED, not a silent skip',
+      r.stderr.includes(missing) || r.stdout.includes(missing));
+  }
+
+  // ── Case 13f — NEGATIVE: a RELATIVE --deployed path is a named refusal ──
+  {
+    const r = runDoctor(DOCTOR, ['--deployed', 'some/relative/path']);
+    ok('relative --deployed path → doctor exit ≠ 0', r.status !== 0);
+    ok('relative --deployed path → the refusal says RELATIVE, never a silent fallback',
+      (r.stdout + r.stderr).includes('a RELATIVE path'));
+  }
+
+  // ── Case 13g — NEGATIVE: --deployed with no value at all is a named refusal ──
+  {
+    const r = runDoctor(DOCTOR, ['--deployed']);
+    ok('--deployed with no value → doctor exit ≠ 0', r.status !== 0);
+    ok('--deployed with no value → the refusal says so, never a quiet skip',
+      (r.stdout + r.stderr).includes('followed by no address at all'));
+  }
+
+  // ── Case 13h — the OPTIONAL_GROUPS registry names --deployed when it is not given ──
+  {
+    const r = runDoctor(DOCTOR);
+    ok('a bare run without --deployed names what it did not measure',
+      r.stdout.includes('`--deployed` not given'));
+  }
+}
+
+// ── Case 14 — REAL settings.json transient absence, REAL fs.watch, REAL spawn ──
+// 🔴 EVERYTHING ABOVE THIS CASE ONLY EXERCISES `readSettingsThrough` THROUGH INJECTED FIXTURES
+//    (test/doctor-wiring-pure.test.js) — never a real `fs.watch`, never a real renamed file,
+//    never the real async wiring of `checkWiring`/`createEventWaiter` in `tools/doctor.js`.
+//    2026-09-14: a fixed-delay retry was wrong TWICE on THIS exact file (see docs/framework/
+//    doctor.md) and no test drove the real mechanism end to end. This case closes that hole.
+// ⚠️ `CTXROUTE_TEST_CEILING_MS` is the RESERVED-for-tests override (declared next to
+//    `FILE_WAIT_CEILING_MS` in tools/doctor.js) — without it the negative case below would
+//    have to wait out a real 2-minute ceiling.
+{
+  // 🔑 THE SYNCHRONISATION IS AN OBSERVATION OF THE CHILD, NEVER A DURATION.
+  //    Both cells below hide settings.json, spawn the doctor and put the file
+  //    back — and "put it back" has to happen AFTER the doctor has actually met
+  //    the absence, or the cell measures nothing at all. A literal 400 ms used
+  //    to stand there and it RACED node's own startup: measured 2026-09-19, the
+  //    read landed after the restore and 14a was vacuously green, which is
+  //    exactly what its negative check 14c reported by failing. The doctor now
+  //    SAYS when it starts waiting (`tools/doctor.js`, `createEventWaiter`), so
+  //    the test waits for that sentence.
+  // ⚠️ A CEILING IS STILL NEEDED, and it is a NON-DECISION, never a retry: if
+  //    the line never comes, the wait must end and let the assertions speak
+  //    rather than hang until the suite's own timeout and report a regression
+  //    that did not happen (temporal-budget motive `undecidable`).
+  const awaitWaitNotice = (child, getSaid) => new Promise((resolve) => {
+    const NOTICE = 'waiting for a real filesystem signal';
+    let done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(ceiling); resolve(); };
+    const ceiling = setTimeout(finish, 8000);
+    const look = () => { if (getSaid().includes(NOTICE)) finish(); };
+    child.stdout.on('data', look);
+    child.stderr.on('data', look);
+    child.on('exit', finish);
+    look();
+  });
+
+  const healthySettings = () => JSON.stringify({
+    hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node x.js --frame 1 --frames 1' }] }] },
+  });
+
+  // ── Case 14a — POSITIVE: absent NOW, restored WELL INSIDE the ceiling → never screams ──
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fswatch-'));
+    const settings = path.join(tmp, 'settings.json');
+    const hidden = path.join(tmp, 'settings.json.hidden');
+    try {
+      fs.writeFileSync(settings, healthySettings());
+      fs.renameSync(settings, hidden); // simulate the rename window: the NAME is gone right now
+      const child = spawn(process.execPath, [DOCTOR, '--settings', settings], {
+        env: { ...process.env, CTXROUTE_TEST_CEILING_MS: '4000' },
+      });
+      let stdout = ''; let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d; });
+      child.stderr.on('data', (d) => { stderr += d; });
+      // Restore once the doctor has SAID it is waiting — the file simply "comes back",
+      // exactly like a concurrent rename resolving itself, and well inside the 4 s ceiling.
+      await awaitWaitNotice(child, () => stdout + stderr);
+      fs.renameSync(hidden, settings);
+      await new Promise((resolve) => child.on('exit', resolve));
+      // ⚠️ NEVER assert `status === 0` here: this settings.json is deliberately MINIMAL (it does
+      // not wire every hook), so OTHER, unrelated checks legitimately fail and set a non-zero
+      // exit. The ONLY thing this case proves is that the transient absence itself never lies.
+      const said = stdout + stderr;
+      ok('REAL spawn: settings.json absent then restored within the ceiling → NEVER reported unreadable',
+        !said.includes('settings.json') || !said.includes('not found'));
+      ok('REAL spawn: the read genuinely succeeded (a check that only runs on parsed content fired)',
+        said.includes('settings.json is valid JSON'));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+
+  // ── Case 14b — NEGATIVE: GENUINELY absent, shortened ceiling → still screams, names WHY ──
+  {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fswatch-abs-'));
+    const neverThere = path.join(tmp, 'settings.json'); // never created — genuine absence
+    try {
+      const r = spawnSync(process.execPath, [DOCTOR, '--settings', neverThere], {
+        encoding: 'utf8', env: { ...process.env, CTXROUTE_TEST_CEILING_MS: '400' },
+      });
+      ok('REAL spawn: genuinely absent settings.json (shortened ceiling) → exit ≠ 0', r.status !== 0);
+      ok('REAL spawn: names a REAL filesystem signal was awaited, not a lie about a delay',
+        (r.stdout + r.stderr).includes('gave up waiting for a real filesystem signal'));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+
+  // ── Case 14c — SEEN RED WITHOUT THE FIX: sabotage `giveUp` to give up on the FIRST
+  //    ENOENT (the exact shape of the 2026-09-13 bug: no spacing, no real signal awaited) ──
+  // 🛑 Proves case 14a is not vacuously green — it FAILS on the old shape, on the SAME scenario.
+  {
+    const tmp = cloneFramework();
+    const settingsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-fswatch-sab-'));
+    const settings = path.join(settingsDir, 'settings.json');
+    const hidden = path.join(settingsDir, 'settings.json.hidden');
+    try {
+      const pureSrc = fs.readFileSync(path.join(tmp, 'src', 'doctor-wiring-pure.js'), 'utf8');
+      const sabotaged = pureSrc.replace(
+        'if (giveUp()) return',
+        'if (true) return', // give up on the VERY FIRST ENOENT — reproduces the old, wrong shape
+      );
+      // Anti-vacuity: the replacement must actually have matched something.
+      ok('sabotage 14c actually patched a real line (anti-vacuity)', sabotaged !== pureSrc);
+      fs.writeFileSync(path.join(tmp, 'src', 'doctor-wiring-pure.js'), sabotaged);
+
+      fs.writeFileSync(settings, healthySettings());
+      fs.renameSync(settings, hidden);
+      const child = spawn(process.execPath, [path.join(tmp, 'tools', 'doctor.js'), '--settings', settings], {
+        env: { ...process.env, CTXROUTE_TEST_CEILING_MS: '4000' },
+      });
+      let stdout = ''; let stderr = '';
+      child.stdout.on('data', (d) => { stdout += d; });
+      child.stderr.on('data', (d) => { stderr += d; });
+      await awaitWaitNotice(child, () => stdout + stderr);
+      try { fs.renameSync(hidden, settings); } catch { /* the sabotaged doctor may already be gone */ }
+      await new Promise((resolve) => child.on('exit', resolve));
+      const said = stdout + stderr;
+      ok('SABOTAGED (give up on first ENOENT): the SAME scenario that stays silent at 14a now REPORTS settings.json unreadable',
+        said.includes('settings.json') && said.includes('not found'));
+      ok('SABOTAGED: screams BROKEN specifically, not an unrelated crash', said.includes('BROKEN'));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(settingsDir, { recursive: true, force: true });
+    }
+  }
 }

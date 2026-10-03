@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a hook printing to stdout by hand. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔴 WHY (measured 2026-10-01, Linux, node 22.15.1): `console.log(x)` followed
+#    by `process.exit(0)` delivered EXACTLY 65,536 bytes of a 500 KB answer,
+#    3 runs out of 3 — `process.exit` does not wait for an asynchronous pipe
+#    write. The harness got half a JSON document and dropped the injection, in
+#    silence. Every hook shell prints through `src/stdout-exit.js`, whose
+#    `printThenExit` leaves only once the write callback fired.
+#
+# 🛑 STRICT SEPARATION: this file DETECTS, it never exempts. The perimeter and
+#    the one declared exemption (with its reason) live in
+#    `test/stdout-exit-gate.test.js`. A `files:`/`ignores:` here would hide an
+#    occurrence from the only judge that reads them.
+# ⚠️ AST, NEVER REGEX: the shells QUOTE the defect in their own comments.
+id: hook-print-through-stdout-exit
+language: JavaScript
+severity: error
+message: >-
+  A HOOK PRINTS TO STDOUT BY HAND — `console.log`/`process.stdout.write`
+  followed by `process.exit` cuts the answer beyond one pipe buffer (64 KB) on
+  POSIX. Print through `printThenExit` of `src/stdout-exit.js`, and leave a
+  path that may have printed with `exitUnlessPrinting`.
+rule:
+  any:
+    - pattern: console.log($$$)
+    - pattern: console.info($$$)
+    - pattern: process.stdout.write($$$)

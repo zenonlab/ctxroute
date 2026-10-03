@@ -50,12 +50,16 @@ try {
   personalDataGuard = null;
 }
 const { privateTerms } = require('../src/leak-list.js');
+// 🛑 EVERY exit goes through `exitAfterFlush` (2026-10-01): `process.exit` cut the
+//    refusal on a POSIX pipe — the author would read half of WHY the commit failed.
+//    It RETURNS, so each call below is a `return`.
+const { exitAfterFlush } = require('../src/stdout-exit.js');
 
 async function main() {
   const file = process.argv[2];
   if (!file) {
     console.log('commit-msg-check: no message file given (expected: commit-msg-check <file>)');
-    process.exit(1);
+    return exitAfterFlush(1);
   }
   const message = fs.readFileSync(file, 'utf8');
 
@@ -71,7 +75,7 @@ async function main() {
   const lv = leakVerdict(message, motifs);
   if (lv.violations.length > 0 || lv.unavailable) {
     console.log(leakRefusal(lv));
-    process.exit(1);
+    return exitAfterFlush(1);
   }
 
   // ⚠️ SAME ENTRY POINT AS `english-only-gate.test.js` (`eld/large`): one
@@ -80,13 +84,13 @@ async function main() {
   const v = verdict(message, (t) => eld.detect(t));
   if (v.offenders.length > 0) {
     console.log(refusal(v));
-    process.exit(1);
+    return exitAfterFlush(1);
   }
-  process.exit(0);
+  return exitAfterFlush(0);
 }
 
 main().catch((e) => {
   console.log(`commit-msg-check: FAILED to judge the message — ${e && e.message}`);
   console.log('The commit is refused because the gate could not decide (fail-closed).');
-  process.exit(1);
+  exitAfterFlush(1);
 });

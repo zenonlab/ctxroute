@@ -10,6 +10,20 @@
       }
     },
     {
+      "name": "category-store-must-stay-pure",
+      "comment": "⚠️ category-store-pure.js must NEVER import fs/path/child_process. It is PURE session-scoped state for `category` (which sessions declared which categories) — the same contract as every other `*-store-pure.js` here: the caller (a future wiring layer, not this repo alone) reads/writes the file via `store-resolve.js` and passes the plain object in and out. A dependency here would make it unmutable by Stryker and untestable in isolation.",
+      "severity": "error",
+      "from": {
+        "path": "^src/category-store-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "lib-pure-must-stay-pure",
       "comment": "⚠️ lib-pure.js must NEVER import fs/path/child_process — that is the whole point of the module (zero I/O, mutable by Stryker without noise). A dependency here would break the decision/I-O isolation documented in lib-pure.js.",
       "severity": "error",
@@ -132,6 +146,17 @@
       },
       "to": {
         "path": "^(src/lib-pure|src/lock|src/stdin-json|src/paths|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|tools/doctor|src/frontmatter)\\.js$"
+      }
+    },
+    {
+      "name": "stdout-exit-stays-standalone",
+      "comment": "stdout-exit.js is the ONE way a hook prints then leaves (write callback, never a bare process.exit — 64 KB cut on POSIX pipes, 2026-10-01). Like stdin-json.js and deadline.js it depends on NOTHING in this repo, so any hook of any project can copy it as-is.",
+      "severity": "error",
+      "from": {
+        "path": "^src/stdout-exit\\.js$"
+      },
+      "to": {
+        "path": "^(src|tools)/"
       }
     },
     {
@@ -274,11 +299,53 @@
       }
     },
     {
+      "name": "backlog-ceiling-pure-must-stay-pure",
+      "comment": "⚠️ backlog-ceiling-pure.js must NEVER import fs/path/child_process. It DECIDES whether the kernel will silently cap the backlog this daemon asks for; READING `/proc/sys/net/core/somaxconn` lives in `http-server.js`. It exists because an installer WALL over that same fact shipped and was removed the same day (2026-09-17): the burst-refusal class it guarded was measured absent, and a guardrail with no measured disease aimed at adopters is a denial of service. What replaced it is the Redis pattern — SAY IT, never refuse to start — and a verdict written next to a `readFileSync` is a verdict Stryker never mutates. Same reason as lifecycle-log-pure.js and disk-writers-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/backlog-ceiling-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "doctor-wiring-pure-must-stay-pure",
       "comment": "⚠️ doctor-wiring-pure.js must NEVER import fs/path/child_process. It DECIDES whether the harness wiring is alive — split brain, frame coordinates 1..N with no gap and no duplicate, lane coherence, divergent `--frames` — and it reads NOTHING: the settings file, the config, the `src/hooks/` scan and the path resolution live in `tools/doctor.js`. Those ~325 lines used to sit INSIDE that I/O tool, hence outside Stryker's `mutate`, so the judgement of the fleet's DEAD-MAN SWITCH had never been mutated: an inverted comparison or a `some` turned into an `every` would have stayed green for ever, and a false dead-man switch is worse than none — it REASSURES, so nobody looks again. Same reason as disk-writers-pure.js and lifecycle-log-pure.js.",
       "severity": "error",
       "from": {
         "path": "^src/doctor-wiring-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "deploy-pure-must-stay-pure",
+      "comment": "⚠️ deploy-pure.js must NEVER import fs/path/child_process. It DECIDES what `tools/deploy.js` must do about a deployed-drift comparison — refuse on a dirty tree/red suite/unmeasured verdict, do nothing on a match, or copy on a real drift — and it reads NOTHING: `git status --porcelain`, the fast test suite's exit code, the deployed-drift scan and the byte copies all live in `tools/deploy.js`. Purity is what makes the decision MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a dropped branch or an inverted condition written inside a shell would stay green for ever, and a deploy tool that reconciles the wrong thing REASSURES instead of protecting. Same reason as doctor-wiring-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/deploy-pure\\.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "badge-label-pure-must-stay-pure",
+      "comment": "⚠️ badge-label-pure.js must NEVER import fs/path/child_process. It DECIDES which name the \"📄 doc: …\" badge announces — the `[source:]` tag for a WHOLE document, `acc.labels` for a PIECE, all delivered documents deduplicated by base for a multi-document frame — and it reads NOTHING: the corpus, the fleet root and the label registration all live in `src/source-adapters.js`, which is an I/O module and therefore outside Stryker's `mutate` list. Purity is what makes the decision MUTABLE, and mutability is the whole justification for the file existing: those ~70 lines sat INSIDE that I/O module until 2026-09-13, so an inverted condition would have stayed green for ever — and it DID. Two defects of this exact class each cost a human MORNING (2026-08-07: four documents delivered, one named, read as a delivery that stopped at 2/8; 2026-09-13: one document under two names, read as two documents one of which stopped mid-delivery), and NEITHER lost a single byte of content. Display is part of the contract, not decoration: a correct but UNREADABLE transport gets mistaken for an outage, and a system believed broken ends up unplugged. Same reason as doctor-wiring-pure.js and deploy-pure.js.",
+      "severity": "error",
+      "from": {
+        "path": "^src/badge-label-pure\\.js$"
       },
       "to": {
         "path": "^(fs|path|child_process)$",
@@ -344,6 +411,76 @@
       }
     },
     {
+      "name": "render-units-pure-must-stay-pure",
+      "comment": "⚠️ service/render-units-pure.js must NEVER import fs/path/child_process. It DECIDES what a supervisor binds: it rewrites the `ListenStream=` block of the systemd unit and the `Listeners` value of the launchd plist from the endpoints the configuration declares, so an unmeasured mutant here is a listening address nobody proved — and the two halves of the system (the daemon that binds, the harness that POSTs) would then disagree in silence, which is the split-brain class this repository refuses. Purity is what makes that decision MUTABLE: Stryker does not mutate an I/O shell, so a rule written inside service/render-units.js would ship measured by nothing. The shell owns the reading, the backup, the atomic write and the re-read; this module receives TEXT and returns TEXT. 🔴 It carried NO rule and was absent from includeOnly until 2026-09-19 — declared pure by its NAME alone, which guards nothing.",
+      "severity": "error",
+      "from": {
+        "path": "^service/render-units-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "thread-channel-pure-must-stay-pure",
+      "comment": "thread-channel-pure.js must NEVER import fs/path/child_process - nor worker_threads, os or crypto. It owns the LAYOUT of the shared channel and the decisions taken on it (which slot, which offset, does this payload fit, should the bounded wait go round again), and every one of those must be answerable with no machine under it: that is what makes them mutation-testable, which none of them would be inside a shell. It performs no Atomics call and knows no worker; the shells do.",
+      "severity": "error",
+      "from": {
+        "path": "^src/thread-channel-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process|os|worker_threads|crypto)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "worker-pool-pure-must-stay-pure",
+      "comment": "worker-pool-pure.js must NEVER import fs/path/child_process — nor worker_threads or os, which is the whole point: it DECIDES how many threads exist and which socket each one holds, and it must be able to answer those questions without a machine under it. A core count is an ARGUMENT here, never a reading, which is what lets one host prove the behaviour of every other. A refusal decided in the I/O shell would ship measured by nothing, Stryker never mutating a shell.",
+      "severity": "error",
+      "from": {
+        "path": "^src/worker-pool-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process|os|worker_threads)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "split-scope-pure-must-stay-pure",
+      "comment": "split-scope-pure.js must NEVER import fs/path/child_process — nor node:crypto, which is why its hasher is INJECTED by the shell. It decides whether an action may reuse a split already computed, and a split decides which CHUNK each frame of a real agent receives: a key that conflated two emissions would not lose a little, it would serve the wrong content. Purity is what makes that decision MUTABLE — Stryker does not mutate an I/O shell, so the same rule written in http-server.js would ship measured by nothing.",
+      "severity": "error",
+      "from": {
+        "path": "^src/split-scope-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process|crypto)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
+      "name": "invocation-snapshot-pure-must-stay-pure",
+      "comment": "invocation-snapshot-pure.js must NEVER import fs/path/child_process. It decides what a daemon may ADOPT back into its arrival counters after a restart, and those counters decide which chunk a real agent receives: a fail-open that silently accepts a shape nobody wrote would not lose a little, it would serve the wrong content. Purity is what makes that decision MUTABLE - Stryker does not mutate an I/O shell, so the same rule written in http-server.js would ship measured by nothing, which is exactly how this module first shipped INERT: it refused every real snapshot because it assumed all three tables held objects, while frame-sequencer-pure holds a plain number. The shell owns the file; this module receives parsed data and returns Maps.",
+      "severity": "error",
+      "from": {
+        "path": "^src/invocation-snapshot-pure.js$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
+      }
+    },
+    {
       "name": "declared-paths-pure-must-stay-pure",
       "comment": "⚠️ declared-paths-pure.js must NEVER import fs/path/child_process. It DECIDES where the framework's data lives — env override > declared config key > code-derived default, for the state AND for the two doc corpora — and where its CONFIG lives (the `--ctxroute-config` launch argument, and the OS-conventional per-user address), and it reads NOTHING: the config read, the platform path.isAbsolute, process.platform, process.env, os.homedir() and process.argv live in src/paths.js, which INJECTS them — injecting the PLATFORM is also what lets Windows, macOS and Linux be proven from any single host, and returning SEGMENTS instead of a joined path is what keeps the separator `path`'s knowledge rather than ours. Purity is what makes the decision MUTABLE, and mutability is the whole justification for the file existing: Stryker does not mutate test code, so a precedence written inside paths.js (an I/O module, never mutated) would stay green for ever on an inverted order — and an inverted order here means every self-isolating suite writes into the REAL state, silently. Purity is ALSO what forbids re-implementing what a platform already knows: absoluteness is answered by path.isAbsolute, passed in, never guessed by a regex of ours. Same reason as doctor-wiring-pure.js and lifecycle-log-pure.js.",
       "severity": "error",
@@ -359,14 +496,28 @@
     },
     {
       "name": "only-store-resolve-opens-a-store",
-      "comment": "🔴 MEASURED IN PRODUCTION 2026-08-21. The injection state has FOUR consumers (the PreToolUse gate, the session gate which shares the `remainder-` queue with it, the turn counter, the PreCompact reset). Wiring ONLY the gate to the daemon moved that one memory into RAM while the others kept the disk: inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered 2 bytes. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate. The root cause was NOT the forgotten reset: it was that ANY shell could open a store itself, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said \"the backend is an ARGUMENT, never ambient\" and it stopped nobody — a rule only prose guards is not a rule. ⇒ `src/store-resolve.js` is the SINGLE resolution point and hands out `{ store, withLock }` TOGETHER; everyone else receives the pair as a parameter. 🛑 The five paths excluded below are INHERITED DEBT, measured on the day the rule was written, NOT a permission: the exit condition is that they take the pair as an argument, and this list then becomes empty. A sixth importer is RED the second it is written, which is the whole point.",
+      "comment": "🔴 MEASURED IN PRODUCTION 2026-08-21. The injection state has FOUR consumers (the PreToolUse gate, the session gate which shares the `remainder-` queue with it, the turn counter, the PreCompact reset). Wiring ONLY the gate to the daemon moved that one memory into RAM while the others kept the disk: inject → the `once` is consumed → run the REAL PreCompact hook → ask again ⇒ the daemon answered 2 bytes. After a compaction, skills and `once` documents never came back — no error, no badge, no red gate. The root cause was NOT the forgotten reset: it was that ANY shell could open a store itself, so a change made OUTSIDE the repository (the harness wiring) silently split the ownership of one state. The doctrine already said \"the backend is an ARGUMENT, never ambient\" and it stopped nobody — a rule only prose guards is not a rule. ⇒ `src/store-resolve.js` is the SINGLE resolution point and hands out `{ store, withLock }` TOGETHER; everyone else receives the pair as a parameter. 🛑 The four paths excluded below are INHERITED DEBT, measured on the day the rule was written, NOT a permission: the exit condition is that they take the pair as an argument, and this list then becomes empty. A fifth importer is RED the second it is written, which is the whole point. ✅ AND THE LIST HAS MOVED DOWN ONCE, 2026-09-20: `src/hooks/http-server.js` used to build the daemon pair itself, and the multi-core work needed the SAME pair in the owner thread. A new importer is exactly what this rule reddens, so the construction moved to its owner instead (`resolveStore` with the `daemon` backend) and BOTH sides now ask. That is the direction this ratchet is allowed to move, and it is the shape every remaining entry must take.",
       "severity": "error",
       "from": {
         "path": "^src/",
-        "pathNot": "^(src/store-resolve\\.js|src/emission-core\\.js|src/pretool-core\\.js|src/hooks/http-server\\.js|src/hooks/turn-count\\.js|src/hooks/legacy-mcp-inject\\.js)$"
+        "pathNot": "^(src/store-resolve\\.js|src/emission-core\\.js|src/pretool-core\\.js|src/hooks/turn-count\\.js|src/hooks/legacy-mcp-inject\\.js)$"
       },
       "to": {
         "path": "^src/(session-store|memory-store)\\.js$"
+      }
+    },
+    {
+      "name": "mutated-modules-must-stay-pure",
+      "comment": "GENERATED by tools/mutation-scope.js from stryker.conf.json `mutate` (23/09/2026): a mutated module is PURE, so it may never reach the disk, the path layer or a process. Exemptions are written, with their reason, in purityExemptions() of src/mutation-scope-pure.js — never an omission.",
+      "severity": "error",
+      "from": {
+        "path": "^(src/category-store-pure\\.js|src/response-pure\\.js|src/lib-pure\\.js|src/canary\\.js|src/sources/file\\.js|src/sources/tool\\.js|src/sources/mcp\\.js|src/sources/session\\.js|src/sources/skill\\.js|src/frontmatter\\.js|src/loader\\.js|src/lint\\.js|src/collisions\\.js|src/gate\\.js|src/deps-criticality-pure\\.js|src/budget\\.js|src/docfacts\\.js|src/scope-reach-pure\\.js|src/derived-observables\\.js|src/harness-conformance\\.js|src/temporal-budget-pure\\.js|src/disk-writers-pure\\.js|src/doctor-wiring-pure\\.js|src/badge-label-pure\\.js|src/quadratic-budget-pure\\.js|src/rendezvous-budget-pure\\.js|src/state-entry-rebuild-pure\\.js|src/foreign-identifier-pure\\.js|src/memory-store-pure\\.js|src/state-crdt-pure\\.js|src/state-eviction-pure\\.js|src/differential-normalize\\.js|src/corpus-cache\\.js|src/lifecycle-log-pure\\.js|src/stale-code-pure\\.js|src/wiring-plan\\.js|src/wiring-dialect\\.js|src/model-twin-pure\\.js|src/declared-paths-pure\\.js|src/protocol-routes-pure\\.js|src/frame-sequencer-pure\\.js|src/delivery-notice-pure\\.js|src/freshness-scope-pure\\.js|src/collect-scope-pure\\.js|src/split-scope-pure\\.js|src/worker-pool-pure\\.js|src/lifecycle-pure\\.js|src/thread-channel-pure\\.js|src/backlog-ceiling-pure\\.js|src/http2-preface-pure\\.js|src/carryover-pure\\.js|src/commit-msg-lang\\.js|src/commit-msg-leak\\.js|src/deploy-pure\\.js|service/render-units-pure\\.js|src/invocation-snapshot-pure\\.js|src/mutation-scope-pure\\.js)$"
+      },
+      "to": {
+        "path": "^(fs|path|child_process)$",
+        "dependencyTypes": [
+          "core"
+        ]
       }
     }
   ],
@@ -374,7 +525,7 @@
     "doNotFollow": {
       "path": "node_modules"
     },
-    "includeOnly": "(^(src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/rendezvous-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/hooks/http-daemon|src/stale-code|src/stale-code-pure|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/commit-msg-leak|src/declared-paths-pure|src/protocol-routes-pure|src/frame-sequencer-pure|src/delivery-notice-pure|src/freshness-scope-pure|src/carryover-pure|tools/commit-msg-check|tools/matcher-suite-check|src/ci-steps-pure)\\.js$|^(fs|path|child_process|os|crypto)$)",
+    "includeOnly": "(^(src/mutation-scope-pure|tools/mutation-scope|src/category-store-pure|src/response-pure|src/hooks/legacy-mcp-inject|src/hooks/ctxroute-reset|src/lib-pure|src/lock|src/stdin-json|src/stdout-exit|src/paths|tools/doctor|src/deadline|src/frontmatter|src/vendor-deadline|src/lint|tools/lint-corpus|src/loader|src/gate|src/corpus|src/hooks/doc-inject|src/oracle|src/session-store|src/memory-store|src/memory-store-pure|src/state-crdt-pure|src/state-eviction-pure|src/state-eviction|src/kernel-endpoint|src/kernel-bind|src/hooks/state-client|src/sources/file|src/sources/tool|src/sources/mcp|src/sources/session|src/sources/skill|src/source-adapters|src/hooks/session-inject|src/collisions|tools/check-collisions|src/hooks/doc-write-guard|src/hooks/turn-count|src/deps-criticality-pure|tools/explain|src/collect-core|src/budget|src/pretool-core|src/emission-core|src/guard-core|src/hooks/codex-doc-inject|src/hooks/codex-doc-write-guard|src/canary|src/hooks/canary-check|src/leak-list|src/differential-normalize|src/docfacts|tools/language-doc|src/language-spec|src/cadence-spec|src/harness-profile|src/harness-conformance|src/scope-reach-pure|src/derived-observables|src/temporal-budget-pure|src/disk-writers-pure|src/doctor-wiring-pure|src/quadratic-budget-pure|src/rendezvous-budget-pure|src/state-entry-rebuild-pure|src/foreign-identifier-pure|src/model-twin-pure|src/hooks/http-server|src/hooks/http-daemon|src/stale-code|src/stale-code-pure|src/corpus-cache|src/client-core|src/store-resolve|src/turn-core|src/lifecycle-log-pure|src/lifecycle-log|tools/scope-reach|src/wiring-plan|src/wiring-dialect|tools/wiring-generate|src/commit-msg-lang|src/commit-msg-leak|src/declared-paths-pure|src/protocol-routes-pure|src/frame-sequencer-pure|src/delivery-notice-pure|src/freshness-scope-pure|src/collect-scope-pure|src/split-scope-pure|src/worker-pool-pure|src/lifecycle-pure|src/hooks/daemon-ensure|src/thread-channel-pure|src/owner-ops|src/hooks/owner-client|src/hooks/state-owner-thread|src/hooks/state-owner-entry|src/hooks/server-thread|src/hooks/thread-boot|src/backlog-ceiling-pure|src/http2-preface-pure|src/carryover-pure|tools/commit-msg-check|tools/matcher-suite-check|src/ci-steps-pure|src/deploy-pure|src/deployed-scan|src/badge-label-pure|tools/deploy|service/render-units-pure|src/invocation-snapshot-pure)\\.js$|^(fs|path|child_process|os|crypto|worker_threads)$)",
     "tsPreCompilationDeps": false
   }
 }

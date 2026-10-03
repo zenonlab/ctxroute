@@ -2,10 +2,10 @@
 mode: dumb
 enforce: true
 ---
-# Exemple — REFUSER un geste irréversible (`enforce`)
-🛑 **`enforce: true` = la porte REFUSE l'appel** au lieu de se contenter d'informer. C'est la seule chose qui protège LE geste visé : une doc injectée arrive *à côté du résultat de l'outil*, donc trop tard pour lui.
-⚠️ **UN REFUS N'EST JAMAIS SUIVI D'UN REFUS** (anti-boucle par alternance) : relancer le MÊME appel passe TOUJOURS. Ce n'est pas un mur, c'est un cran d'arrêt qui force une relecture.
-⚠️ **GRAIN OUTIL, PAS GRAIN SERVEUR** : ce fichier est `docs/mcp/{serveur}/{outil}.md`, il ne vise QUE cet outil. Armer `docs/mcp/{serveur}.md` bloquerait aussi les LECTURES — du bruit, et le bruit finit débranché.
-⚠️ **Réserver aux gestes IRRÉVERSIBLES** (argent, suppression, notification client). Sur un geste réversible, le coût dépasse le bénéfice.
-🛑 **GARDE-FOU, PAS SÉCURITÉ** : la porte est fail-open — un hook mort laisse passer. Protège d'un agent distrait, jamais d'un adversaire.
-⚠️ Copier en `create_refund.md` (sans `.example`) pour l'activer : les docs réelles sont gitignorées, seuls les `.example` sont publiés.
+# Example — REFUSING an irreversible gesture (`enforce`)
+🛑 **`enforce: true` means the gate REFUSES the call** instead of merely informing. It is the only thing that protects THE gesture aimed at: an injected doc arrives *beside the tool's result*, hence too late for that call.
+⚠️ **A REFUSAL IS NEVER FOLLOWED BY A REFUSAL** (anti-loop by alternation): re-issuing the SAME call ALWAYS passes. This is not a wall, it is a catch that forces one re-reading.
+⚠️ **TOOL GRAIN, NOT SERVER GRAIN**: this file is `docs/mcp/{server}/{tool}.md` and it targets THAT tool only. Arming `docs/mcp/{server}.md` would block READS as well — noise, and noise ends up unplugged.
+⚠️ **Reserve it for IRREVERSIBLE gestures** (money, deletion, customer notification). On a reversible one the cost outweighs the benefit.
+🛑 **A GUARDRAIL, NOT A SECURITY BOUNDARY**: the gate is fail-open — a dead hook lets everything through. It protects against a distracted agent, never against an adversary.
+⚠️ Copy it to `create_refund.md` (without `.example`) to arm it: the real docs are gitignored, only the `.example` files are published.

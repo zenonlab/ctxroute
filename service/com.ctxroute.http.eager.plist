@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  launchd USER AGENT for the ctxroute HTTP injection gate. EAGER MODEL —
+  the DELIBERATE ALTERNATIVE to `com.ctxroute.http.plist` (socket-activated,
+  the DEFAULT). Read this whole header before choosing this file: it trades
+  one real, measured protection for another, it does not add one for free.
+  ═══════════════════════════════════════════════════════════════════════
+
+  🔴 WHY THIS FILE EXISTS (2026-09-17). `com.ctxroute.http.plist`'s Sockets
+     dictionary was checked key by key against launchd.plist(5): SockType,
+     SockPassive, SockNodeName, SockServiceName, SockFamily, SockProtocol,
+     SockPathName, SecureSocketWithKey, SockPathOwner, SockPathGroup,
+     SockPathMode, Bonjour, MulticastGroup — NONE governs the listen queue
+     size. launchd itself calls listen() on that socket before handing it to
+     the shim, with an internal default neither documented nor configurable.
+     That is a REAL, sourced ceiling this project cannot see or raise while
+     socket-activated on macOS.
+
+  ⚠️ THE TRADE, STATED PLAINLY, NOT HIDDEN BEHIND THE FIX IT BUYS:
+     ✅ GAINED: `http-server.js`'s own `LISTEN_BACKLOG = 65535` applies here,
+        identically to Windows — full control over the accept queue.
+     🔴 LOST: the socket-activated file's whole reason to exist. THIS file
+        binds and listens ONLY while the node process itself is alive, so
+        every death (`EXIT_STALE_CODE = 90`, fired on the daemon's OWN code
+        changing on disk — routine mid-refactor, several times a minute) has
+        NOTHING listening between exit and respawn. A tool call landing in
+        that window gets a refused connection with NO carryover possible —
+        `com.ctxroute.http.plist`'s header documents this as the exact
+        defect socket activation was built to remove. It is NOT fixed here.
+     ⇒ Choose this file only where the accept-queue ceiling is the more
+        likely failure than a stale-code respawn window (e.g. a machine that
+        never edits this repository, so `EXIT_STALE_CODE` essentially never
+        fires) — never as a blanket "better" default.
+
+  🛑 NOT YET RUN ON A REAL MAC (2026-09-17) — verify via
+     `.github/workflows/service-units.yml` (a rented macOS runner) before
+     treating this as proven; the existing socket-activated file already has
+     that job, this one does not yet. Add a job for THIS file before
+     deploying it anywhere real. See `service/README.md`.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<plist version="1.0">
+<dict>
+
+    <key>Label</key>
+    <string>com.ctxroute.http.eager</string>
+
+    <!--
+      ⚠️ NO SHIM HERE — read why in the header above before adding one back.
+         `launch_activate_socket` only matters for a socket launchd itself
+         pre-binds; this file never declares a Sockets dictionary, so node
+         binds its OWN port directly, exactly like the Windows eager model
+         (`http-server.js`'s `listenOn` / `server.listen(port, host,
+         LISTEN_BACKLOG)`). ABSOLUTE PATHS, substituted by the installer —
+         never edit the placeholder below by hand.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/Users/CHANGE_ME/ctxroute/src/hooks/http-daemon.js</string>
+    </array>
+
+    <!--
+      ⚠️ RunAtLoad + KeepAlive ARE HERE ON PURPOSE — the exact pair the
+         socket-activated file documents removing, and removes for a real
+         reason (see its own header). Re-reading that header before touching
+         this pair is mandatory, not optional prose.
+      🛑 SuccessfulExit = false: `EXIT_STALE_CODE` (90) is NOT a clean exit in
+         this model — with no socket held elsewhere, a respawn is the ONLY
+         way back, so unlike the socket-activated file, KeepAlive MUST select
+         on it. A zero-status exit (an operator's deliberate stop) must NOT
+         respawn, which is exactly what `SuccessfulExit = false` expresses:
+         "restart only when the job exits ON ITS OWN with a NON-zero status"
+         (TN2083's own phrasing).
+    -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!--
+      ⚠️ THE PORT IS NOT WRITTEN HERE — this model reads it from the SAME
+         single resolution point every other lane does (`paths.httpEndpoint()`
+         in the daemon's own config), never a second copy in a plist. Only the
+         socket-activated file needs `SockServiceName`, because only it is the
+         one BINDING the port on launchd's behalf.
+    -->
+
+    <!--
+      LOG BOUNDING — identical reasoning to the socket-activated file.
+      StandardOutPath / StandardErrorPath stay ABSENT: launchd redirects to
+      ASL (TN2083), macOS caps and rotates it, we do not reimplement that.
+      🛑 Never write a double hyphen inside a plist XML comment — it is
+         malformed XML by the DTD, measured 2026-08-23 on the sibling file.
+    -->
+
+</dict>
+</plist>

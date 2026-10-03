@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"emission-core.js","scope":["ctxroute"]},{"pattern":"emission-core.test.js","scope":["ctxroute"]},{"pattern":"emission-core-gate.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # emission-core.js — THE LAYER EVERY EMITTER GOES THROUGH (2026-08-05)
 ⚠️ **NO EMITTER COMPOSES ITS OWN OUTPUT** — it returns segments to this layer (the web-framework pattern: a handler never serializes its response). Writing `additionalContext` without going through here = silent spill as soon as the content exceeds the frame. That is the EXACT defect that left `session-inject.js` without transport for weeks: transport was a CALLER'S CHOICE, hence opt-in by copy-paste.

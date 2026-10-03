@@ -61,8 +61,16 @@ function citedFiles(text) {
 //    legitimately talks about `protect-files.js` or `statusline.js`, which
 //    live at the maintainer's home.
 //    MEASURED: without the fleet root, 8 of the 64 files would be FALSE reds.
+// 🔴 `service/` WAS MISSING UNTIL 2026-09-19, AND THE GAP WAS SILENT BECAUSE
+//    NOBODY HAD CITED WHAT LIVES THERE. That directory holds real code the
+//    installers run (`declare-http-address.js`, `render-units*.js`); the first doc
+//    to name one of those files turned this gate red for a file that exists. A
+//    root list is a hand-written enumeration, so it only knows the directories
+//    that mattered the day it was typed — the class this repository fights
+//    everywhere else. ⚠️ Adding a root only ever REMOVES false reds: the gate
+//    still refuses every citation it cannot locate anywhere.
 function located(rel) {
-  for (const base of [REPO, path.join(REPO, 'src'), path.join(REPO, 'src', 'sources'), path.join(REPO, 'src', 'hooks'), path.join(REPO, 'tools'), FLEET]) {
+  for (const base of [REPO, path.join(REPO, 'src'), path.join(REPO, 'src', 'sources'), path.join(REPO, 'src', 'hooks'), path.join(REPO, 'tools'), path.join(REPO, 'service'), FLEET]) {
     if (fs.existsSync(path.join(base, rel))) return base;
   }
   return null;

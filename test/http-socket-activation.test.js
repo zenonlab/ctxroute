@@ -36,6 +36,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+// ⚠️ The port comes from the ONE shared allocator (below the ephemeral range) — see test/support/free-port.js.
+// No `listeners` is declared, so the daemon binds the DEFAULT count from its port.
+import { freePort } from './support/free-port.js';
+import { DEFAULT_LISTENERS } from '../src/declared-paths-pure.js';
 
 const require_ = createRequire(import.meta.url);
 const SERVER = path.join(import.meta.dirname, '..', 'src', 'hooks', 'http-server.js');
@@ -136,16 +140,35 @@ test('the server LISTENS on the inherited descriptor, and on the port otherwise'
   assert.deepStrictEqual(appels, [[{ fd: SD_LISTEN_FDS_START }]],
     'the inherited descriptor was not the thing listened on');
 
-  // ⚠️ PARITY: with nothing passed, the call must be the one that was there
-  //    before this feature existed — same two arguments, same order.
+  // ⚠️ PARITY: with nothing passed, the call must be the ORDINARY bind — the port
+  //    and the host the caller read from the single resolution point, in that
+  //    order, and nothing of this feature's doing.
+  // 🔴 IT DEMANDED EXACTLY TWO ARGUMENTS AND HAD BEEN RED SINCE 2026-09-17, when
+  //    the accept-queue backlog became an explicit third argument (`8b691c3`,
+  //    `b6798c5`, `afc75b6`). The cell was right to notice the shape moved and
+  //    WRONG to keep demanding the old one — and nobody read it, because the heavy
+  //    lane was never run. ⚠️ The backlog is NOT exported by the shell, so it is
+  //    asserted by SHAPE rather than retyped: a literal `65535` here would be a
+  //    second place holding one number, and the parity this cell guards is about
+  //    the ARGUMENT ORDER, never about the value of a tuning constant.
   appels.length = 0;
   assert.strictEqual(listenOn(faux, {}, 99, PORT, HOST), null);
-  assert.deepStrictEqual(appels, [[PORT, HOST]], 'the default path changed shape');
+  assert.strictEqual(appels.length, 1, 'the default path did not bind exactly once');
+  const [p, h, backlog] = appels[0];
+  assert.deepStrictEqual([p, h], [PORT, HOST],
+    'the default path changed shape: the port and the host must reach `listen` first, in that order, or the daemon binds somewhere the wiring never points');
+  assert.strictEqual(appels[0].length, 3,
+    'the default path no longer declares a backlog: the accept queue is capped PER SOCKET and an undeclared backlog is a capacity nobody chose');
+  assert.ok(Number.isInteger(backlog) && backlog > 0,
+    `the declared backlog is ${String(backlog)}: it must be a positive integer, or the kernel reads a value nobody meant`);
 
-  // A foreign pid must take the SAME path as "no protocol at all".
+  // A foreign pid must take the SAME path as "no protocol at all" — compared to
+  // the call recorded just above rather than to a shape retyped here, so the two
+  // halves can never drift apart the way they did between 2026-09-17 and today.
+  const plainCall = appels[0];
   appels.length = 0;
   assert.strictEqual(listenOn(faux, { LISTEN_PID: '98', LISTEN_FDS: '1' }, 99, PORT, HOST), null);
-  assert.deepStrictEqual(appels, [[PORT, HOST]], 'a foreign descriptor was not ignored');
+  assert.deepStrictEqual(appels, [plainCall], 'a foreign descriptor was not ignored');
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -177,16 +200,6 @@ function driver() {
   return file;
 }
 
-/** A port nobody is using — measured by binding it, never guessed. */
-function portLibre() {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.listen(0, HOST, () => {
-      const p = s.address().port;
-      s.close(() => resolve(p));
-    });
-  });
-}
 
 /**
  * Spawns the child with a REAL listening socket on descriptor 3.
@@ -243,7 +256,7 @@ function withInheritedSocket(opts) {
 }
 
 test.skipIf(!POSIX)('REAL: the daemon serves on the descriptor the OS passed it, never on the port', async () => {
-  const libre = await portLibre();
+  const libre = await freePort({ span: DEFAULT_LISTENERS });
   const { child, announcement, portSocket } = await withInheritedSocket({ selfPid: true, port: libre });
   try {
     assert.strictEqual(announcement.fd, SD_LISTEN_FDS_START, 'the child did not take the inherited descriptor');
@@ -274,7 +287,7 @@ test.skipIf(!POSIX)('REAL: a LISTEN_PID belonging to another process is ignored,
   //    a LISTEN_FDS that says so — only the pid is somebody else's. Using it
   //    would be undetectable in production: the daemon would answer on a socket
   //    nobody gave it, on a machine where that happens to work.
-  const libre = await portLibre();
+  const libre = await freePort({ span: DEFAULT_LISTENERS });
   const { child, announcement, portSocket } = await withInheritedSocket({ selfPid: false, port: libre });
   try {
     assert.strictEqual(announcement.fd, null, 'a descriptor owned by another pid was accepted');

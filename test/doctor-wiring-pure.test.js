@@ -26,7 +26,99 @@ import {
   GATE_FILE, GATE, HOOKS, OPTIONAL_GROUPS,
 
   declarations, coord, filePath, wiringFindings, reducedNotice,
+  declaredHostPresence, normalizeAddress,
+  deployedDriftVerdict, deployedArgument,
+  readSettingsThrough,
+  hookEventsOf, codexAfterFinding,
 } from '../src/doctor-wiring-pure.js';
+
+// ── readSettingsThrough — the dead-man switch's OWN read must survive the exact transient it
+//    exists to be trusted through. Fixtures are THUNKS (an injected reader/signal/give-up
+//    predicate with internal state), built fresh inside each test(), never at module scope.
+// 🔴 TWO FIXES, TWO CAUSES. ① 2026-09-13: `checkWiring()` used a single bare `readFileSync` in an
+//    empty `catch` — see 'a REAL transient error...' below, red on that old shape. ② 2026-09-14
+//    FIRST attempt: a retry loop with a FIXED delay sized to ONE measured stall on ONE machine —
+//    the operator rejected it directly (a slower/busier machine could need far more). This module
+//    now owns NEITHER a duration NOR a retry count: the SHELL decides both, through `nextSignal`
+//    (resolves on a real signal) and `giveUp` (says when to give up), and this module only
+//    reacts. Fixtures below never sleep for real — they resolve/give-up on a call COUNT, proving
+//    the LOGIC without paying (or guessing) a real duration.
+
+test('a clean read succeeds on the FIRST attempt (the common case stays cheap)', async () => {
+  let calls = 0;
+  const lire = () => { calls += 1; return '{"ok":true}'; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', async () => {}, () => true);
+  assert.deepStrictEqual(result, { raw: '{"ok":true}' });
+  assert.equal(calls, 1, 'a successful read must not retry, and must never even ask whether to give up');
+});
+
+test('ENOENT is retried across real awaits and a later success is returned — the rename-window class', async () => {
+  let calls = 0;
+  let signals = 0;
+  const lire = () => {
+    calls += 1;
+    if (calls < 3) { const e = new Error('vanished'); e.code = 'ENOENT'; throw e; }
+    return '{"recovered":true}';
+  };
+  const nextSignal = async () => { signals += 1; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', nextSignal, () => false);
+  assert.deepStrictEqual(result, { raw: '{"recovered":true}' });
+  assert.equal(calls, 3, 'must have retried exactly twice before succeeding on the third attempt');
+  assert.equal(signals, 2, 'must wait for a signal exactly once per failed attempt, never after the final success');
+});
+
+test('when the shell decides to give up, a persisting ENOENT is reported as a genuine absence', async () => {
+  let calls = 0;
+  let abandonAsked = 0;
+  const lire = () => { calls += 1; const e = new Error('gone'); e.code = 'ENOENT'; throw e; };
+  const giveUp = () => { abandonAsked += 1; return abandonAsked >= 5; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', async () => {}, giveUp);
+  assert.equal(result.raw, null);
+  assert.ok(result.detail.includes('gave up waiting for a real filesystem signal'));
+  assert.ok(result.detail.includes('C:/x/settings.json'));
+  assert.equal(calls, 5, 'reads exactly once per attempt, giving up the moment the SHELL says so — never a count this module owns');
+});
+
+test('a REAL transient error must not be swallowed into "not found" — it is reported WITH ITS CODE', async () => {
+  const lire = () => { const e = new Error('the process that just wrote it still holds it'); e.code = 'EPERM'; throw e; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', async () => {}, () => false);
+  assert.equal(result.raw, null);
+  // 🛑 THIS is the assertion the old bare readFileSync could never satisfy: it swallowed EVERY
+  //    error into one blind "not found" message, indistinguishable from a genuinely absent file.
+  assert.ok(result.detail.includes('EPERM'),
+    'a diagnostic that cannot tell EPERM from ENOENT sends the operator looking in the wrong place');
+  assert.ok(!result.detail.includes('not found'),
+    'EPERM is a REAL problem (a lock), never a disguised "not found"');
+});
+
+test('a thrown value with NEITHER `.code` NOR `.name` still names something ("error"), never crashes', async () => {
+  const lire = () => { throw { message: 'not a real Error instance' }; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', async () => {}, () => false);
+  assert.equal(result.raw, null);
+  assert.ok(result.detail.includes('error'), 'the final fallback name must appear, even with no code and no name');
+  assert.ok(result.detail.includes('not a real Error instance'));
+});
+
+test('a NON-ENOENT error is never retried, and never even asks whether to give up (retrying would hide a real problem)', async () => {
+  let calls = 0;
+  let abandonAsked = 0;
+  const lire = () => { calls += 1; const e = new Error('denied'); e.code = 'EACCES'; throw e; };
+  await readSettingsThrough(lire, 'C:/x/settings.json', async () => {}, () => { abandonAsked += 1; return true; });
+  assert.equal(calls, 1, 'EACCES must fail on the FIRST attempt, never be retried like ENOENT');
+  assert.equal(abandonAsked, 0, 'a real error is reported immediately — the give-up question is only for ENOENT');
+});
+
+test('`giveUp` is checked BEFORE waiting, every attempt: it never sleeps once for nothing', async () => {
+  let calls = 0;
+  let signals = 0;
+  const lire = () => { calls += 1; const e = new Error('gone'); e.code = 'ENOENT'; throw e; };
+  const giveUp = () => calls >= 3;
+  const nextSignal = async () => { signals += 1; };
+  const result = await readSettingsThrough(lire, 'C:/x/settings.json', nextSignal, giveUp);
+  assert.equal(result.raw, null);
+  assert.equal(calls, 3);
+  assert.equal(signals, 2, 'exactly one fewer signal than attempts — the 3rd failure gives up instead of waiting once more');
+});
 
 // ── Fixture builders. They only SHAPE data; nothing here calls the mutated decision at load time.
 function commandSettings(commands) {
@@ -278,7 +370,7 @@ test('an http gate declaration asks for NO file check — it carries no file nam
 // THE NEGATIVES — each one is a SILENT death in production.
 // ═══════════════════════════════════════════════════════════════════════
 
-test('the PreCompact reset unwired is RED, and the verdict says injection stops after a compaction', () => {
+test('the PreCompact reset notWired is RED, and the verdict says injection stops after a compaction', () => {
   const findings = findingsOf(['node /r/src/hooks/doc-inject.js --frame 1 --frames 1']);
   const c = checkNamed(findings, 'the PreCompact reset is wired (ctxroute-reset.js)');
   assert.equal(c.ok, false);
@@ -540,7 +632,7 @@ test('the lane flag is matched LITERALLY — its regex characters never become o
 // ═══════════════════════════════════════════════════════════════════════
 
 test('the optional check groups are a REGISTRY, frozen, and each names what it alone covers', () => {
-  assert.deepEqual(OPTIONAL_GROUPS.map((g) => g.flag), ['--settings', '--codex-hooks', '--codex-config']);
+  assert.deepEqual(OPTIONAL_GROUPS.map((g) => g.flag), ['--settings', '--codex-hooks', '--codex-config', '--deployed']);
   assert.equal(Object.isFrozen(OPTIONAL_GROUPS), true);
   assert.equal(Object.isFrozen(OPTIONAL_GROUPS[0]), true);
   assert.deepEqual(OPTIONAL_GROUPS.map((g) => g.missing), [
@@ -549,12 +641,14 @@ test('the optional check groups are a REGISTRY, frozen, and each names what it a
       + 'declared bandwidth, lane coherence',
     'the Codex wiring: its six channels, the anti-double-injection rule and the context ceiling',
     'the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)',
+    'whether the code actually SERVING PRODUCTION matches this repository, file for file, '
+      + 'under `src/`',
   ]);
 });
 
 test('a COMPLETE run says nothing: there is no gap to declare', () => {
   assert.deepEqual(reducedNotice({
-    flagsGiven: ['--settings', '--codex-hooks', '--codex-config'],
+    flagsGiven: ['--settings', '--codex-hooks', '--codex-config', '--deployed'],
     ranCount: 91,
     settingsPath: '/home/dev/.claude/settings.json',
     settingsExists: true,
@@ -573,6 +667,8 @@ test('a bare run names EVERY group it did not measure, and points at the setting
       + 'PreCompact reset, session gate, write guard, turn counter, canary, frame coordinates, declared bandwidth, lane coherence',
     '   • `--codex-hooks` not given ⇒ NOT MEASURED: the Codex wiring: its six channels, the anti-double-injection rule and the context ceiling',
     '   • `--codex-config` not given ⇒ NOT MEASURED: the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)',
+    '   • `--deployed` not given ⇒ NOT MEASURED: whether the code actually SERVING PRODUCTION matches this repository, file for file, '
+      + 'under `src/`',
     '   🔴 /home/dev/.claude/settings.json EXISTS and was NOT read. The wiring lives outside this repository: nothing in it can see a dead hook.',
     '      Measure it: node tools/doctor.js --settings "/home/dev/.claude/settings.json"',
     '   🛑 "I could not measure" is never "it is healthy".',
@@ -584,15 +680,15 @@ test('no settings.json at the conventional address is stated as a FACT, never as
   const lines = reducedNotice({
     flagsGiven: [], ranCount: 14, settingsPath: '/home/dev/.claude/settings.json', settingsExists: false,
   });
-  assert.equal(lines[4], '   ℹ no settings.json at /home/dev/.claude/settings.json — a clean clone and CI legitimately have none.');
-  assert.equal(lines[5], '   🛑 "I could not measure" is never "it is healthy".');
-  assert.equal(lines.length, 6);
+  assert.equal(lines[5], '   ℹ no settings.json at /home/dev/.claude/settings.json — a clean clone and CI legitimately have none.');
+  assert.equal(lines[6], '   🛑 "I could not measure" is never "it is healthy".');
+  assert.equal(lines.length, 7);
 });
 
 test('an unknown conventional address is not guessed: the notice simply says nothing about it', () => {
   const lines = reducedNotice({ flagsGiven: [], ranCount: 14, settingsPath: null, settingsExists: false });
-  assert.equal(lines.length, 5);
-  assert.equal(lines[4], '   🛑 "I could not measure" is never "it is healthy".');
+  assert.equal(lines.length, 6);
+  assert.equal(lines[5], '   🛑 "I could not measure" is never "it is healthy".');
 });
 
 test('when the WIRING was measured, the settings.json paragraph disappears — it is not a gap any more', () => {
@@ -605,6 +701,8 @@ test('when the WIRING was measured, the settings.json paragraph disappears — i
     '⚠️ REDUCED MEASUREMENT — 67 check(s) ran, and that is NOT the whole framework.',
     '   • `--codex-hooks` not given ⇒ NOT MEASURED: the Codex wiring: its six channels, the anti-double-injection rule and the context ceiling',
     '   • `--codex-config` not given ⇒ NOT MEASURED: the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)',
+    '   • `--deployed` not given ⇒ NOT MEASURED: whether the code actually SERVING PRODUCTION matches this repository, file for file, '
+      + 'under `src/`',
     '   🛑 "I could not measure" is never "it is healthy".',
   ]);
 });
@@ -616,7 +714,9 @@ test('a flag given for another group never silences a different one', () => {
   assert.equal(lines[1], '   • `--settings` not given ⇒ NOT MEASURED: the installation (is any MCP server documented?) and the ENTIRE harness wiring: gate, '
     + 'PreCompact reset, session gate, write guard, turn counter, canary, frame coordinates, declared bandwidth, lane coherence');
   assert.equal(lines[2], '   • `--codex-config` not given ⇒ NOT MEASURED: the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)');
-  assert.equal(lines.length, 4);
+  assert.equal(lines[3], '   • `--deployed` not given ⇒ NOT MEASURED: whether the code actually SERVING PRODUCTION matches this repository, file for file, '
+    + 'under `src/`');
+  assert.equal(lines.length, 5);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -754,4 +854,359 @@ test('a peer declared TWICE, both times on the daemon, IS on the daemon — no p
     'node /r/src/hooks/canary-check.js',
   ]);
   assert.equal(checkNamed(findings, 'every consumer of the injection state reaches the SAME authority (no split brain)').ok, true);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE DECLARED ADDRESS MUST STILL EXIST ON THIS MACHINE — 2026-09-02
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 THE FAILURE THIS COVERS IS THE ONE THAT WILL ACTUALLY HAPPEN: the Windows
+//    profile binds a DEDICATED adapter to leave `127.0.0.0/8`; the day that
+//    adapter is removed — or its address reverts to an auto-assigned one — the
+//    daemon cannot bind, the whole fleet loses its injection, and nothing says
+//    WHY. ⚠️ The guard originally asked for ("redden if libuv changes its mind")
+//    is NOT measurable here and was deliberately NOT written: no bench in this
+//    repository reproduces the loss, so it would certify instead of protect.
+
+test('the declared address PRESENT among this machine addresses is the healthy case', () => {
+  const r = declaredHostPresence({
+    host: '10.87.87.1',
+    localAddresses: ['127.0.0.1', '10.87.87.1', '192.168.1.185'],
+  });
+  assert.equal(r.state, 'present');
+  assert.equal(r.host, '10.87.87.1');
+});
+
+test('the declared address ABSENT is RED, and it NAMES what the machine does have', () => {
+  // 🔑 The remediation is the point: a verdict that only says "wrong" sends the
+  //    reader hunting for a list the judge already held.
+  const r = declaredHostPresence({
+    host: '10.87.87.1',
+    localAddresses: ['127.0.0.1', '169.254.29.100'],
+  });
+  assert.equal(r.state, 'absent');
+  assert.deepEqual(r.available, ['127.0.0.1', '169.254.29.100'],
+    'The reader must see what IS there, or the refusal is a dead end.');
+});
+
+test('an EMPTY interface list is UNMEASURED, never absent — the anti-vacuity half', () => {
+  // 🛑 An empty list is the shape a FAILED OBSERVATION takes. Answering `absent`
+  //    there would accuse a perfectly healthy machine of a defect the shell
+  //    simply could not see — and this repository's worst defect has never been
+  //    a red judge, it is a judge that reports on nothing.
+  for (const localAddresses of [[], undefined, null, 'not-a-list', 42]) {
+    const r = declaredHostPresence({ host: '10.87.87.1', localAddresses });
+    assert.equal(r.state, 'unmeasured',
+      'No observation ⇒ no verdict. "I could not measure" is never "it is healthy".');
+    assert.match(String(r.reason), /\S/, 'An unmeasured verdict MUST carry its reason.');
+  }
+});
+
+test('a NAME is UNMEASURED: resolution is the resolver\'s business, never ours', () => {
+  for (const host of ['localhost', 'my-host.local', 'ctxroute-box']) {
+    const r = declaredHostPresence({ host, localAddresses: ['127.0.0.1'] });
+    assert.equal(r.state, 'unmeasured');
+    assert.match(String(r.reason), /NAME/i);
+  }
+});
+
+test('an ABSENT declaration is UNMEASURED — there is nothing to compare', () => {
+  for (const host of [undefined, null, '']) {
+    assert.equal(declaredHostPresence({ host, localAddresses: ['127.0.0.1'] }).state,
+      'unmeasured');
+  }
+  assert.equal(declaredHostPresence({}).state, 'unmeasured');
+  assert.equal(declaredHostPresence().state, 'unmeasured');
+});
+
+test('an IPv6 ZONE INDEX is one address in two spellings, never a divergence', () => {
+  // ⚠️ Same class as the 8.3 short name that made `steering-single-copy` accuse
+  //    a healthy machine: comparing raw strings reports a difference that the
+  //    operating system does not have.
+  assert.equal(
+    declaredHostPresence({ host: 'fe80::1', localAddresses: ['fe80::1%eth0'] }).state,
+    'present');
+  assert.equal(
+    declaredHostPresence({ host: 'FE80::1', localAddresses: ['fe80::1'] }).state,
+    'present', 'The comparison is case-insensitive.');
+  assert.equal(normalizeAddress('FE80::1%Ethernet 3'), 'fe80::1');
+});
+
+test('the loopback default is PRESENT on any machine — no false red on a fresh install', () => {
+  assert.equal(
+    declaredHostPresence({ host: '127.0.0.1', localAddresses: ['127.0.0.1'] }).state,
+    'present');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// DEPLOYED DRIFT — does the code SERVING PRODUCTION match this repository?
+// ═══════════════════════════════════════════════════════════════════════
+
+test('an EMPTY comparison is unmeasured, never "it matches" — anti-vacuity floor', () => {
+  assert.deepEqual(deployedDriftVerdict([]), { state: 'unmeasured' });
+});
+
+test('a non-array is unmeasured too: a caller handing over garbage never reads as healthy', () => {
+  assert.deepEqual(deployedDriftVerdict(undefined), { state: 'unmeasured' });
+  assert.deepEqual(deployedDriftVerdict(null), { state: 'unmeasured' });
+});
+
+test('every hash equal ⇒ match, and the count is the number of files actually compared', () => {
+  const entries = [
+    { relPath: 'src/budget.js', repoHash: 'aaa', deployedHash: 'aaa' },
+    { relPath: 'src/carryover-pure.js', repoHash: 'bbb', deployedHash: 'bbb' },
+  ];
+  assert.deepEqual(deployedDriftVerdict(entries), { state: 'match', count: 2 });
+});
+
+test('one mismatched hash ⇒ drift, and the drifted path is NAMED, never just counted', () => {
+  const entries = [
+    { relPath: 'src/budget.js', repoHash: 'aaa', deployedHash: 'aaa' },
+    { relPath: 'src/gate.js', repoHash: 'ccc', deployedHash: 'DIFFERENT' },
+  ];
+  assert.deepEqual(deployedDriftVerdict(entries), { state: 'drift', count: 2, paths: ['src/gate.js'] });
+});
+
+test('a MISSING deployed file (deployedHash: null) is drift, never silence', () => {
+  // 🛑 `null` can never equal a real hex hash, so absence on the deployed side is compared like
+  //    any other mismatch — never given a free pass because there was "nothing to compare".
+  const entries = [{ relPath: 'src/lock.js', repoHash: 'aaa', deployedHash: null }];
+  assert.deepEqual(deployedDriftVerdict(entries), { state: 'drift', count: 1, paths: ['src/lock.js'] });
+});
+
+test('several drifted paths are ALL named, in the order they were compared', () => {
+  const entries = [
+    { relPath: 'a.js', repoHash: '1', deployedHash: '1' },
+    { relPath: 'b.js', repoHash: '2', deployedHash: 'X' },
+    { relPath: 'c.js', repoHash: '3', deployedHash: 'X' },
+  ];
+  assert.deepEqual(deployedDriftVerdict(entries), { state: 'drift', count: 3, paths: ['b.js', 'c.js'] });
+});
+
+// ── `--deployed` argument parsing — same shape as `configPathArgument`, own flag, own message.
+
+test('no --deployed on the command line ⇒ undefined, never a refusal (the flag is OPTIONAL)', () => {
+  assert.equal(deployedArgument({ argv: ['node', 'doctor.js'], isAbsolute: () => true }), undefined);
+});
+
+test('a non-array argv ⇒ undefined: the shell owns argv, this module never assumes its shape', () => {
+  assert.equal(deployedArgument({ argv: undefined, isAbsolute: () => true }), undefined);
+});
+
+test('a well-formed --deployed with an absolute path is accepted verbatim', () => {
+  assert.equal(
+    deployedArgument({ argv: ['--deployed', 'C:/deploy/ctxroute-release'], isAbsolute: (p) => p.startsWith('C:/') }),
+    'C:/deploy/ctxroute-release');
+});
+
+test('a RELATIVE path is a NAMED REFUSAL, never a silent skip', () => {
+  assert.throws(
+    () => deployedArgument({ argv: ['--deployed', 'some/relative/path'], isAbsolute: () => false }),
+    /ctxroute REFUSED: the launch argument "--deployed" is a RELATIVE path — received "some\/relative\/path"/);
+});
+
+test('--deployed with NO value at all is a NAMED REFUSAL, never today\'s default silently kept', () => {
+  assert.throws(
+    () => deployedArgument({ argv: ['--deployed'], isAbsolute: () => true }),
+    /ctxroute REFUSED: the launch argument "--deployed" is followed by no address at all — received undefined/);
+});
+
+test('--deployed followed by another FLAG is a NAMED REFUSAL, never a false address', () => {
+  assert.throws(
+    () => deployedArgument({ argv: ['--deployed', '--quiet'], isAbsolute: () => true }),
+    /followed by another FLAG instead of an address/);
+});
+
+test('--deployed declared MORE THAN ONCE is a NAMED REFUSAL: two spellings, two truths', () => {
+  assert.throws(
+    () => deployedArgument({
+      argv: ['--deployed', '/a', '--deployed', '/b'],
+      isAbsolute: () => true,
+    }),
+    /declared MORE THAN ONCE/);
+});
+
+test('an empty-string address is refused exactly like a missing one', () => {
+  assert.throws(
+    () => deployedArgument({ argv: ['--deployed', ''], isAbsolute: () => true }),
+    /followed by no address at all/);
+});
+
+// ── THE MOMENT AFTER THE TOOL ANSWERED (2026-09-23): the same gate on PostToolUse, ITS bandwidth ──
+// ⚠️ Shape copied from what `tools/wiring-generate.js` writes: the action's frames on PreToolUse, the
+//    after frames on PostToolUse beside the write guard, each with its own `--frames` total.
+function afterSettings(afterCommands, extraAction) {
+  const settings = commandSettings(healthyCommands().concat(extraAction || []));
+  settings.hooks.PostToolUse = [{ hooks: afterCommands.map((c) => ({ type: 'command', command: c })) }];
+  return settings;
+}
+const AFTER_SUFFIX = ' (after the tool answered)';
+const after2 = () => [
+  'node /r/src/hooks/doc-inject.js --client --frame 1 --frames 2',
+  'node /r/src/hooks/doc-inject.js --client --frame 2 --frames 2',
+];
+
+test('AFTER: a wiring with both moments is judged moment by moment — no false "divergent --frames"', () => {
+  const settings = afterSettings([
+    'node /r/src/hooks/doc-inject.js --client --frame 1 --frames 1',
+  ]);
+  const findings = wiringFindings({ settings, wantedFrames: 2, wantedAfterFrames: 1, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools' });
+  assert.equal(checkNamed(findings, 'every gate declaration announces the SAME number of frames').ok, true, 'the action alone is judged under its historical name');
+  assert.equal(checkNamed(findings, 'the wiring honours the declared bandwidth (frames: 2)').ok, true);
+  assert.equal(checkNamed(findings, 'every gate declaration announces the SAME number of frames' + AFTER_SUFFIX).ok, true);
+  assert.equal(checkNamed(findings, 'the wiring honours the declared bandwidth (afterFrames: 1)').ok, true);
+  assert.equal(checkNamed(findings, 'the frame indices cover 1..N, with no gap and no duplicate' + AFTER_SUFFIX).ok, true);
+});
+
+test('AFTER: a missing after frame, a divergent total and an undeclared-but-wired bandwidth are each RED', () => {
+  const judge = (afterCommands, wantedAfterFrames) => wiringFindings({
+    settings: afterSettings(afterCommands), wantedFrames: 2, wantedAfterFrames, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools',
+  });
+  // One of the two declared after frames is missing: its content never leaves this moment.
+  assert.equal(checkNamed(judge([after2()[0]], 2), 'there are exactly as many declarations as announced frames' + AFTER_SUFFIX).ok, false);
+  // Two totals on one moment: the frames would not re-assemble.
+  assert.equal(checkNamed(judge([after2()[0], 'node /r/src/hooks/doc-inject.js --client --frame 2 --frames 3'], 2),
+    'every gate declaration announces the SAME number of frames' + AFTER_SUFFIX).ok, false);
+  // The config declares a bandwidth the wiring does not honour.
+  assert.equal(checkNamed(judge(after2(), 3), 'the wiring honours the declared bandwidth (afterFrames: 3)').ok, false);
+  // Declared and not wired at all is judged too — the capacity is ZERO, not what the config says —
+  // and it is said as THAT fact, never as a "divergent --frames" nobody wired.
+  const notWired = judge([], 2);
+  const zero = checkNamed(notWired, 'the wiring honours the declared bandwidth (afterFrames: 2)');
+  assert.equal(zero.ok, false);
+  assert.match(zero.detail, /wires NONE/);
+  assert.match(zero.detail, /wiring-generate/);
+  assert.equal(notWired.some((f) => f.kind === 'check' && f.name.endsWith(AFTER_SUFFIX)), false, 'no coherence check runs on an empty set');
+});
+
+test('AFTER: wired but with NO declared bandwidth, the after frames are STILL judged for coherence', () => {
+  const findings = wiringFindings({
+    settings: afterSettings([after2()[0]]), wantedFrames: 2, wantedAfterFrames: null, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools',
+  });
+  // One of two declared after frames is missing: that silence must be named even with no config key.
+  assert.equal(checkNamed(findings, 'there are exactly as many declarations as announced frames' + AFTER_SUFFIX).ok, false);
+  assert.equal(findings.some((f) => f.kind === 'check' && /afterFrames/.test(f.name)), false, 'no bandwidth declared, no bandwidth check');
+});
+
+// ── Pre-existing survivors of the address check and of the deployed refusal (killed 2026-09-23) ──
+test('normalizeAddress: an absent address is EMPTY, never the word "undefined" or "null"', () => {
+  assert.equal(normalizeAddress(undefined), '');
+  assert.equal(normalizeAddress(null), '');
+  assert.equal(normalizeAddress('FE80::1%eth0'), 'fe80::1');
+});
+test('declaredHostPresence: nothing declared and nothing readable are named for what they are', () => {
+  assert.deepEqual(declaredHostPresence({}), { state: 'unmeasured', host: '', reason: 'no address was declared to compare' });
+  // Unreadable entries are dropped: an interface list of blanks is a FAILED observation, never "absent".
+  const blanks = declaredHostPresence({ host: '10.0.0.1', localAddresses: [null, undefined, ''] });
+  assert.equal(blanks.state, 'unmeasured');
+  assert.equal(blanks.reason, 'no local address could be read from this machine');
+  // Blanks beside a real address never appear among what the machine "has".
+  assert.deepEqual(declaredHostPresence({ host: '10.0.0.1', localAddresses: [null, '127.0.0.1', ''] }).available, ['127.0.0.1']);
+});
+test('deployedArgument: the refusal says WHAT is wrong, WHY it matters, and HOW to get out', () => {
+  let message = '';
+  try { deployedArgument({ argv: ['--deployed', 'rel/path'], isAbsolute: () => false }); } catch (e) { message = e.message; }
+  assert.match(message, /ONE ABSOLUTE path to the directory serving production/);
+  assert.match(message, /working directory this doctor does not control/);
+  assert.match(message, /silently compare against two different copies/);
+  assert.match(message, /looking measured/);
+  assert.match(message, /unmeasured drift is NAMED/);
+});
+
+test('AFTER: a machine that never wired nor declared the moment after the answer is not accused of it', () => {
+  const findings = findingsOf(healthyCommands());
+  assert.equal(findings.some((f) => f.kind === 'check' && f.name.endsWith(AFTER_SUFFIX)), false);
+  assert.equal(findings.some((f) => f.kind === 'check' && /afterFrames/.test(f.name)), false);
+});
+
+test('AFTER: the after frames are file-checked like the action frames (a copy of ANOTHER repo is named)', () => {
+  const findings = wiringFindings({
+    settings: afterSettings(['node /elsewhere/src/hooks/doc-inject.js --client --frame 1 --frames 1']),
+    wantedFrames: 2, wantedAfterFrames: 1, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools',
+  });
+  assert.ok(fileEntries(findings).some((f) => f.file === '/elsewhere/src/hooks/doc-inject.js'));
+});
+
+// ── The Codex wiring is ALSO judged for the moment after the tool answered (2026-09-23) ──
+// 🔴 The Codex check asked "is codex-doc-inject.js wired?" ANYWHERE. Once the same script also serves
+//    PostToolUse, dropping ONLY that block left the answer "yes" and every `response` doc stopped
+//    reaching Codex in silence. The fixtures COPY the shape of the real managed `requirements.toml`
+//    (array-of-tables per event, `command = '…'`) and of `hooks.json`, with generic paths.
+const TOML_BOTH = [
+  '[[hooks.PreToolUse]]', 'matcher = "*"', '[[hooks.PreToolUse.hooks]]', 'type = "command"',
+  "command = 'node /repo/src/hooks/codex-doc-inject.js --budget 0'",
+  '[[hooks.PostToolUse]]', 'matcher = "*"', '[[hooks.PostToolUse.hooks]]', 'type = "command"',
+  "command = 'node /repo/src/hooks/codex-doc-write-guard.js'",
+  '[[hooks.PostToolUse.hooks]]', 'type = "command"',
+  "command = 'node /repo/src/hooks/codex-doc-inject.js --budget 0'",
+  '[[hooks.SessionStart]]', '[[hooks.SessionStart.hooks]]', 'type = "command"',
+  "command = 'node /repo/src/hooks/session-inject.js --budget 0'",
+].join('\n');
+// The same file with ONLY the after-answer block dropped: the exact regression this judge exists for.
+const TOML_BEFORE_ONLY = TOML_BOTH.replace(
+  "[[hooks.PostToolUse.hooks]]\ntype = \"command\"\ncommand = 'node /repo/src/hooks/codex-doc-inject.js --budget 0'\n", '');
+
+test('hookEventsOf: each event section is read apart, in the TOML the managed file uses', () => {
+  assert.notEqual(TOML_BEFORE_ONLY, TOML_BOTH, 'anti-vacuity: the fixture edit must have taken');
+  assert.deepEqual(hookEventsOf(TOML_BOTH, 'codex-doc-inject.js'), ['PostToolUse', 'PreToolUse']);
+  assert.deepEqual(hookEventsOf(TOML_BEFORE_ONLY, 'codex-doc-inject.js'), ['PreToolUse']);
+  assert.deepEqual(hookEventsOf(TOML_BOTH, 'codex-doc-write-guard.js'), ['PostToolUse']);
+  assert.deepEqual(hookEventsOf(TOML_BOTH, 'session-inject.js'), ['SessionStart']);
+  assert.deepEqual(hookEventsOf(TOML_BOTH, 'absent.js'), []);
+  assert.deepEqual(hookEventsOf('', 'codex-doc-inject.js'), []);
+});
+
+test('hookEventsOf: the JSON form (hooks.json) is read the same way, and a lowercase key is never a section', () => {
+  const json = JSON.stringify({ hooks: {
+    PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node /r/codex-doc-inject.js' }] }],
+    PostToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node /r/codex-doc-write-guard.js' }] }],
+  } }, null, 2);
+  assert.deepEqual(hookEventsOf(json, 'codex-doc-inject.js'), ['PreToolUse']);
+  assert.deepEqual(hookEventsOf(json, 'codex-doc-write-guard.js'), ['PostToolUse']);
+});
+
+test('hookEventsOf: an event nobody listed still opens its own section (shape, never a list)', () => {
+  const raw = "[[hooks.PreToolUse.hooks]]\ncommand = 'a.js'\n[[hooks.SomeFutureEvent.hooks]]\ncommand = 'b.js'\n";
+  assert.deepEqual(hookEventsOf(raw, 'b.js'), ['SomeFutureEvent'], 'b.js must NOT be filed under PreToolUse');
+  assert.deepEqual(hookEventsOf(raw, 'a.js'), ['PreToolUse']);
+});
+
+test('codexAfterFinding: declared and wired ⇒ ok · declared, only the before block ⇒ NAMED red · undeclared ⇒ no opinion', () => {
+  const ok = codexAfterFinding(TOML_BOTH, 'codex-doc-inject.js', 2);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.kind, 'check');
+  assert.equal(ok.name, 'the CODEX shell (codex-doc-inject.js) is ALSO wired after the tool answered (PostToolUse)');
+
+  const red = codexAfterFinding(TOML_BEFORE_ONLY, 'codex-doc-inject.js', 2);
+  assert.equal(red.ok, false, 'the dropped after-answer block must be seen RED');
+  assert.equal(red.detail, 'ctxroute-config.json asks for afterFrames: 2, the Codex wiring names codex-doc-inject.js '
+    + 'under no PostToolUse section: every doc waiting for an answer (`response`) never reaches Codex.');
+
+  assert.equal(codexAfterFinding(TOML_BEFORE_ONLY, 'codex-doc-inject.js', null), null,
+    'a config that never asked for the moment is never blamed for its absence');
+});
+
+// ── SWITCHED OFF BUT STILL WIRED (2026-09-23): `afterFrames` absent or 0 means OFF ─────────────
+test('AFTER: switched off (no afterFrames) yet still wired ⇒ NAMED red, and the frames are still judged', () => {
+  const findings = wiringFindings({
+    settings: afterSettings(after2()), wantedFrames: 2, wantedAfterFrames: null, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools',
+  });
+  const off = checkNamed(findings, 'the moment after the tool answered is wired only when switched on');
+  assert.equal(off.ok, false);
+  assert.equal(off.detail, 'settings.json wires 2 declaration(s) after the tool answered while ctxroute-config.json '
+    + 'switches that moment OFF (afterFrames absent or 0): every tool call still pays them. Regenerate the wiring '
+    + '(tools/wiring-generate.js).');
+  assert.equal(checkNamed(findings, 'there are exactly as many declarations as announced frames' + AFTER_SUFFIX).ok, true,
+    'the coherence rules still run on what is wired');
+});
+
+test('AFTER: switched off and NOT wired ⇒ no finding about that moment at all', () => {
+  const findings = findingsOf(healthyCommands());
+  assert.equal(findings.some((f) => f.kind === 'check' && f.name === 'the moment after the tool answered is wired only when switched on'), false);
+});
+
+test('AFTER: switched on and wired ⇒ the off-check never fires', () => {
+  const findings = wiringFindings({
+    settings: afterSettings(after2()), wantedFrames: 2, wantedAfterFrames: 2, laneFlag: '--client', consumers: ['doc-inject.js'], repoDir: '/r/tools',
+  });
+  assert.equal(findings.some((f) => f.kind === 'check' && f.name === 'the moment after the tool answered is wired only when switched on'), false);
 });

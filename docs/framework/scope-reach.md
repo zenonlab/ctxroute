@@ -1,7 +1,7 @@
 ---
 match: ["scope-reach.js", "scope-reach.test.js", "scope-reach-pure.js", "scope-reach-pure.test.js"]
 mode: smart
-threshold: 30
+threshold: 32
 ---
 
 # scope-reach.js — the instrument that settles "would widening `scope` cost anything?"

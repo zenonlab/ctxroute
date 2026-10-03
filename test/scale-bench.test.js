@@ -352,11 +352,33 @@ function pretoolCall(i, n) {
 //      PRINTED so an operator still sees what a request really costs, and so the
 //      ratio between the two (the price of the lock) stays visible on green runs
 //      instead of being rediscovered the day a cell stops discriminating.
+// 🔴 THE MACHINE'S SPEED, MEASURED NEXT TO EVERY SUB-BATCH (2026-10-02). The witness of
+//    cell H runs ONCE, before the driver starts, so it cannot see a machine that slows
+//    down HALFWAY through the levels — and a ratio of the last levels over the first ones
+//    reads exactly that slowdown as a cost growing with the fleet. MEASURED on a macOS
+//    runner: the same code read 0.73, 1.16 and 1.88 against a 1.67 bar, and on the red run
+//    the \`/pretool\` WALL time (lock included, flat in the held state by construction)
+//    doubled at the third level while \`/turn\`, timed just before, did not move.
+// ⚠️ A FIXED pure-CPU loop, no I/O, no store, no lock, timed OUTSIDE the store's clock: it
+//    says how fast THIS machine was at THIS moment, and the cell refuses to decide when
+//    that speed drifted between the head and the tail (\`speedHolds\`).
+const CPU_PROBE_ITERS = 50000;
+function cpuProbe() {
+  let acc = 0;
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < CPU_PROBE_ITERS; i += 1) acc = (acc + i * 7) % 1000003;
+  const dt = Number(process.hrtime.bigint() - t0);
+  if (acc < -1) throw new Error('unreachable ' + acc);
+  return dt;
+}
+
 function mediane(appel, parLot) {
   const storeBatches = [];
   const wallBatches = [];
+  const cpuBatches = [];
   for (let s = 0; s < SOUS_LOTS; s += 1) {
     global.gc();
+    cpuBatches.push(cpuProbe());
     const a0 = storeNs;
     const t0 = process.hrtime.bigint();
     for (let i = 0; i < parLot; i += 1) appel(s * parLot + i);
@@ -365,8 +387,16 @@ function mediane(appel, parLot) {
   }
   storeBatches.sort((a, b) => a - b);
   wallBatches.sort((a, b) => a - b);
+  cpuBatches.sort((a, b) => a - b);
   const m = (SOUS_LOTS - 1) / 2;
-  return { store: storeBatches[m], wall: wallBatches[m] };
+  const q = (SOUS_LOTS - 1) / 4;
+  return {
+    store: storeBatches[m],
+    wall: wallBatches[m],
+    cpu: cpuBatches[m],
+    // PRINTED ONLY: the inter-quartile spread of the store readings inside one level.
+    nu: storeBatches[SOUS_LOTS - 1 - q] / storeBatches[q],
+  };
 }
 
 // Warm-up on its own scopes, so the first LEVEL is measured on a hot runtime.
@@ -401,6 +431,11 @@ for (const cible of LEVELS) {
     // PRINTED ONLY: the whole call, lock included. Asserted on by NOTHING.
     turnWallNs: turn.wall,
     pretoolWallNs: pretool.wall,
+    turnNu: turn.nu,
+    pretoolNu: pretool.nu,
+    // THE MACHINE'S SPEED next to each track — read by \`speedHolds\`, never a verdict.
+    turnCpuNs: turn.cpu,
+    pretoolCpuNs: pretool.cpu,
     retenu: heap - heapAvant,
   });
   heapAvant = heap;
@@ -815,6 +850,34 @@ srv.listen(0, '127.0.0.1', async () => {
  * @param {string} file the driver to execute
  * @param {string[]} args its arguments
  */
+/**
+ * The CLOSED list of kernel codes that say "this connection never happened".
+ * 🛑 CLOSED ON PURPOSE, AND NEVER TO BE WIDENED TO "anything that failed". These
+ *    three are the client-side facts of a saturated machine; everything else a
+ *    driver can die of says something about the CODE and must stay RED.
+ */
+const CLIENT_SOCKET_DEATH = /E(?:TIMEDOUT|CONNREFUSED|CONNRESET)/;
+
+/**
+ * Turns a run the machine could not CARRY into a named non-decision.
+ *
+ * 🔑 IT IS THE THIRD WAY TO BE UNABLE TO DECIDE, and it is independent of the two
+ *    this file already has. `witness()` prices the machine's scheduling noise
+ *    BEFORE a driver runs; `resolutionFloorHolds` prices the clock AFTER a reading
+ *    came back. Neither can see a CONNECTION THAT NEVER HAPPENED — measured
+ *    2026-09-20, axis B died on `connect ETIMEDOUT 127.0.0.1` against its own
+ *    local server, with a witness that had just called the machine healthy.
+ * 🛑 NO BAR MOVES AND NO SABOTAGE IS WEAKENED: this decides only whether a run is
+ *    ENTITLED to a verdict, exactly like its two elders.
+ * @param {import('vitest').TestContext} ctx
+ * @param {string} axis
+ */
+const skipIfSocketDied = (ctx, axis) => (err) => {
+  if (!err || !err.socketDied) throw err;
+  ctx.skip(`UNMEASURED: axis ${axis} — ${err.message}`);
+  return null;
+};
+
 function runDriver(file, args) {
   let child = null;
   const done = new Promise((resolve, reject) => {
@@ -831,6 +894,28 @@ function runDriver(file, args) {
       // 🛑 A DRIVER THAT DIES MUST SAY WHY, NOT TIME OUT. stderr is captured and
       //    reported: an unobservable failure costs one CI round trip PER
       //    HYPOTHESIS, and this repo has paid that twice already.
+      // 🔴 A DRIVER KILLED BY A CLIENT SOCKET IS AN UNMEASURED RUN, NEVER A RED —
+      //    MEASURED 2026-09-20 ON A FULL-SUITE RUN. Axis B died on
+      //    `connect ETIMEDOUT 127.0.0.1:<port>` against ITS OWN local server,
+      //    before a single reading existed: the machine was saturated by the rest
+      //    of the suite, and on Windows a SYN to a loopback address is never
+      //    retransmitted (`SIO_TCP_INITIAL_RTO`, guarded by libuv's
+      //    `uv__is_loopback`), so one lost SYN ends the connection outright.
+      //    The witness had already said the machine was fine — it measures TIMING
+      //    NOISE, and it cannot see a connection that never happened.
+      // 🛑 THE DISTINCTION IS THE WHOLE POINT, AND IT IS NOT "anything that failed
+      //    is unmeasured": a CLIENT connect failure means the run could not be
+      //    CARRIED, so there is nothing to judge. Every other death — a throw, a
+      //    bad verdict, a driver printing nothing — stays RED, because those say
+      //    something about the CODE. Widening this marker past the connect codes
+      //    would turn the bench into a cell that certifies instead of measuring.
+      const socketDeath = err && CLIENT_SOCKET_DEATH.exec(`${err.message}\n${stderr}`);
+      if (socketDeath) {
+        reject(Object.assign(new Error(`the driver could not hold its own connections (${socketDeath[0]}): `
+          + 'the machine was too loaded to CARRY this run, so nothing about the code is in question here.'),
+        { socketDied: true }));
+        return;
+      }
       if (err) { reject(new Error(`${err.message}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`)); return; }
       try { resolve(JSON.parse(String(stdout).trim().split('\n').pop())); } catch {
         reject(new Error(`the driver printed no verdict.\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`));
@@ -964,6 +1049,41 @@ function resolutionFloorHolds(turn, out, ctx, axis) {
   ctx.skip(`UNMEASURED: machine too loaded to decide axis ${axis} (smallest reading `
     + `${round(smallest)} ns against a clock bracket costing ${out.clockNs.toFixed(1)} ns — `
     + `under ${RESOLUTION_FLOOR}x that, this cell would be timing its own instrument, not the code)`);
+  return false;
+}
+
+// 🔴 A FOURTH WAY TO BE UNABLE TO DECIDE — THE MACHINE CHANGED SPEED DURING THE RUN
+//    (2026-10-02). `witness()` prices the scheduling noise ONCE, before the driver;
+//    `resolutionFloorHolds` prices the clock; neither sees a runner that slows down
+//    between the first levels and the last ones, and axis A's verdict is precisely a
+//    ratio of the last levels over the first. MEASURED on macOS, same code three times:
+//    0.73 · 1.16 · 1.88 against the 1.67 bar, the red run with `/pretool`'s WALL time
+//    (lock included, flat in the held state) doubling at the third level while `/turn`,
+//    timed just before, stayed flat — a machine slowing down, read as a fleet defect.
+// ✅ The driver times a FIXED pure-CPU loop before every sub-batch (`cpuProbe`), and the
+//    drift is that speed's own tail/head ratio, by the SAME `ratio` the verdict uses, in
+//    either direction. At or past `WITNESS_NOISE_BAR` the run is UNMEASURED by name.
+// 🛑 SAME IDIOM AS ITS THREE ELDERS: it decides only whether a run is ENTITLED to a
+//    verdict. No bar moved, no sabotage weakened, MARGE untouched — and it is wired into
+//    BOTH axis-A cells, healthy and sabotage, or it would be inert where it counts.
+// @param {{readings: {turnCpuNs:number, pretoolCpuNs:number}[]}} out
+// @returns {number} >= 1 — how much faster or slower the tail ran than the head
+function speedDrift(out) {
+  const turnSpeed = ratio(out.readings.map((r) => r.turnCpuNs));
+  const pretoolSpeed = ratio(out.readings.map((r) => r.pretoolCpuNs));
+  return Math.max(turnSpeed, 1 / turnSpeed, pretoolSpeed, 1 / pretoolSpeed);
+}
+
+// @param {{readings: {turnCpuNs:number, pretoolCpuNs:number}[]}} out
+// @param {{skip: (reason: string) => void}} ctx
+// @param {string} axis name shown in the skip message
+// @returns {boolean} true when the run may proceed to its verdict
+function speedHolds(out, ctx, axis) {
+  const drift = speedDrift(out);
+  if (drift < WITNESS_NOISE_BAR) return true;
+  ctx.skip(`UNMEASURED: the machine changed speed during axis ${axis} (a fixed CPU loop ran `
+    + `${drift.toFixed(2)}x apart between the first and the last levels, bar ${WITNESS_NOISE_BAR}) — `
+    + 'a ratio of the tail over the head would read that drift as a cost growing with the fleet');
   return false;
 }
 
@@ -1606,7 +1726,8 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=A iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis A (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(DRIVER, ['--healthy', JSON.stringify(A_LEVELS)]);
+  const out = await runDriver(DRIVER, ['--healthy', JSON.stringify(A_LEVELS)]).catch(skipIfSocketDied(ctx, 'A'));
+  if (out === null) return;
   const scopes = out.readings.map((r) => r.scopes);
   const turn = out.readings.map((r) => r.turnNs);
   const pretool = out.readings.map((r) => r.pretoolNs);
@@ -1627,6 +1748,11 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
     turnRatio: Number(rTurn.toFixed(2)),
     pretoolNs: pretool.map(round),
     pretoolRatio: Number(rGate.toFixed(2)),
+    turnNu: out.readings.map((r) => Number(r.turnNu.toFixed(2))),
+    pretoolNu: out.readings.map((r) => Number(r.pretoolNu.toFixed(2))),
+    turnCpuNs: out.readings.map((r) => round(r.turnCpuNs)),
+    pretoolCpuNs: out.readings.map((r) => round(r.pretoolCpuNs)),
+    speedDrift: Number(speedDrift(out).toFixed(2)),
     // PRINTED, ASSERTED ON BY NOTHING — the whole call, lock included. The gap
     // between these and the numbers above IS the price of the cross-process
     // lock, and keeping it visible on a GREEN run is what stops the next reader
@@ -1671,6 +1797,7 @@ test.sequential('SCALE-A (held state): the daemon\'s cost per request does not g
   //    the newest way this cell could measure nothing. UNDECIDABLE, never a red:
   //    see `resolutionFloorHolds` above (2026-08-30, the runner that revealed it).
   if (!resolutionFloorHolds(turn, out, ctx, 'A')) return;
+  if (!speedHolds(out, ctx, 'A')) return;
 
   const shown = out.readings.map((r) => `${r.scopes}:${round(r.turnNs)}ns/${round(r.pretoolNs)}ns`).join(' → ');
 
@@ -1709,7 +1836,8 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=A(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis A (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(DRIVER, ['--sabotage', JSON.stringify(A_LEVELS)]);
+  const out = await runDriver(DRIVER, ['--sabotage', JSON.stringify(A_LEVELS)]).catch(skipIfSocketDied(ctx, 'A'));
+  if (out === null) return;
   const turn = out.readings.map((r) => r.turnNs);
   const rTurn = ratio(turn);
 
@@ -1721,6 +1849,7 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
     turnRatio: Number(rTurn.toFixed(2)),
     turnWallUs: out.readings.map((r) => round(r.turnWallNs / 1000)),
     clockNs: Number(out.clockNs.toFixed(1)),
+    speedDrift: Number(speedDrift(out).toFixed(2)),
     marge: MARGE,
   })}`);
 
@@ -1728,6 +1857,7 @@ test.sequential('SEEN RED (axis A): the same criterion rejects a store that walk
   assert.ok(out.puits > 0, 'the sabotage did no work at all — this cell would then prove nothing');
   assert.ok(out.calls >= 4000, `only ${out.calls} requests were served by the sabotaged driver`);
   if (!resolutionFloorHolds(turn, out, ctx, 'A(sabotaged)')) return;
+  if (!speedHolds(out, ctx, 'A(sabotaged)')) return;
 
   // ⚠️ EXACTLY the assertion of cell ①, inverted, and sharing the same MARGE
   //    literally: weakening the margin up there turns THIS cell red in the same
@@ -1746,7 +1876,8 @@ test.sequential('SCALE-B (parallel agents): the daemon\'s cost per request does 
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=B iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis B (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(CONC_DRIVER, []);
+  const out = await runDriver(CONC_DRIVER, []).catch(skipIfSocketDied(ctx, 'B'));
+  if (out === null) return;
   const conns = out.readings.map((r) => r.conns);
   const turn = out.readings.map((r) => r.turnNs);
   // Marginal bytes RETAINED per connection ADDED at each level. Linear memory (a
@@ -1904,7 +2035,8 @@ test.sequential('SEEN RED (axis B): the same criterion rejects a daemon that wal
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=B(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis B (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(CONC_DRIVER, ['--sabotage']);
+  const out = await runDriver(CONC_DRIVER, ['--sabotage']).catch(skipIfSocketDied(ctx, 'B'));
+  if (out === null) return;
   const turn = out.readings.map((r) => r.turnNs);
   const rTurn = ratio(turn);
 
@@ -1940,7 +2072,8 @@ test.sequential('SCALE-D (contention): the cost of one critical section does not
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=D iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis D (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(CONT_DRIVER, []);
+  const out = await runDriver(CONT_DRIVER, []).catch(skipIfSocketDied(ctx, 'D'));
+  if (out === null) return;
   const disputants = out.readings.map((r) => r.disputants);
   const wall = out.readings.map((r) => r.murNsParOp);
   const cpu = out.readings.map((r) => r.cpuNsParOp);
@@ -2138,7 +2271,8 @@ test.sequential('SEEN RED (axis D): the same criterion rejects a lock whose crit
   const w = witness();
   console.log(`[scale-bench WITNESS] axis=D(sabotaged) iqr=${w.iqr.toFixed(2)} bar=${WITNESS_NOISE_BAR}`);
   if (w.loaded) { ctx.skip(`UNMEASURED: machine too loaded to decide axis D (witness IQR ${w.iqr.toFixed(2)} >= ${WITNESS_NOISE_BAR})`); return; }
-  const out = await runDriver(CONT_DRIVER, ['--sabotage']);
+  const out = await runDriver(CONT_DRIVER, ['--sabotage']).catch(skipIfSocketDied(ctx, 'D'));
+  if (out === null) return;
   const wall = out.readings.map((r) => r.murNsParOp);
   const rMur = ratio(wall);
 
@@ -2252,6 +2386,21 @@ async function withLossEnv(fn) {
 const PRETOOL_REQUEST_RETRIES = 25;
 const RETRYABLE_CONNECT_CODES = new Set(['ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET']);
 
+// 🔑 COUNTED SO THE NEXT OCCURRENCE IS DECIDABLE (2026-09-10) — a measurement,
+//    never a tolerance. SCALE-F was seen RED twice on a quiet machine at
+//    `accepted=25` for `N_REQ=24`, and NOTHING in the output could say whether
+//    the extra `connection` event came from this client's own retry (an
+//    `ECONNRESET` is reset AFTER the kernel accepted, so one retried request
+//    costs TWO accepts for ONE request) or from a connection nobody asked for.
+// 🛑 THE ASSERTION IS DELIBERATELY LEFT STRICT. The retry explanation is
+//    PLAUSIBLE AND UNPROVEN: the instrumented run came back `retries=0`,
+//    `accepted=24` — the defect did not reproduce, so the bracket that would
+//    have excused it was never exercised. Widening a judge on an untested
+//    cause is the exact fault this repository keeps paying for. Print first,
+//    decide when the number is in hand.
+let pretoolRetries = 0;
+function resetPretoolRetries() { pretoolRetries = 0; }
+
 /**
  * ONE REAL POST to the real daemon, over a REAL new TCP connection (`agent:
  * false` — Node's default global agent pools a socket across SEQUENTIAL
@@ -2286,7 +2435,19 @@ function pretoolRequest(port, toolUseId, frame, nbFrames, command) {
       });
       req.on('error', (err) => {
         if (triesLeft > 0 && err && RETRYABLE_CONNECT_CODES.has(err.code)) {
+          pretoolRetries += 1;
           resolve(attempt(triesLeft - 1));
+        } else if (err && RETRYABLE_CONNECT_CODES.has(err.code)) {
+          // 🔴 THE RETRIES ARE EXHAUSTED ON A KERNEL CONNECT CODE, which says the
+          //    machine could not CARRY this run, never that the delivery is
+          //    wrong. Marked like a driver's death so the cells render UNMEASURED
+          //    by name instead of reporting a regression that did not happen.
+          //    MEASURED 2026-09-20: a full-suite run produced TEN reds here,
+          //    every one of them `connect ETIMEDOUT 127.0.0.1`, while the same
+          //    cells pass alone.
+          reject(Object.assign(new Error('the client could not reach its own local daemon after '
+            + `${PRETOOL_REQUEST_RETRIES} immediate retries (${err.code}): the machine was too loaded `
+            + 'to carry this run, so nothing about the delivery is in question here.'), { socketDied: true }));
         } else {
           reject(err);
         }
@@ -2337,7 +2498,12 @@ function countTags(text, tag, m) {
 const LOSS_M = 6; // "m clearly under 32" — chunk count for cell E's document
 const LOSS_K_LEVELS = [32, 28, 24, 20, 16, 12, 8, LOSS_M];
 
-test.sequential('SCALE-E (delivery under loss): every chunk 1..m arrives exactly once as long as K >= m REAL connections succeed', async () => {
+test.sequential('SCALE-E (delivery under loss): every chunk 1..m arrives exactly once as long as K >= m REAL connections succeed', async (ctx) => {
+  // 🛑 THE SAME NON-DECISION AS THE DRIVER CELLS, AND FOR THE SAME REASON: a
+  //    connect that never reached our own LOCAL daemon is a statement about the
+  //    MACHINE. Every other failure — a missing chunk, a duplicate, an accept
+  //    count of zero — says something about the CODE and stays RED.
+  try {
   await withLossEnv(async () => {
     const hs = require_('../src/hooks/http-server.js');
     writeChunkyDoc('scale-e-marker.js', 'E-TAG', LOSS_M);
@@ -2370,9 +2536,17 @@ test.sequential('SCALE-E (delivery under loss): every chunk 1..m arrives exactly
       srv.close();
     }
   });
+  } catch (e) {
+    skipIfSocketDied(ctx, 'E')(e);
+  }
 });
 
-test.sequential('SEEN RED (axis E): reverting to per-URL chunk attribution loses named chunks under the SAME loss pattern', async () => {
+test.sequential('SEEN RED (axis E): reverting to per-URL chunk attribution loses named chunks under the SAME loss pattern', async (ctx) => {
+  // 🛑 THE SAME NON-DECISION AS THE DRIVER CELLS, AND FOR THE SAME REASON: a
+  //    connect that never reached our own LOCAL daemon is a statement about the
+  //    MACHINE. Every other failure — a missing chunk, a duplicate, an accept
+  //    count of zero — says something about the CODE and stays RED.
+  try {
   await withLossEnv(async () => {
     const hs = require_('../src/hooks/http-server.js');
     const frameSequencer = require_('../src/frame-sequencer-pure.js');
@@ -2404,6 +2578,9 @@ test.sequential('SEEN RED (axis E): reverting to per-URL chunk attribution loses
       srv.close();
     }
   });
+  } catch (e) {
+    skipIfSocketDied(ctx, 'E')(e);
+  }
 });
 
 // ── F ────────────────────────────────────────────────────────────────────
@@ -2414,7 +2591,12 @@ test.sequential('SEEN RED (axis E): reverting to per-URL chunk attribution loses
 //    server E and G drive, so a future refactor that quietly bypasses the
 //    socket (calling `handle()` directly "for speed") turns this cell RED
 //    by name instead of leaving E and G to certify a path nobody serves.
-test.sequential('SCALE-F (transport is real): the TCP accept path is actually exercised, never zero, one per request', async () => {
+test.sequential('SCALE-F (transport is real): the TCP accept path is actually exercised, never zero, one per request', async (ctx) => {
+  // 🛑 THE SAME NON-DECISION AS THE DRIVER CELLS, AND FOR THE SAME REASON: a
+  //    connect that never reached our own LOCAL daemon is a statement about the
+  //    MACHINE. Every other failure — a missing chunk, a duplicate, an accept
+  //    count of zero — says something about the CODE and stays RED.
+  try {
   await withLossEnv(async () => {
     const hs = require_('../src/hooks/http-server.js');
     fs.writeFileSync(path.join(LOSS_DOCS, 'f-loss.md'),
@@ -2425,6 +2607,7 @@ test.sequential('SCALE-F (transport is real): the TCP accept path is actually ex
     await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
     const port = srv.address().port;
     const N_REQ = 24;
+    resetPretoolRetries();
     try {
       for (let i = 0; i < N_REQ; i += 1) {
         // eslint-disable-next-line no-await-in-loop
@@ -2433,12 +2616,16 @@ test.sequential('SCALE-F (transport is real): the TCP accept path is actually ex
     } finally {
       srv.close();
     }
-    console.log(`[scale-bench SCALE-F] accepted=${accepted} requests=${N_REQ}`);
+    console.log(`[scale-bench SCALE-F] accepted=${accepted} requests=${N_REQ} retries=${pretoolRetries}`);
     assert.ok(accepted > 0,
       'ZERO real TCP connections were accepted while requests were served — this run measured an in-memory call, never the served transport');
     assert.equal(accepted, N_REQ,
-      `${accepted} connections accepted for ${N_REQ} requests emitted — the socket accept path is not the one actually answering`);
+      `${accepted} connections accepted for ${N_REQ} requests emitted (${pretoolRetries} client retries) — `
+      + 'the socket accept path is not the one actually answering');
   });
+  } catch (e) {
+    skipIfSocketDied(ctx, 'F')(e);
+  }
 });
 
 // ── G ────────────────────────────────────────────────────────────────────
@@ -2458,7 +2645,12 @@ const LOSS_G_M = 4;
 //    settling and the next one starting is the only cadence this cell needs.
 const LOSS_G_CADENCE_MS = 0;
 
-test.sequential('SCALE-G (production shape): repeated bursts of brand-new connections deliver with ZERO loss', async () => {
+test.sequential('SCALE-G (production shape): repeated bursts of brand-new connections deliver with ZERO loss', async (ctx) => {
+  // 🛑 THE SAME NON-DECISION AS THE DRIVER CELLS, AND FOR THE SAME REASON: a
+  //    connect that never reached our own LOCAL daemon is a statement about the
+  //    MACHINE. Every other failure — a missing chunk, a duplicate, an accept
+  //    count of zero — says something about the CODE and stays RED.
+  try {
   await withLossEnv(async () => {
     const hs = require_('../src/hooks/http-server.js');
     writeChunkyDoc('scale-g-marker.js', 'G-TAG', LOSS_G_M);
@@ -2495,6 +2687,9 @@ test.sequential('SCALE-G (production shape): repeated bursts of brand-new connec
     assert.equal(duplicatedTotal, 0,
       `${duplicatedTotal} chunk-deliveries duplicated across the same bursts — a document delivered twice is as silent a defect as one delivered zero times`);
   });
+  } catch (e) {
+    skipIfSocketDied(ctx, 'G')(e);
+  }
 });
 
 // ── H's negative-check ──────────────────────────────────────────────────
@@ -2547,4 +2742,41 @@ test.sequential('SEEN RED (axis H): the witness reddens on an injected defect wh
   } finally {
     witnessInternals.sample = realSample;
   }
+});
+
+// ── SEEN RED — `speedHolds`, both directions, on readings built in memory ──
+// 🛑 The real case cannot be summoned: a runner that slows down halfway is what
+//    happened on macOS on 2026-10-02, and no test can order a machine to do it.
+//    So the decision is driven with the SHAPE the driver prints (`turnCpuNs`,
+//    `pretoolCpuNs` per level), exactly like cell H drives `witness()` through
+//    its seam. A guard never seen refusing is a guard assumed to work; one that
+//    refuses a stable machine would silence axis A for ever.
+test('SEEN RED (speed drift): a machine that changed speed is UNMEASURED, a stable one decides', () => {
+  const levels = (turn, pretool) => ({
+    readings: turn.map((t, i) => ({ turnCpuNs: t, pretoolCpuNs: pretool[i] })),
+  });
+  const recorder = () => {
+    const said = [];
+    return { said, skip: (reason) => { said.push(reason); } };
+  };
+
+  // ① STABLE: the speeds a quiet machine prints (measured locally, ~5 % apart).
+  const calm = recorder();
+  assert.equal(speedHolds(levels([100, 104, 98, 102], [101, 99, 103, 100]), calm, 'A'), true,
+    'a stable machine must be ENTITLED to a verdict, or axis A would never decide again');
+  assert.deepEqual(calm.said, []);
+
+  // ② SLOWER TAIL: the 2026-10-02 macOS shape, half speed on the last levels.
+  const slowed = recorder();
+  assert.equal(speedHolds(levels([100, 100, 100, 100], [100, 100, 200, 210]), slowed, 'A'), false);
+  assert.equal(slowed.said.length, 1, 'a drifting machine must be named UNMEASURED, once');
+  assert.match(slowed.said[0], /^UNMEASURED: the machine changed speed during axis A/);
+
+  // ③ FASTER TAIL: a drift in the other direction flatters the ratio just as falsely.
+  const sped = recorder();
+  assert.equal(speedHolds(levels([200, 210, 100, 100], [100, 100, 100, 100]), sped, 'A'), false);
+
+  // ④ THE BAR ITSELF: at exactly `WITNESS_NOISE_BAR` the run cannot decide.
+  assert.equal(speedDrift(levels([100, 100, 150, 150], [100, 100, 100, 100])), WITNESS_NOISE_BAR);
+  assert.equal(speedHolds(levels([100, 100, 150, 150], [100, 100, 100, 100]), recorder(), 'A'), false);
 });

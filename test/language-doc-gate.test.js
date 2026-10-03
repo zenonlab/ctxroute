@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { verify, regenerate, extract } from '../src/docfacts.js';
 import { facts, DOC } from '../tools/language-doc.js';
-import { KNOWN, MODES, DRIFT_UNITS, RULE_KEYS, TRIGGERS } from '../src/frontmatter.js';
+import { knownKeys, MODES, DRIFT_UNITS, RULE_KEYS, TRIGGERS } from '../src/frontmatter.js';
 
 const read = () => readFileSync(DOC, 'utf8');
 
@@ -25,7 +25,7 @@ describe('gate: the language doc cannot contradict the code', () => {
     // something, and the engine constants themselves to be populated.
     const f = facts();
     expect(f.length, 'no derived fact').toBeGreaterThanOrEqual(3);
-    expect(KNOWN.length, 'KNOWN empty: the engine or the import is broken').toBeGreaterThan(5);
+    expect(knownKeys().length, 'KNOWN empty: the engine or the import is broken').toBeGreaterThan(5);
     expect(MODES.length).toBeGreaterThan(1);
     for (const x of f) expect(x.content.trim().length, `fact "${x.name}" EMPTY`).toBeGreaterThan(0);
   });
@@ -41,7 +41,7 @@ describe('gate: the language doc cannot contradict the code', () => {
     //    READABLE by the agent — that is what closes the AMPUTATION (the
     //    founding defect: a word lost in a copy, breaking nothing).
     const text = read();
-    const missingOnes = [...KNOWN, ...RULE_KEYS, ...TRIGGERS, ...MODES, ...DRIFT_UNITS]
+    const missingOnes = [...knownKeys(), ...RULE_KEYS, ...TRIGGERS, ...MODES, ...DRIFT_UNITS]
       .filter((word) => !text.includes(`\`${word}\``));
     expect(missingOnes, `engine words ABSENT from the doc: ${missingOnes.join(', ')}`).toEqual([]);
   });

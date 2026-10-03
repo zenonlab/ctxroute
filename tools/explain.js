@@ -32,6 +32,7 @@
 //   node explain.js --file C:/path/to/gate.js
 //   node explain.js --doc zone-declaration --tool Bash --input '{...}'
 //   node explain.js --tool WebFetch --json
+//   node explain.js --tool mcp__odoo__odoo_call --input '{}' --response '{"state":"posted"}'
 // ═══════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -44,6 +45,11 @@ const { rulesFromCorpus } = require('../src/loader');
 const fileSource = require('../src/sources/file');
 const toolSource = require('../src/sources/tool');
 const paths = require('../src/paths');
+const { responseValues } = require('../src/response-pure');
+// 🛑 EVERY exit goes through `exitAfterFlush` (2026-10-01): `process.exit` cut a
+//    `--json` verdict at 64 KB on a POSIX pipe — an agent parsing it would read a
+//    broken document as a verdict. It RETURNS, so each call below ends its path.
+const { exitAfterFlush } = require('../src/stdout-exit');
 
 // ── ARGUMENTS ──────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -63,6 +69,16 @@ function parseArgs(argv) {
     else if (k === '--doc') { a.doc = v; i++; }
     else if (k === '--cwd') { a.cwd = v; a.cwdFromFlag = true; i++; }
     else if (k === '--json') a.json = true;
+    // 🔑 THE MOMENT AFTER THE TOOL ANSWERED (2026-09-23): the answer, as the harness hands it
+    //    (`tool_response`). Absent = the moment BEFORE the action, as every earlier call of this tool.
+    // ⚠️ A JSON value is taken as JSON; anything else is taken as the TEXT it is — an answer is
+    //    very often plain text, and refusing it would make this tool unable to replay most of them.
+    else if (k === '--response') {
+      let value = v;
+      try { value = JSON.parse(v); } catch { /* plain text: kept as is */ }
+      a.after = { response: value };
+      i++;
+    }
   }
   return a;
 }
@@ -76,8 +92,10 @@ function verdict(config, payload) {
   //    invisible HERE but applied by the gate — the tool would describe an
   //    engine that does not exist, the exact defect its own doc forbids
   //    (same class as the cascade).
-  const r = gate.decide(config, acc.decls, acc.matched, {}, 0, acc.owner, payload.toolName);
-  return { acc, decision: r.decision, inject: r.inject, filteredOut: r.filteredOut };
+  // ⚠️ 9th argument = THE MOMENT (2026-09-23): without it every doc waiting for an answer would be
+  //    described as "never delivered" — an engine that does not exist, again.
+  const r = gate.decide(config, acc.decls, acc.matched, {}, 0, acc.owner, payload.toolName, undefined, payload.after);
+  return { acc, decision: r.decision, inject: r.inject, filteredOut: r.filteredOut, categoryOut: r.categoryOut };
 }
 
 // ── PROBES: the "why NOT", by re-querying the real sources ──────────────
@@ -233,6 +251,7 @@ function render(a, res, diag, config) {
   L.push('  params : ' + JSON.stringify(a.toolInput));
   // 🛑 ALWAYS printed WITH its origin: a reader who cannot see which directory was judged
   //    cannot tell a real verdict from a verdict about another gesture.
+  if (a.after !== undefined) L.push('  moment : AFTER the tool answered — response = ' + JSON.stringify(a.after.response).slice(0, 200));
   L.push('  cwd    : ' + a.cwd + (a.cwdFromFlag ? '   (from --cwd)' : '   (DEFAULTED to process.cwd() — pass --cwd to replay a recorded payload)'));
   L.push('');
   if (diag) {
@@ -262,7 +281,32 @@ function render(a, res, diag, config) {
     L.push('MATCHED BUT DISCARDED BY THE GLOBAL FILTER (filterMode/filterList, cascade defaults.{source} > global) — ' + filtered.length);
     for (const d of filtered) L.push('  🚫 ' + d);
   }
-  const discarded = res.acc.matched.filter((d) => !res.inject.includes(d) && !filtered.includes(d));
+  // ⚠️ THE MOMENT IS A THIRD REASON, never merged with the other two (2026-09-23): a doc waiting for
+  //    the tool's answer is not discarded by a cadence, it belongs to the OTHER moment of the action,
+  //    or the answer did not satisfy its filter. Mixing it in would send the author to the wrong cause.
+  // ⚠️ SETS, never `includes` inside `filter` (2026-09-23): a lookup inside a traversal is a nested
+  //    traversal, which the complexity gate counts — membership is now a lookup.
+  const injectedSet = new Set(res.inject);
+  const filteredSet = new Set(filtered);
+  const waiting = res.acc.matched.filter((d) => !injectedSet.has(d) && !filteredSet.has(d)
+    && (gate.responseForDoc(config, res.acc.decls[d], res.acc.owner[d]) !== null || a.after !== undefined));
+  if (waiting.length) {
+    L.push('');
+    L.push(a.after === undefined
+      ? 'MATCHED BUT WAITING FOR THE TOOL\'S ANSWER (`response`) — decided AFTER the action, replay with --response — ' + waiting.length
+      : 'MATCHED BUT NOT FOR THIS ANSWER (decided before the action, or its `response` filter refused the answer) — ' + waiting.length);
+    for (const d of waiting) {
+      const filter = gate.responseForDoc(config, res.acc.decls[d], res.acc.owner[d]);
+      L.push('  ⏳ ' + d + (filter === null ? '   (does not wait for an answer)' : '   response=' + JSON.stringify(filter)));
+    }
+    // 🛑 A bound crossed in silence is the ㊵ defect: say it when the answer was cut.
+    if (a.after !== undefined) {
+      const cut = responseValues(a.after.response).truncated;
+      if (cut) L.push('  ⚠️ the answer was CUT (' + cut + ' bound): a `scope` beyond it cannot see its text');
+    }
+  }
+  const waitingSet = new Set(waiting);
+  const discarded = res.acc.matched.filter((d) => !injectedSet.has(d) && !filteredSet.has(d) && !waitingSet.has(d));
   if (discarded.length) {
     L.push('');
     L.push('MATCHED BUT DISCARDED BY THE CADENCE — ' + discarded.length);
@@ -275,24 +319,24 @@ function render(a, res, diag, config) {
 
 function main() {
   const a = parseArgs(process.argv.slice(2));
-  if (a.bad) { console.error(a.bad); process.exit(2); }
+  if (a.bad) { console.error(a.bad); return exitAfterFlush(2); }
   const config = loadConfig();
-  const payload = { toolName: a.toolName, toolInput: a.toolInput, cwd: a.cwd };
+  const payload = { toolName: a.toolName, toolInput: a.toolInput, cwd: a.cwd, after: a.after };
   const res = verdict(config, payload);
 
   let diag = null;
   if (a.doc) {
     const found = findDoc(a.doc);
-    if (!found) { console.error('doc not found in the file corpus: ' + a.doc); process.exit(2); }
+    if (!found) { console.error('doc not found in the file corpus: ' + a.doc); return exitAfterFlush(2); }
     diag = diagnose(found.doc, found.text, payload);
   }
 
   if (a.json) {
-    console.log(JSON.stringify({ payload: { toolName: a.toolName, toolInput: a.toolInput }, inject: res.inject, decision: res.decision, matched: res.acc.matched, diagnostic: diag ? { doc: diag.doc, injects: diag.injects, motif: diag.motif, trap: diag.trap || null, detail: diag.detail || null } : null }, null, 2));
+    console.log(JSON.stringify({ payload: { toolName: a.toolName, toolInput: a.toolInput, after: a.after || null }, inject: res.inject, decision: res.decision, matched: res.acc.matched, diagnostic: diag ? { doc: diag.doc, injects: diag.injects, motif: diag.motif, trap: diag.trap || null, detail: diag.detail || null } : null }, null, 2));
   } else {
     console.log(render(a, res, diag, config));
   }
-  process.exit(0);
+  return exitAfterFlush(0);
 }
 
 // ⚠️ FAIL-LOUD, the OPPOSITE of the hooks (mute fail-open): a diagnostic that
@@ -305,7 +349,7 @@ if (require.main === module) {
   } catch (e) {
     console.error('[explain] TOOL FAILURE (this is NOT a verdict on the engine): ' + (e && e.message));
     console.error('  corpus read: ' + paths.fileDocsDir());
-    process.exit(2);
+    exitAfterFlush(2);
   }
 }
 

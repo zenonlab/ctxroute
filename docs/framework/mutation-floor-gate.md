@@ -1,6 +1,7 @@
 ---
 match: mutation-plancher-gate
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # mutation-plancher-gate — Stryker's GLOBAL threshold is blind to one file collapsing

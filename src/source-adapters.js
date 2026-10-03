@@ -51,6 +51,12 @@ const gate = require('./gate');
 //    it here would make a 2nd truth that would diverge at the first change
 //    of chunk format.
 const budget = require('./budget');
+// ⚠️ THE BADGE LABEL IS A PURE DECISION AND LIVES IN ITS OWN MODULE so Stryker
+//    can mutate it (2026-09-13). 🛑 NEVER inline it back here: THIS file does
+//    I/O, so it is outside the `mutate` list — the decision would silently stop
+//    being judged while the file still LOOKS covered. Same split, same criterion
+//    as `doctor-wiring-pure.js`: MUTABILITY, never size.
+const { badgeLabel } = require('./badge-label-pure');
 const { parse, validate } = require('./frontmatter');
 // ⚠️ `readDoc` = the SAME I/O module as `readCorpus`, and that is deliberate: the
 //    skill body is the only thing this file reads outside a corpus root, and it
@@ -58,7 +64,7 @@ const { parse, validate } = require('./frontmatter');
 //    default). A bare `fs.readFileSync` here is what left the 90–120 KB skill
 //    bodies re-read on every daemon request until 2026-08-21.
 const { readCorpus, readDoc } = require('./corpus');
-const { rulesFromCorpus } = require('./loader');
+const { rulesFromParsed } = require('./loader');
 const fileSource = require('./sources/file');
 const toolSource = require('./sources/tool');
 const mcpSource = require('./sources/mcp');
@@ -72,14 +78,29 @@ const fileAdapter = {
   id: 'file',
   collect(config, payload, acc) {
     const corpus = readCorpus(paths.fileDocsDir(), 'docs/');
+    // 🔴 THE CORPUS IS PARSED **ONCE**, AND THAT IS A MEASURED FIX (2026-09-18).
+    //    This block used to call `rulesFromCorpus(corpus, …)` — which parses and
+    //    validates all 795 documents — and then loop over the SAME texts calling
+    //    `parse` + `validate` again to fill `acc.decls`/`acc.bodies`. MEASURED on
+    //    the real corpus: 3.30 ms + 2.67 ms, i.e. **2.67 ms of strictly duplicated
+    //    work per collection**, 24 % of a healthy 11 ms request, paid on EVERY tool
+    //    call of EVERY agent. Found by profiling the LIVE daemon with V8's own
+    //    profiler (`parse` 16.86 % of samples), never by reading the code.
+    // 🔑 IT IS SCALING WORK, NOT POLISH: this daemon is SINGLE-THREADED, so what a
+    //    request costs IS the ceiling on how many agents one instance can serve.
+    // 🛑 THE PARSE STAYS IN ONE PLACE. `parsed` is built here and handed to
+    //    `rulesFromParsed`; `rulesFromCorpus` keeps its exact old behaviour for
+    //    every caller that has only raw text (lint, collisions, explain, reach),
+    //    so the differentials compare an UNCHANGED path. Never re-parse `d.text`
+    //    below this line.
+    const parsed = corpus.map((d) => ({ doc: d.doc, ...parse(d.text) }));
     // ⚠️ PER-SOURCE DEFAULT of the filters (20/08/2026): the adapter POSES the block, it
     //    resolves NOTHING — the cascade lives in `lib.heriterFiltres`, reached through the
     //    single road `rulesOfDecl`. An adapter that resolved would be class ㊳ all over again.
-    const rules = rulesFromCorpus(corpus, (config && config.defaults && config.defaults.file) || undefined);
-    for (const d of corpus) {
-      const { data: fm, body } = parse(d.text);
-      if (validate(fm).length === 0) acc.decls[d.doc] = fm;
-      acc.bodies[d.doc] = body;
+    const rules = rulesFromParsed(parsed, (config && config.defaults && config.defaults.file) || undefined);
+    for (const p of parsed) {
+      if (validate(p.data).length === 0) acc.decls[p.doc] = p.data;
+      acc.bodies[p.doc] = p.body;
     }
     // ⚠️ protect-files PARITY: a doc with an EMPTY body (after frontmatter strip)
     //    = nonexistent, including for an `enforce` refusal. Filter BEFORE decide().
@@ -110,62 +131,6 @@ const fileAdapter = {
     return label ? '📄 doc: ' + label : '';
   },
 };
-
-/**
- * Short name of the document announced by the "📄 doc: …" badge.
- *
- * ⚠️ TWO SOURCES, IN THIS ORDER, and it is not a detail (06/08/2026):
- *    ① the `[source: …]` tag of the emitted text — that is protect-files PARITY,
- *       byte-wise, and it must remain the nominal path;
- *    ② failing that, the label the adapter has ALREADY supplied in `acc.labels`.
- * ⚠️ ② IS NOT DECORATIVE — REAL BUG: the `[source:]` tag lives at the END of the
- *    document, so **no chunk except the last one carries it**. A chunked
- *    doc then fell back on `docLabel`'s "markdown title" fallback,
- *    which caught the SEAL FOOTER: the badge displayed
- *    "📄 doc: ##FIN:7426e64b###". Fixed on both sides (CommonMark-compliant ATX
- *    regex in gate.js + this fallback), because only one of the two
- *    fixes would leave either a false name, or NO name.
- * 🛑 NEVER invert the order: reading `acc.labels` first would change the badge
- *    of the nominal case and break the parity differentials.
- */
-// ⚠️ MAX NUMBER OF NAMES CITED. Beyond that, "+N": a badge is a STATUS
-//    LINE, not a table of contents — 12 names would make it unreadable, hence ignored.
-const MAX_NAMES = 3;
-
-function shortName(id, ctx) {
-  const brut = ctx.acc.labels[id];
-  return brut ? String(brut).split(/[\\/]/).pop().replace(/\.md$/, '') : '';
-}
-
-function badgeLabel(injected, ctx) {
-  // ⚠️ DEDUP BY DOCUMENT (07/08/2026): `injected` carries SEGMENTS, hence
-  //    `doc#2/7` and `doc#3/7` of the SAME doc. Without `baseId` we would cite the
-  //    same name twice — the trap already paid on `budget.announcement` on 05/08.
-  const bases = [...new Set(injected.map((i) => budget.baseId(i)))];
-
-  // ⚠️ NOMINAL CASE UNTOUCHED — A SINGLE DOC: historical path, BYTE-wise
-  //    (`[source:]` tag first, `acc.labels` as fallback). That is the
-  //    protect-files parity, sealed by `pretool-differential`. Touching this path
-  //    would turn the differential red without any engine having changed.
-  if (bases.length <= 1) {
-    const parTag = gate.docLabel(ctx.fullDoc);
-    if (parTag) return parTag;
-    return shortName(bases[0] !== undefined ? bases[0] : injected[0], ctx);
-  }
-
-  // 🔴 SEVERAL DOCS IN THE SAME FRAME — THE DEFECT FIXED HERE (07/08/2026).
-  //    The code read `injected[0]`: four documents delivered, ONLY ONE named.
-  //    REAL consequence, not cosmetic: the maintainer saw "chunk 1/8",
-  //    "chunk 2/8", then another name — and concluded that the delivery
-  //    had STOPPED at 2/8. It was complete. A morning spent
-  //    diagnosing a nonexistent failure, on the strength of a false counter.
-  // ⚠️ LESSON TO KEEP: a correct but UNREADABLE transport gets mistaken
-  //    for a failure. Display is part of the contract, not decoration.
-  const names = bases.map((b) => shortName(b, ctx)).filter(Boolean);
-  if (names.length === 0) return '';
-  const citedNames = names.slice(0, MAX_NAMES).join(' · ');
-  return names.length > MAX_NAMES ? citedNames + ' +' + (names.length - MAX_NAMES) : citedNames;
-}
 
 // ── "MCP" SOURCE: docs/mcp/ of the repo, pure selection sources/mcp.js ──
 const mcpAdapter = {

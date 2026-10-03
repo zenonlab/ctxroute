@@ -14,6 +14,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stateStores } from '../src/memory-store-pure.js';
 
 import {
   resolveStore, BACKENDS, docLockDir, turnLockDir, lockDirForKey, TURN_KEYS, DOC_KEYS,
@@ -99,13 +100,17 @@ test('the `client` backend hands back the DISK pair — the daemon owns nothing 
 //    the prefixes too and would make this cell green on a loop that forgot one.
 
 test('every purged store prefix has a DECLARED lock class — and no class is dormant', () => {
+  // ✅ 23/09/2026: the reset sweeps the STORE REGISTRY and the lock classes are DERIVED from
+  //    that same registry — the cell now checks the reset really iterates it, and that every
+  //    declared store resolves to a lock (an unknown `lock` value would be refused at runtime).
   const source = fs.readFileSync(
     path.join(import.meta.dirname, '..', 'src', 'hooks', 'ctxroute-reset.js'), 'utf8');
-  const bloc = /for\s*\(\s*const\s+prefix\s+of\s*\[([^\]]*)\]/.exec(source);
-  assert.ok(bloc, 'the purge loop was not found — this cell measured NOTHING, it did not agree');
-  const swept = [...bloc[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  assert.ok(/for\s*\(\s*const\s*\{\s*prefix\s*\}\s*of\s+stateStores\(\)/.test(source),
+    'the purge loop no longer iterates stateStores() — a hand list would drift from the lock classes again');
+  const swept = stateStores().map((s) => s.prefix);
   assert.ok(swept.length >= 5,
-    `only ${swept.length} prefixes read out of the purge loop — the parse is broken`);
+    `only ${swept.length} stores declared — the registry was emptied`);
+  for (const p of swept) assert.doesNotThrow(() => lockDirForKey(`${p}scope`), `no lock class for ${p}`);
 
   const declares = [...TURN_KEYS, ...DOC_KEYS];
   assert.deepStrictEqual([...swept].sort(), [...declares].sort(),

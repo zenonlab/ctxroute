@@ -260,6 +260,53 @@ and half of it is worthless.
 
 ---
 
+## Bounding the accept queue — declared in code, the OS still has final say
+
+🔑 **BORN 2026-09-17, after a burst of `ECONNREFUSED` on Windows walked the full solution space
+(`http-lane.md`).** `http-server.js`'s own `LISTEN_BACKLOG = 65535` governs the queue **only on the
+Windows eager-bind path**. Linux and macOS are socket-activated (see above): the SUPERVISOR binds the
+port, so the daemon's own constant never runs there — the accept queue is a property of the UNIT, not
+of our code, on those two.
+
+**Linux.** `ctxroute-http.socket` now declares `Backlog=65535` explicitly (systemd.socket(5)) — modern
+systemd already defaults near-maximum, but pre-2020 systemd defaulted to plain `SOMAXCONN` (128),
+which is exactly the ceiling class this project spent 2026-09-16/17 diagnosing. Either way, the
+**kernel** still clamps whatever the unit asks for to `net.core.somaxconn` — man7.org, listen(2):
+*"If the backlog argument is greater than the value in /proc/sys/net/core/somaxconn, then it is
+silently capped to that value."* Default is 128 pre-5.4, 4096 on 5.4+. If a real deployment needs
+more than the kernel default, raise it explicitly (system-wide, needs root — same class of step as
+the journald ceiling above, never bundled into the user-scope install):
+
+```ini
+# /etc/sysctl.d/99-ctxroute.conf   (system-wide, needs root)
+net.core.somaxconn = 65535
+```
+
+Apply once with `sudo sysctl --system` (or reboot); `install-linux.sh` deliberately stays
+`systemctl --user` and does **not** touch this file — a user-scope install must never silently
+require root.
+
+**macOS.** **NO EQUIVALENT EXISTS.** launchd's socket-activation `Sockets` dictionary was checked
+key by key against its own manual (`launchd.plist(5)`, keys `SockType` / `SockPassive` /
+`SockNodeName` / `SockServiceName` / `SockFamily` / `SockProtocol` / `SockPathName` /
+`SecureSocketWithKey` / `SockPathOwner` / `SockPathGroup` / `SockPathMode` / `Bonjour` /
+`MulticastGroup`) — none governs the listen queue. launchd's own internal default is neither
+documented nor configurable from the plist. 🛑 **This is a real, sourced gap, not a missing search.**
+The closure: stop using socket activation, bind directly with the same `LISTEN_BACKLOG` constant
+Windows already uses — trading away the stale-code queue-during-restart benefit socket activation
+gives. ✅ **WIRED 2026-09-17, AS A DELIBERATE ALTERNATIVE, NEVER THE DEFAULT.**
+`CTXROUTE_MACOS_MODE=eager sh service/install-macos.sh install` installs
+`com.ctxroute.http.eager.plist` instead (direct bind, `RunAtLoad`+`KeepAlive`, no shim, no compiler
+needed, port read from `paths.httpEndpoint()` like every other lane) — the default
+(`CTXROUTE_MACOS_MODE` unset, or `=socket`) stays byte-for-byte the install this script always did.
+A dedicated `macos-eager` CI job (`.github/workflows/service-units.yml`) installs, verifies it
+answers, and uninstalls it on a real rented Mac — no window-closed proof and no shim-sabotage cell
+there, since this mode neither holds the socket across a death nor compiles anything, so neither
+property exists to certify. 🛑 Choosing `eager` on a real deployment is still a real trade-off, made
+per machine, never a blanket default — read both plists' headers first.
+
+---
+
 ## Installing (for the day the switch-over is decided)
 
 🛑 **THE PROCEDURE IS NOT WRITTEN HERE ANY MORE — IT IS A SCRIPT PER OS, AND THAT IS THE POINT.**

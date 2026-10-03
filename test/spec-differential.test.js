@@ -37,6 +37,16 @@ import { matchingDocs as engineMcp } from '../src/sources/mcp.js';
 import { matchingSkills } from '../src/sources/skill.js';
 import { injects, toolInjects, skillInjects, mcpCandidates } from '../src/language-spec.js';
 
+// ⚠️ A BOUND, NEVER A WAIT: no test here is slowed down, only one that exceeds it is cut.
+//    MEASURED 2026-10-02: the whole-domain cell takes 3.1 s cold on the maintainer's machine,
+//    and ~30 s on a GitHub runner during Stryker's dry run (instrumentation + perTest coverage
+//    + 3 runners). Its domain doubled on 2026-09-23 (408,996 → 883,386 cases) and nobody moved
+//    the old 30 s bound: the dry run passed on 2026-10-01 and timed out on 2026-10-02, so the
+//    WHOLE mutation verdict died on a ceiling, not on a defect. Four times the observed worst.
+// 🛑 If the domain grows again, re-measure under instrumentation and move THIS line, never
+//    shrink the domain to fit the clock.
+const EXHAUSTIVE_BOUND_MS = 120000;
+
 const A = ['aaa', 'bbb', 'ccc'];
 const sousEnsembles = (xs) => {
   const out = [];
@@ -68,6 +78,13 @@ function gestes() {
       out.push({ toolName: 'Bash', toolInput: { command: `cd ~/w/${a} && node ${b}` } });
       out.push({ toolName: 'Bash', toolInput: { command: `${a} --exclude ${b}`, cwd: `/w/${b}` } });
       out.push({ toolName: 'apply_patch', toolInput: { input: `*** Update File: ${a}/${b}.js` } });
+      // ⚠️ EVERY PATCH VERB AND EVERY PLACE A HARNESS PUTS THE BODY (23/09/2026): the domain held
+      //    only `Update` in `input`, so an engine that stopped reading `Delete` stayed GREEN here —
+      //    measured by sabotage. Add + Delete, the `patch` and `command` carriers, and a body
+      //    naming two files (every line must be read, not only the first).
+      out.push({ toolName: 'apply_patch', toolInput: { patch: `*** Delete File: ${a}/${b}.js` } });
+      out.push({ toolName: 'apply_patch', toolInput: { command: `*** Add File: ${a}/${b}.js` } });
+      out.push({ toolName: 'apply_patch', toolInput: { input: `*** Update File: /u/${b}.js\n*** Delete File: /d/${a}.js` } });
       out.push({ toolName: 'Read', toolInput: { remotePath: `/srv/${a}`, path: `/opt/${b}` } });
       out.push({ toolName: 'mcp__srv__outil', toolInput: { args: { filePath: `/x/${a}`, mode: b } } });
       // ⚠️ BOUNDARY BETWEEN TWO PARAMS (53bis, 15/08/2026): a pattern WITH A SPACE must
@@ -180,7 +197,7 @@ test('⓪ the DOMAIN exercises every matching operator of the vocabulary', () =>
   );
 });
 
-test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', { timeout: 30000 }, () => {
+test('SPEC ⟷ ENGINE: EXHAUSTIVE conformance over the whole domain', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const G = gestes();
   const R = rules();
   const divergences = [];
@@ -222,7 +239,7 @@ function corpsDeGeste() {
   return out;
 }
 
-test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', { timeout: 30000 }, () => {
+test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const fms = [];
   for (const tool of [['aaa'], ['aaa', 'bbb'], ['*'], 'aaa']) {
     for (const exclude of sousEnsembles(A)) {
@@ -253,7 +270,7 @@ test('SPEC ⟷ ENGINE (source `tool`): EXHAUSTIVE conformance', { timeout: 30000
   assert.deepStrictEqual(divergences.slice(0, 5), [], `${divergences.length} divergence(s) on the tool source`);
 });
 
-test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', { timeout: 30000 }, () => {
+test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   // ⚠️ The order IS PART of the semantics (global → specific = the hierarchy
   //    lives in the path): we compare LISTS, never sets.
   const names = ['mcp__srv__outil', 'mcp__srv__', 'mcp__srv', 'mcp__a_b__c', 'mcp__a.b__c', 'Read', '', 'mcp____x'];
@@ -291,7 +308,7 @@ test('SPEC ⟷ ENGINE (source `mcp`): EXHAUSTIVE conformance, order included', {
   assert.deepStrictEqual(divergences.slice(0, 5), [], `${divergences.length} divergence(s) on the mcp source`);
 });
 
-test('SPEC ⟷ ENGINE (source `skill`): EXHAUSTIVE conformance over the 3 dimensions', { timeout: 30000 }, () => {
+test('SPEC ⟷ ENGINE (source `skill`): EXHAUSTIVE conformance over the 3 dimensions', { timeout: EXHAUSTIVE_BOUND_MS }, () => {
   const entrees = [];
   const filterCombinations = [];
   for (const exclude of sousEnsembles(A)) for (const scope of sousEnsembles(A)) filterCombinations.push({ scope, exclude });

@@ -93,7 +93,13 @@ test('REAL SABOTAGE: each "pure" module makes its gate GO RED when impurified', 
     //    placeholder (measured 03/08/2026). A test depending on the network is
     //    a test that lies on an outage day, and a vector for unwanted code
     //    execution.
-    const BIN = path.join(HERE, '..', 'node_modules', 'dependency-cruiser', 'bin', 'dependency-cruise.mjs');
+    // 🔴 THE BIN PATH IS READ FROM THE PACKAGE'S OWN `bin` DECLARATION, never
+    //    typed (2026-10-01): 18.5.0 renamed `bin/dependency-cruise.mjs` to
+    //    `bin/dependency-cruiser.mjs`, and the typed path made this gate fail
+    //    on a MISSING FILE — a red that said nothing about purity.
+    const PKG_DIR = path.join(HERE, '..', 'node_modules', 'dependency-cruiser');
+    const PKG = JSON.parse(fs.readFileSync(path.join(PKG_DIR, 'package.json'), 'utf8'));
+    const BIN = path.join(PKG_DIR, PKG.bin['dependency-cruise']);
     let output = '';
     try {
       execFileSync(process.execPath, [BIN, '--config', CONFIG, '.'], { cwd: bac, encoding: 'utf8' });

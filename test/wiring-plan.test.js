@@ -66,6 +66,80 @@ const manifest = (over = {}) => ({
   ...over,
 });
 
+// ── THE MOMENT AFTER THE TOOL ANSWERED (2026-09-23): the SAME gate shell on a second event, with
+//    its OWN bandwidth. Inputs copied from the real manifest's shape (`wiring.json`).
+const withAfter = () => manifest({
+  consumers: [
+    { module: 'src/hooks/doc-inject.js', event: 'PreToolUse', matcher: '*', framed: true },
+    { module: 'src/hooks/doc-inject.js', event: 'PostToolUse', matcher: '*', framed: 'afterFrames' },
+    { module: 'src/hooks/ctxroute-reset.js', event: 'PreCompact', matcher: null, timeout: 5 },
+  ],
+});
+
+test('AFTER: the gate shell is wired on BOTH events, the after moment with ITS bandwidth and coordinates', () => {
+  const out = plan(withAfter(), machine({ afterFrames: 2 }));
+  const pre = out.filter((d) => d.event === 'PreToolUse');
+  const post = out.filter((d) => d.event === 'PostToolUse');
+  assert.strictEqual(pre.length, 3, 'the action keeps `frames`');
+  assert.deepStrictEqual(post.map((d) => d.command), [
+    'node C:/fixture/ctxroute/src/hooks/doc-inject.js --client --frame 1 --frames 2',
+    'node C:/fixture/ctxroute/src/hooks/doc-inject.js --client --frame 2 --frames 2',
+  ]);
+  assert.ok(post.every((d) => d.timeout === 7), 'the after frames take the gate bound, like the action frames');
+  // On http the coordinates travel in the query, with the after bandwidth as the total.
+  const http = plan({ ...withAfter(), transport: { kind: 'http' } }, machine({ afterFrames: 2 }));
+  // ONE traversal (`flatMap`), never `filter().map()`: a chain counts as a nested traversal.
+  assert.deepStrictEqual(http.flatMap((d) => (d.event === 'PostToolUse' ? [d.url] : [])), [
+    'http://127.0.0.1:8787/pretool?frame=1&frames=2',
+    'http://127.0.0.1:8787/pretool?frame=2&frames=2',
+  ]);
+});
+
+test('AFTER: an invalid `afterFrames` is a NAMED refusal — a typo never reads as "off"', () => {
+  for (const bad of [-1, 1.5, '2', '0', false]) {
+    expect(() => plan(withAfter(), machine({ afterFrames: bad }))).toThrow(/framed on `afterFrames`, which must be 0 \(off\) or an integer >= 1/);
+  }
+  // A manifest with no after consumer never reads it: the historical machine stays valid.
+  assert.doesNotThrow(() => plan(manifest(), machine()));
+  // ONE after frame is a legitimate bandwidth (the smallest), never refused.
+  const one = plan(withAfter(), machine({ afterFrames: 1 })).filter((d) => d.event === 'PostToolUse');
+  assert.deepStrictEqual(one.map((d) => d.command), ['node C:/fixture/ctxroute/src/hooks/doc-inject.js --client --frame 1 --frames 1']);
+});
+
+// 🔑 OFF BY DEFAULT (2026-09-23, operator's decision): absent or 0 ⇒ the moment after the answer
+//    writes NOTHING, and everything else is byte-identical to a manifest that never declared it.
+//    It was a refusal, so a clean install without the key could not generate its wiring at all.
+/** The gate declarations wired AFTER the answer — one traversal, kept out of the loop below. */
+const afterGateDeclarations = (out) => out.filter((d) => d.event === 'PostToolUse' && /doc-inject/.test(JSON.stringify(d)));
+
+test('AFTER: `afterFrames` absent or 0 switches the moment OFF — no declaration, the rest untouched', () => {
+  // The SAME manifest with the after consumer removed — the exact wiring "off" must equal.
+  const m = withAfter();
+  const without = plan({ ...m, consumers: m.consumers.filter((c) => c.framed !== 'afterFrames') }, machine());
+  for (const off of [undefined, null, 0]) {
+    const out = plan(withAfter(), machine({ afterFrames: off }));
+    assert.equal(afterGateDeclarations(out).length, 0,
+      `afterFrames ${JSON.stringify(off)} must wire no after-answer declaration`);
+    assert.deepStrictEqual(out, without, 'switching the moment off must leave every other declaration exactly as before');
+  }
+});
+
+test('`framed: false` stays what it always was — an ordinary, non-framed consumer (parity)', () => {
+  const out = plan(manifest({
+    consumers: [{ module: 'tools/doctor.js', event: 'SessionStart', framed: false, timeout: 15 }],
+  }), machine());
+  assert.deepStrictEqual(out.map((d) => [d.command, d.timeout]), [['node C:/fixture/ctxroute/tools/doctor.js', 15]]);
+});
+
+test('AFTER: a module is unique PER EVENT — the same event twice is still refused', () => {
+  expect(() => plan(manifest({
+    consumers: [
+      { module: 'src/hooks/doc-inject.js', event: 'PostToolUse', matcher: '*', framed: 'afterFrames' },
+      { module: 'src/hooks/doc-inject.js', event: 'PostToolUse', matcher: 'Read', framed: 'afterFrames' },
+    ],
+  }), machine({ afterFrames: 2 }))).toThrow(/declared twice on "PostToolUse"/);
+});
+
 test('a framed consumer is repeated once per frame, each copy carrying its own coordinates', () => {
   const out = plan(manifest(), machine());
   const gate = out.filter((d) => d.command.includes('doc-inject.js'));
@@ -466,7 +540,7 @@ test('every malformed manifest is a NAMED refusal, never a silently shorter wiri
   }), machine())).toThrow(/`args` is a list of non-empty strings/);
   expect(() => plan(manifest({
     consumers: [{ module: 'tools/doctor.js', event: 'SessionStart', framed: 'yes' }],
-  }), machine())).toThrow(/`framed` is a boolean/);
+  }), machine())).toThrow(/`framed` is true, false or "afterFrames"/);
   expect(() => plan(manifest({
     consumers: [{ module: 'tools/doctor.js', event: 'SessionStart', args: ['{home}'] }],
   }), machine())).toThrow(/unknown placeholder/);
@@ -801,4 +875,60 @@ test('`http` + `stateLane: "files"` is a SPLIT BRAIN, and the generator refuses 
     'The file lane on the spawn transport was refused: that is the wiring every harness without an http handler runs, and it has ONE memory.');
   assert.strictEqual(plan(manifest({ transport: endpoint, stateLane: 'client' }), machine()).length, 5,
     'The live wiring itself was refused — the daemon owns the state and every peer names the same authority.');
+});
+
+// ── THE FRAMES SPREAD ACROSS THE LISTENING POINTS (2026-09-18) ───────────────
+// 🔑 WHY IT MATTERS AND WHY A GENERATOR CARRIES IT: the accept queue is capped
+//    PER SOCKET, so N sockets are N separate queues. A daemon that opens four and
+//    a wiring that posts every frame to the first would leave three idle —
+//    capacity that EXISTS and nobody reaches, which is worse than none because a
+//    healthy start line reads as a margin.
+test('the frames are SPREAD over the declared listening points, round robin', () => {
+  // 🛑 THREE ENDPOINTS, NEVER TWO, AND THE REASON IS MEASURED: with an EVEN count
+  //    `(k-1) % n` and `(k+1) % n` produce the SAME sequence, so a two-endpoint
+  //    fixture cannot tell a correct spread from an off-by-two one. The first
+  //    version of this cell used two and left that mutant alive.
+  const out = plan(manifest({ transport: { kind: 'http' } }), machine({
+    frames: 4,
+    endpoints: [
+      { host: '127.0.0.1', port: 8787 },
+      { host: '127.0.0.1', port: 8788 },
+      { host: '127.0.0.1', port: 8789 },
+    ],
+  }));
+  // ⚠️ Written out BY HAND, never read back from the module: an expectation that
+  //    quotes the code under test is mutated with it and stops discriminating.
+  assert.deepStrictEqual(out.filter((d) => d.type === 'http').map((d) => d.url), [
+    'http://127.0.0.1:8787/pretool?frame=1&frames=4',
+    'http://127.0.0.1:8788/pretool?frame=2&frames=4',
+    'http://127.0.0.1:8789/pretool?frame=3&frames=4',
+    'http://127.0.0.1:8787/pretool?frame=4&frames=4',
+  ], 'frame k must land on endpoint (k-1) mod N — deterministic, never by luck');
+});
+
+test('an EMPTY list is an ABSENT list — never a wiring with no address at all', () => {
+  // 🛑 The guard is `length > 0`, and without this cell the difference between it
+  //    and `>= 0` is invisible: an empty array would index out of an empty list and
+  //    write `undefined` into the URL — a wiring that parses, runs, and POSTs
+  //    nowhere. The failure would be every frame of every action, silently.
+  const out = plan(manifest({ transport: { kind: 'http' } }), machine({
+    frames: 2, endpoints: [],
+  }));
+  assert.deepStrictEqual(out.filter((d) => d.type === 'http').map((d) => d.url), [
+    'http://127.0.0.1:8787/pretool?frame=1&frames=2',
+    'http://127.0.0.1:8787/pretool?frame=2&frames=2',
+  ], 'an empty list falls back to the single declared address, never to nothing');
+});
+
+test('SEEN RED: with NO endpoints declared, every frame keeps the historical address', () => {
+  // 🛑 ZERO DEFAULT CHANGE IS THE ACCEPTANCE CRITERION. A caller that knows
+  //    nothing of this list — an older tool, a harness manifest written before
+  //    today — must generate byte for byte what it generated yesterday, or the
+  //    drift gate reports divergences nobody introduced.
+  const out = plan(manifest({ transport: { kind: 'http' } }), machine({ frames: 3 }));
+  assert.deepStrictEqual(out.filter((d) => d.type === 'http').map((d) => d.url), [
+    'http://127.0.0.1:8787/pretool?frame=1&frames=3',
+    'http://127.0.0.1:8787/pretool?frame=2&frames=3',
+    'http://127.0.0.1:8787/pretool?frame=3&frames=3',
+  ], 'no declared list ⇒ the single historical address, on every frame');
 });

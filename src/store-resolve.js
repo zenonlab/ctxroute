@@ -53,7 +53,16 @@ const WITHOUT_LOCK = (_lockDir, _section, options) => (options ? options.fallbac
 // duplication. `client` is declared and reserved for the daemon lane, which owns
 // the endpoints; it is NOT resolvable until those exist, and asking for it is a
 // LOUD refusal rather than a silent fallback to the disk.
-const BACKENDS = ['disk', 'none', 'client'];
+// 🔑 `daemon` ADDED 2026-09-20, AND IT MAKES THE DEBT SMALLER RATHER THAN
+//    LARGER. Until today `http-server.js` opened the daemon's memory store
+//    itself — one of the five INHERITED importers this module's rule lists as
+//    debt, never as a permission — and the multi-core work needed a SECOND
+//    opener (the owner thread). A sixth importer is exactly what that rule
+//    exists to redden, so the opening moved HERE instead: the daemon shell and
+//    the owner thread both ASK, and the list loses an entry instead of gaining
+//    one. Same law as every other backend — the pair travels together, and the
+//    caller never picks one half.
+const BACKENDS = ['disk', 'none', 'client', 'daemon'];
 
 /**
  * WHICH MEMORY DOES THIS SHELL DECIDE ON?
@@ -83,6 +92,23 @@ function resolveStore(options) {
     throw new Error(`store-resolve: unknown backend "${itemName}" — expected ${BACKENDS.join(' | ')}`);
   }
   if (itemName === 'none') return { store: STATE_ABSENT, withLock: WITHOUT_LOCK };
+  if (itemName === 'daemon') {
+    // 🔑 THE LIVING DAEMON'S PAIR: state in MEMORY, durable keys written THROUGH
+    //    to the very files a spawned client reads — so this process is a CACHE
+    //    and never an owner, and its death (by design, at every code delivery)
+    //    costs a recomputation rather than a memory.
+    // 🛑 THE REAL LOCK TRAVELS WITH IT, and that is not belt and braces: the
+    //    kernel serialises the daemon's OWN callers, but Codex keeps spawning
+    //    real processes against those same files. "One daemon, therefore no
+    //    lock" is the trap — it cost 209 lost read-modify-writes out of 800.
+    return {
+      store: require('./memory-store').createMemoryStore({
+        snapshotPath: path.join(paths.stateDir(), 'daemon-state.json'),
+        durableStore: disk,
+      }),
+      withLock: lockModule.withLock,
+    };
+  }
   if (itemName === 'client') {
     // 🔑 THE DISK PAIR, AND THAT IS NOT A DEGRADATION — IT IS THE TRUTH ITSELF
     //    (2026-08-22). The daemon no longer OWNS the durable state: it writes it
@@ -178,10 +204,19 @@ function turnLockDir(scopeId) {
 //    `store-resolve.test.js` confronts this table with `ctxroute-reset.js`'s
 //    purge loop, so the omission is RED before it can ship.
 
+// ✅ DERIVED (23/09/2026) from `memory-store-pure.stateStores()`, the ONE declaration of a
+//    per-scope store — its `lock` field IS this classification. These were hand-written
+//    lists, confronted with the PreCompact sweep by a cell that parsed its literal.
+const { stateStores } = require('./memory-store-pure');
+// One traversal per statement: a chained `.filter().map()` reads as a nested traversal.
+const prefixesLockedBy = (lock) => {
+  const guarded = stateStores().filter((s) => s.lock === lock);
+  return guarded.map((s) => s.prefix);
+};
 /** Keys guarded by `turnLockDir` — the turn counter and its refusal flag. */
-const TURN_KEYS = ['turn-count-'];
+const TURN_KEYS = prefixesLockedBy('turn');
 /** Keys guarded by `docLockDir` — the injection state and its queue. */
-const DOC_KEYS = ['doc-seen-', 'ctxroute-seen-', 'plan-', 'remainder-'];
+const DOC_KEYS = prefixesLockedBy('doc');
 
 /**
  * THE LOCK GUARDING A STATE KEY (or a key PREFIX, which is a key of the empty

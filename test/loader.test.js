@@ -4,7 +4,8 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { rulesFromCorpus, rulesOfDecl } from '../src/loader.js';
+import { rulesFromCorpus, rulesFromParsed, rulesOfDecl } from '../src/loader.js';
+import { parse } from '../src/frontmatter.js';
 
 const md = (fm, body = 'body') => `---\n${fm}\n---\n${body}`;
 
@@ -148,4 +149,64 @@ test('RULES — a migrated `rules:` doc read back → rules identical to the dec
     { pattern: 'lock.js', doc: 'p.md', keys: undefined, scope: ['ctxroute'], exclude: ['package-lock.json'] },
     { pattern: 'stdin-json.js', doc: 'p.md', keys: undefined },
   ]);
+});
+
+// ── rulesFromParsed: the PUBLIC door added 2026-09-18, and its type guard ──
+//
+// 🔴 THESE CELLS EXIST BECAUSE THE REFACTOR INTRODUCED THREE SURVIVORS AT ONCE.
+//    Splitting `rulesFromCorpus` into "parse" + `rulesFromParsed` created a
+//    SECOND `!Array.isArray(...)` guard, on a function that is now EXPORTED —
+//    i.e. a type guard on a PUBLIC contract, one of the three families this
+//    repository never deletes even when it looks unreachable. Unreachable it is
+//    NOT: `rulesFromCorpus` always hands it a real array, so only a direct caller
+//    can trip it, and a direct caller is exactly what an export invites.
+// 🛑 The mutants were `ConditionalExpression -> false` on BOTH guards plus the
+//    `return []` array literal reported as NO COVERAGE — a `return` no test ever
+//    executed. Covering it is the point: an untested refusal is a refusal nobody
+//    has ever seen happen.
+test('rulesFromParsed: a NON-ARRAY is refused, it never throws', () => {
+  assert.deepStrictEqual(rulesFromParsed(null), []);
+  assert.deepStrictEqual(rulesFromParsed(undefined), []);
+  assert.deepStrictEqual(rulesFromParsed('docs'), []);
+  assert.deepStrictEqual(rulesFromParsed(42), []);
+});
+
+test('rulesFromCorpus: a NON-ARRAY is refused at ITS OWN door, before any parse', () => {
+  assert.deepStrictEqual(rulesFromCorpus(null), []);
+  assert.deepStrictEqual(rulesFromCorpus(undefined), []);
+  assert.deepStrictEqual(rulesFromCorpus('docs'), []);
+});
+
+test('rulesFromParsed: already-parsed entries produce the SAME rules as the raw road', () => {
+  // ⚠️ THE TWO ROADS ARE COMPARED ON THE SAME DATA — that is what proves the
+  //    split changed nothing. A cell asserting only `rulesFromParsed`'s output
+  //    would prove what its author already believed.
+  const docs = [
+    { doc: 'a.md', text: md('match: lock.js\nmode: dumb\nrank: 10') },
+    { doc: 'b.md', text: md('rules: [{"pattern":"x.js","scope":["p"]}]\nmode: dumb') },
+  ];
+  const parRaw = rulesFromCorpus(docs);
+  const parParsed = rulesFromParsed(docs.map((d) => ({ doc: d.doc, ...parse(d.text) })));
+  assert.deepStrictEqual(parParsed, parRaw);
+  assert.ok(parRaw.length >= 2, 'anti-vacuity: the corpus must really produce rules');
+});
+
+test('rulesFromParsed: a null entry is SKIPPED, never read', () => {
+  const flat = rulesFromParsed([
+    null,
+    { doc: 'a.md', data: { match: 'lock.js', mode: 'dumb' } },
+    { data: { match: 'z.js' } },
+  ]);
+  assert.deepStrictEqual(flat, [{ pattern: 'lock.js', doc: 'a.md', keys: undefined }]);
+});
+
+test(`rulesFromCorpus: a null ENTRY is skipped, it never throws`, () => {
+  // 🛑 THE CELL THAT KILLS THE `!d` GUARD. Without it the guard is an
+  //    equivalent mutant and the per-file floor drops below 100.
+  const flat = rulesFromCorpus([null, { doc: `a.md`, text: md(`match: lock.js`) }, undefined]);
+  assert.deepStrictEqual(flat, [{ pattern: `lock.js`, doc: `a.md`, keys: undefined }]);
+});
+
+test(`rulesFromCorpus: a non-string id is refused DOWNSTREAM, one rule one place`, () => {
+  assert.deepStrictEqual(rulesFromCorpus([{ doc: 42, text: md(`match: lock.js`) }]), []);
 });

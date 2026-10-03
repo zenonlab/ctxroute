@@ -1,6 +1,7 @@
 ---
 match: state-write-under-lock-gate.test.js
-mode: dumb
+mode: smart
+threshold: 31
 ---
 
 # state-write-under-lock-gate — the queue invariant is no longer carried by prose

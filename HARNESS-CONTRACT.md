@@ -41,6 +41,53 @@ satisfy, and how to **prove** conformity on your machine instead of trusting us.
    **path-shaped keys unknown to the profile**: candidates for `pathKeys` in
    `harness-profile.js`. You decide — the engine never guesses.
 
+## Industrial deployment — NOT the same question as compatibility
+
+A harness can satisfy every capability above and still be unfit for a fleet.
+Compatibility asks *can this harness express the language*. This section asks
+*can this deployment be operated at scale*. A harness is entitled to pass one
+and fail the other, and most do.
+
+**HTTP is the only industrial transport, and the reason is not the protocol.**
+It is everything the protocol brings with it: addressing, load balancing, TLS
+termination, authentication, tracing, autoscaling. Twenty years of operational
+tooling. A `command` handler is not a slower protocol — it is **not a protocol
+at all**. It is a local invocation convention with no network semantics: there
+is nothing to put a load balancer in front of, no reach beyond the machine, and
+one process spawned per declaration per action. It stays fully supported as the
+**workstation** lane, and it is the only regime with zero connection loss by
+construction. It is not a fleet answer and must never be offered as one.
+
+**Two conditions. The second is the one that gets missed.**
+
+1. **The harness exposes an HTTP handler.** Without it the daemon can only ever
+   be a local sidecar, never a service.
+2. **The harness does NOT cap the size of a hook's output.** A cap forces the
+   knowledge to be split across N declarations; the harness then fires those N
+   hooks in parallel, opening **N simultaneous connections per action**. The
+   harness owns those sockets, so nothing on the server side can pool, reuse or
+   retry them. A saturated accept queue answers `WSAECONNREFUSED` on Windows —
+   Microsoft's own `listen` reference states it — so the refusal rate becomes a
+   property of the harness, **out of reach of any implementation**.
+
+**Known harnesses, as measured here:**
+
+| harness | HTTP handler | output cap | industrial verdict |
+|---|---|---|---|
+| Claude Code | yes | **~10,000 c per output** | **workstation only** — the cap forces N parallel connections per action, and a failed one is never retried ([anthropics/claude-code#29963](https://github.com/anthropics/claude-code/issues/29963), closed `NOT_PLANNED`) |
+| Codex | no — `command`, `mcp_tool` | none (`additionalContextLimit = 0`) | **workstation only** — one declaration, zero connections, zero loss by construction, no network reach |
+| Gemini CLI | not on `PreToolUse` | — | incompatible on that event |
+
+**None of this is a defect of ctxroute, and none of it is permanent.** A client
+you write yourself establishes its connection **once** and multiplexes: HTTP/2
+carries N frames as N streams over ONE connection, so the accept queue is
+touched once and the class cannot occur. This daemon already recognises the
+HTTP/2 preface and refuses it by name rather than guessing a protocol; opening
+that lane is one factory call, the request handler being compatible already.
+
+**State it plainly to an evaluator: the limit belongs to a harness that
+truncates its hooks, never to the transport and never to this architecture.**
+
 ## Honest limits
 
 - A payload proves the **presence** of contract fields. That injected context

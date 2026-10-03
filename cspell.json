@@ -29,8 +29,10 @@
     "odoo",
     "pretool",
     "sessiondocs",
+    "somaxconn",
     "stryker",
     "uncontended",
+    "unref",
     "vitest",
     "worktree"
   ],

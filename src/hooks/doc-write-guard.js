@@ -26,6 +26,7 @@ require('../deadline').arm();
 //    this shell only keeps the Claude Code extraction (file_path directly).
 const { run } = require('../guard-core');
 const { readStdinJson } = require('../stdin-json');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 
 readStdinJson(
   (data) => {
@@ -35,8 +36,10 @@ readStdinJson(
     //    stdout nor to the process. Layer leak closed — 3rd instance of
     //    the same family, found by the capability scan, not by eye.
     const verdict = run(typeof filePath === 'string' ? [filePath] : []);
-    if (verdict) console.log(JSON.stringify(verdict));
-    process.exit(0);
+    // 🛑 Printed through `stdout-exit`: a print then a bare `process.exit` is
+    //    cut on a POSIX pipe beyond 64 KB (2026-10-01).
+    if (verdict) printThenExit(JSON.stringify(verdict));
+    exitUnlessPrinting();
   },
   () => process.exit(0)
 );

@@ -101,8 +101,14 @@ function astGrepBinary() {
   return bin;
 }
 
-const NAMED_IMPORT = /import\s*\{([^}]*)\}\s*from\s*['"](?:node:)?child_process['"]/g;
-const NAMED_REQUIRE = /\{([^}]*)\}\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g;
+// 🔴 `[^{}]*`, NEVER `[^}]*` — MEASURED 2026-09-30: a lone `{` in a COMMENT above a
+//    `require` (a header quoting "stdout starting with `{`") made `[^}]*` swallow
+//    the whole comment as an import list; its capitalised words (`NOT`, `IS`, `A`…)
+//    became "primitives", the generated ast-grep rule broke, and the scan saw ZERO
+//    call sites. A named-import list never contains `{`, so excluding it makes the
+//    match restart at the REAL destructuring brace.
+const NAMED_IMPORT = /import\s*\{([^{}]*)\}\s*from\s*['"](?:node:)?child_process['"]/g;
+const NAMED_REQUIRE = /\{([^{}]*)\}\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g;
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
 /**
@@ -374,4 +380,14 @@ test('the PRIMITIVES are derived from real import forms, alias included', () => 
   assert.deepStrictEqual(derived, ['execFile', 'execFileSync', 'fork', 'forkChild', 'spawnSync']);
   assert.deepStrictEqual(spawnPrimitives("import fs from 'node:fs';\n"), [],
     'a module that imports no spawn primitive must contribute none');
+});
+
+test('a lone `{` in a COMMENT above the require never leaks words into the primitives', () => {
+  // 🔴 The real shape that broke this gate on 2026-09-30 (`src/hooks/daemon-ensure.js`):
+  //    a header quoting "stdout starting with `{` is parsed as JSON" sat above the
+  //    require, and every capitalised word of that comment became a primitive.
+  const derived = spawnPrimitives('// contract: stdout starting with `{` is parsed as JSON, and NOT\n'
+    + '//    shown when the request FAILED AND the task IS DISABLED.\n'
+    + "const { spawnSync } = require('node:child_process');\n");
+  assert.deepStrictEqual(derived, ['spawnSync']);
 });

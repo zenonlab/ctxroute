@@ -101,6 +101,27 @@ const EXEMPTIONS = {
   //    cannot read one store-shape rule in two places and drift apart (paid twice —
   //    ㊱, ㊳). It therefore cannot take the lock itself without double-locking the
   //    shell, which already wraps this call.
+  // 🔑 THE ONE DIALECT OF EVERY OPERATION ON THE DAEMON'S STATE (2026-09-20), and
+  //    it is the SAME family as the two above: it APPLIES a write its caller is
+  //    already making inside `withLock`. Taking the lock here would double-lock
+  //    every caller, which is the exact reason `emission-core` and `turn-core`
+  //    are exempted.
+  // 🛑 AND IT IS GUARANTEED BY THIS SCAN RATHER THAN TRUSTED. The only callers of
+  //    `store.saveState` on this road are `pretool-core` (matched here, inside
+  //    its own withLock) and the daemon routes, which take the REAL lock at the
+  //    SAME address. A future caller that wrote through this module WITHOUT a
+  //    lock would be matched by this very rule and turn it red.
+  // ⚠️ WITH A POOL THE WRITE IS APPLIED ON THE OWNER THREAD while the lock is
+  //    held by the SERVER thread that asked — and that is not a loophole: the
+  //    cross-process lock is a DIRECTORY, so it serialises whoever takes its
+  //    name, thread or process, and the round trip is SYNCHRONOUS, so the asking
+  //    thread is still inside its critical section when the write lands. 🛑 The
+  //    day a client answers ASYNCHRONOUSLY, this exemption dies with it.
+  'src/owner-ops.js': { kind: 'guarded-by-scan', reason:
+    'The single body of every table and store operation, called in line by the main '
+    + 'thread and applied by the owner thread when a pool exists. It cannot take the '
+    + 'lock itself without double-locking its callers, which already hold it around the '
+    + 'read-then-rewrite. Guaranteed by this same scan: an unlocked caller is matched here.' },
   'src/turn-core.js': { kind: 'guarded-by-scan', reason:
     'The turn counter\'s read-modify-write, shared by the spawned shell and the daemon '
     + 'so one store-shape rule is not read in two places. BOTH callers now wrap it in '

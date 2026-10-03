@@ -3,7 +3,7 @@ match: [paths.js, declared-paths-pure.js, declared-paths-pure.test.js, declared-
 scope: [ctxroute]
 exclude: [protected-paths.json]
 mode: smart
-threshold: 40
+threshold: 101
 rank: 355
 ---
 # paths.js — single source of paths

@@ -144,6 +144,26 @@ describe('gate: local CI — the workflows call NOTHING but `npm run ci`/`ci:<gr
     expect(unCalledGroups(withoutCoupling)).toContain('coupling');
   });
 
+  // ⛔ ONE RED OS NEVER CANCELS THE OTHERS (2026-09-23). GitHub's default `fail-fast: true`
+  //    cancelled macOS and Windows on a Linux red, then Windows on a macOS red: two probes, one
+  //    verdict out of three each time. A matrix exists to see EVERY OS, and a cancelled job is an
+  //    `unknown` that reads like a finished run. A plain text check is enough and exact here: the
+  //    key has one spelling, and the sabotage below proves the check can go red.
+  const matrixWithoutFailFastOff = (text) => /^\s*matrix:/m.test(text) && !/^\s*fail-fast:\s*false\s*$/m.test(text);
+
+  it('⛔ every workflow with an OS matrix declares `fail-fast: false`', () => {
+    const offenders = files.filter((f, i) => matrixWithoutFailFastOff(texts[i]));
+    expect(offenders, `these matrices let one red OS cancel the others: ${offenders.join(', ')}`).toEqual([]);
+    expect(texts.some((t) => /^\s*matrix:/m.test(t)), 'anti-vacuity: no matrix was read at all').toBe(true);
+  });
+
+  it('SABOTAGE ④: removing `fail-fast: false` from test.yml ⇒ named red', () => {
+    const i = files.indexOf('test.yml');
+    const sabotaged = texts[i].replace(/^\s*fail-fast:\s*false\s*$/m, '');
+    expect(sabotaged).not.toBe(texts[i]);
+    expect(matrixWithoutFailFastOff(sabotaged)).toBe(true);
+  });
+
   it('SABOTAGE ③ ANTI-MUTE-PROBE: an EMPTY world is red, never green', () => {
     const issues = ciPreconditions({ workflowSteps: [], canon: [] });
     expect(issues.length).toBe(2);

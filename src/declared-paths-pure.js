@@ -79,6 +79,22 @@ const HTTP_PORT_ENV = 'CTXROUTE_HTTP_PORT';
 //    at RUNTIME depends on it.
 const DEFAULT_HTTP_HOST = '127.0.0.1';
 const DEFAULT_HTTP_PORT = 8787;
+// ⚠️ A SANITY BOUND ON `http.listeners`, never a measured limit. The capacity it
+//    buys is real and linear, but a typo that opens sixty thousand sockets is a
+//    typo — and a refusal naming the key is how this module answers every other
+//    nonsensical declaration.
+const MAX_LISTENERS = 256;
+
+/**
+ * How many sockets the daemon opens when nobody declares a number.
+ *
+ * 🛑 THE SINGLE SOURCE OF THAT NUMBER — the service units and their gate DERIVE
+ *    it from here and never re-type it. A supervisor that declares a different
+ *    count than this makes the daemon refuse to start, so the two numbers are
+ *    ONE fact; two copies of it would diverge in silence and turn an install
+ *    into a boot failure. The reasoning behind the VALUE is on `listenersOf`.
+ */
+const DEFAULT_LISTENERS = 4;
 
 /**
  * A NAMED REFUSAL about the listening address — it says WHERE the value came
@@ -115,17 +131,90 @@ function isPort(n) {
   return Number.isInteger(n) && port >= 1 && port <= 65535;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// AN ADDRESS THAT PUBLISHES THE DAEMON IS REFUSED — 2026-09-02
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 THE DAEMON HAS NO AUTHENTICATION, AND IT SERVES THE FLEET'S PRIVATE
+//    KNOWLEDGE. `/emit`, `/purge` and `/turn` are reachable by whoever can open
+//    a socket to it. So an address that puts it beyond THIS MACHINE is not a
+//    configuration mistake to be discovered later — it is a disclosure, and it
+//    must be impossible to declare.
+// ⚠️ THIS IS NOT THE WHITELIST THE COMMENT BELOW REFUSES, AND THE DIFFERENCE IS
+//    THE WHOLE DESIGN. A list of ADMISSIBLE addresses would refuse healthy ones
+//    (it cannot know this machine's interfaces) and prove nothing about the
+//    rest. What is written here is the exact opposite: a NARROW list of forms
+//    that are PROVABLY exposing, whatever the machine — a wildcard bind, or a
+//    globally routable address. Everything else is still the kernel's call.
+// 🔑 PRIVATE RANGES ARE DELIBERATELY ALLOWED. `10.87.87.1` (the dedicated
+//    adapter this framework uses on Windows to leave `127.0.0.0/8`) is one of
+//    them, and whether such an address is reachable depends on ROUTING, which a
+//    pure function cannot see. That half is measured by the doctor, against the
+//    live machine — never guessed here.
+const BIND_ALL = new Set(['0.0.0.0', '::', '::0', '0:0:0:0:0:0:0:0']);
+
 /**
- * The HOST half. ⚠️ Its SHAPE is checked, never its MEANING: an address this
- * kernel cannot bind fails at `listen` with the kernel's own error, and the
- * kernel is the authority — a list of admissible addresses written here would
- * refuse healthy ones and still prove nothing about the rest.
+ * Is this a globally routable IPv4 literal? Anything that is not an IPv4
+ * literal at all answers false — this predicate REFUSES, so a doubt must never
+ * become a refusal.
+ * @param {string} host @returns {boolean}
+ */
+function isPublicIPv4(host) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (m === null) return false;
+  const o = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  if (o[0] > 255 || o[1] > 255 || o[2] > 255 || o[3] > 255) return false;
+  if (o[0] === 127) return false;                          // loopback
+  if (o[0] === 10) return false;                           // RFC 1918
+  if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return false;
+  if (o[0] === 192 && o[1] === 168) return false;
+  if (o[0] === 169 && o[1] === 254) return false;          // link-local
+  return true;
+}
+
+/**
+ * Is this a globally routable IPv6 literal? Judged only on strings carrying a
+ * colon, so no IPv4 or hostname can ever reach it.
+ * @param {string} host @returns {boolean}
+ */
+function isPublicIPv6(host) {
+  if (!host.includes(':')) return false;
+  if (host === '::1') return false;                        // loopback
+  if (host.startsWith('fe8') || host.startsWith('fe9')
+    || host.startsWith('fea') || host.startsWith('feb')) return false;  // fe80::/10
+  if (host.startsWith('fc') || host.startsWith('fd')) return false;     // fc00::/7
+  return true;
+}
+
+/**
+ * The HOST half. ⚠️ Its SHAPE is checked, and its MEANING only where exposure is
+ * PROVABLE: an address this kernel cannot bind fails at `listen` with the
+ * kernel's own error, and the kernel is the authority — a list of admissible
+ * addresses written here would refuse healthy ones and still prove nothing
+ * about the rest.
  * @param {unknown} declared @returns {string}
  */
 function hostOf(declared) {
   if (declared === undefined || declared === null) return DEFAULT_HTTP_HOST;
   if (typeof declared !== 'string' || declared.length === 0) {
     throw refuseEndpoint(`${HTTP_KEY}.host`, declared, 'It must be a non-empty string.');
+  }
+  const host = declared.toLowerCase();
+  const exposure = 'It must stay reachable from THIS MACHINE ONLY: a wildcard bind and a globally routable '
+    + 'address both publish a daemon that has NO authentication, so `/emit`, `/purge` and '
+    + '`/turn` — and with them the whole fleet\'s private knowledge — would answer anyone who '
+    + 'can open a socket. Loopback, private (RFC 1918) and link-local addresses are accepted.';
+  // ⚠️ TWO REFUSALS, NAMED APART (2026-10-01). Every wildcard form is ALSO caught
+  //    by the routability predicates below, so folded into one condition the
+  //    wildcard list decided nothing a mutant could change. Named apart, it tells
+  //    the operator WHICH mistake it is. 🛑 Never drop `BIND_ALL`: a refusal that
+  //    names the real cause is a fail-closed guard, not a duplicate.
+  if (BIND_ALL.has(host)) {
+    throw refuseEndpoint(`${HTTP_KEY}.host`, declared,
+      `It is a WILDCARD: it listens on EVERY interface of this machine. ${exposure}`);
+  }
+  if (isPublicIPv4(host) || isPublicIPv6(host)) {
+    throw refuseEndpoint(`${HTTP_KEY}.host`, declared,
+      `It is GLOBALLY ROUTABLE: it is reachable from beyond this machine. ${exposure}`);
   }
   return declared;
 }
@@ -172,7 +261,12 @@ function portOf(envPort, declared) {
  *    the byte.
  *
  * @param {{envPort?: unknown, readConfiguredHttp: () => unknown}} o
- * @returns {{host: string, port: number}}
+ * @returns {{host: string, port: number, listeners: number}} `listeners` is how
+ *   many sockets the daemon opens, defaulting to 1 — the historical behaviour.
+ *   ⚠️ IT BELONGS IN THIS CONTRACT, never only in the body: the day it was
+ *   returned without being declared here, the type ratchet was the ONLY thing
+ *   that noticed, and a JSDoc that promises less than it returns is the lying
+ *   contract this repository hunts everywhere else.
  */
 function resolveDeclaredHttp(o) {
   const declared = o.readConfiguredHttp();
@@ -180,8 +274,101 @@ function resolveDeclaredHttp(o) {
     && (typeof declared !== 'object' || Array.isArray(declared))) {
     throw refuseEndpoint(HTTP_KEY, declared, 'It must be an object carrying `host` and `port`.');
   }
-  const pair = /** @type {{host?: unknown, port?: unknown}} */ (declared || {});
-  return { host: hostOf(pair.host), port: portOf(o.envPort, pair.port) };
+  // 🛑 `http.workers` IS NOT PART OF THIS OBJECT, AND THE OMISSION IS THE RULE
+  //    THIS MODULE STATES ABOUT ITSELF: *an address is ONE fact, read whole*.
+  //    `workers` is a POOL SIZE, not an address — nothing binds it and the
+  //    wiring generator never posts to it — and its refusals (above the
+  //    ceiling, not an integer, more threads than sockets) belong to
+  //    `worker-pool-pure.js`, where they are pure and mutated. Two validators
+  //    for one key is two truths: the day they disagree, one is refusing a
+  //    value the other has already accepted and nobody can say which rules.
+  //    `paths.httpWorkers()` reads it, next door, with no validation of its own.
+  const pair = /** @type {{host?: unknown, port?: unknown, listeners?: unknown}} */ (declared || {});
+  return {
+    host: hostOf(pair.host),
+    port: portOf(o.envPort, pair.port),
+    listeners: listenersOf(pair.listeners),
+  };
+}
+
+/**
+ * How many listening sockets the daemon opens. Default FOUR.
+ *
+ * 🔑 **FOUR, AND IT IS AN OPERATOR DECISION OF 2026-09-19, TAKEN AGAINST THE
+ *    AUTHOR'S OWN RECOMMENDATION — the reasoning is recorded so nobody
+ *    "corrects" it back.** The conservative case for ONE was: zero default
+ *    change, and a wrong N fails SILENTLY where a missing N fails LOUDLY
+ *    (`ECONNREFUSED`). The operator's counter-argument decided it, and it is
+ *    stronger: an adopter whose lane already refuses connections is not served
+ *    by a default that makes them discover, diagnose and hand-configure a key
+ *    they have never heard of. A default that works out of the box is the
+ *    product; a default that is merely safe for us is not.
+ * 📐 WHAT MAKES IT DEFENSIBLE IS MEASURED, not chosen: the accept queue is
+ *    **232 connections per socket** on Windows whatever backlog is declared
+ *    (511, 65535 and `SOMAXCONN_HINT` all measured identical), and the ceiling
+ *    is strictly LINEAR — 1 → 232, 2 → 464, 4 → 928. On one burst, one socket
+ *    refused 80.7 % of connections and eight refused 0.0 %.
+ * 🛑 AND IT IS ONLY DEFENSIBLE BECAUSE THE N-SOCKET PATH IS NOW CORRECT. Until
+ *    2026-09-19 every extra socket built its own sequencer table, so half a
+ *    document was delivered four times and the other half never — a default of
+ *    4 would have shipped that to everyone. `shared-sequencer-gate` is what
+ *    keeps this number honest; if that gate is ever removed, this default must
+ *    go back to 1 in the same gesture.
+ * ⚠️ **THE UNITS MUST DECLARE THE SAME NUMBER.** Under socket activation the
+ *    SUPERVISOR binds, and the daemon REFUSES to start when the count it is
+ *    handed differs from the count declared here — deliberately, because
+ *    serving fewer would drop that share of every action in silence. Raising
+ *    this constant without adding the matching `ListenStream=` lines (Linux) or
+ *    `Listeners` entries (macOS) turns an install into a boot failure.
+ *
+ * 🛑 A NAMED REFUSAL, never a quiet clamp: an operator who wrote `listeners: 0`
+ *    or `listeners: "four"` asked for something, and answering with a silent 1
+ *    would leave them believing a capacity they do not have — on a lane whose
+ *    failure is a refused connection with no error of ours anywhere.
+ * ⚠️ The ceiling is 256 and it is a SANITY bound, not a measured limit: a typo
+ *    that opens sixty thousand sockets should be refused, not obeyed.
+ * @param {unknown} declared
+ * @returns {number}
+ */
+function listenersOf(declared) {
+  if (declared === undefined || declared === null) return DEFAULT_LISTENERS;
+  // ⚠️ NO `typeof` GUARD HERE, AND ITS ABSENCE IS DELIBERATE: `Number.isInteger`
+  //    already answers false for every non-number, so a type check beside it is
+  //    a branch no input can distinguish — an EQUIVALENT mutant, i.e. dead code
+  //    that a test would FREEZE for ever instead of proving anything.
+  if (!Number.isInteger(declared)
+    || /** @type {number} */ (declared) < 1
+    || /** @type {number} */ (declared) > MAX_LISTENERS) {
+    throw refuseEndpoint(`${HTTP_KEY}.listeners`, declared,
+      `It must be an integer in 1..${MAX_LISTENERS}.`);
+  }
+  // ⚠️ THE CAST IS THE CONCLUSION OF THE GUARD ABOVE, not a way past the checker:
+  //    `Number.isInteger` has already refused everything that is not a number, so
+  //    the remaining value IS one. Narrowing it here keeps the declared contract
+  //    (`@returns {number}`) honest instead of returning an `unknown` the callers
+  //    would each re-interpret on their own.
+  return /** @type {number} */ (declared);
+}
+
+/**
+ * THE LISTENING POINTS, DERIVED ONCE AND READ WHOLE BY BOTH CONSUMERS.
+ *
+ * 🔑 THIS FUNCTION IS THE SINGLE OWNER OF THAT DERIVATION, and that is the whole
+ *    point of it existing. The daemon BINDS these addresses and the wiring
+ *    generator POSTS to them: two consumers, one truth. Each deriving the list
+ *    on its own side is EXACTLY the 2026-08-25 class — one fact held in two
+ *    places, agreeing by luck, compared by nothing — on a lane with NO fallback
+ *    where a single divergence loses every frame of every action, in silence.
+ * ⚠️ Ports COUNT UP from the declared one, so `listeners: 1` yields exactly the
+ *    historical single address and nothing downstream can tell the difference.
+ * @param {{host: string, port: number, listeners?: number}} endpoint
+ * @returns {{host: string, port: number}[]}
+ */
+function listenEndpoints(endpoint) {
+  const n = typeof endpoint.listeners === 'number' ? endpoint.listeners : 1;
+  const out = [];
+  for (let i = 0; i < n; i += 1) out.push({ host: endpoint.host, port: endpoint.port + i });
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -459,6 +646,12 @@ function conventionalConfigParts(o) {
 module.exports = {
   resolveDeclaredDir,
   resolveDeclaredHttp,
+  listenEndpoints,
+  MAX_LISTENERS,
+  // 🛑 EXPORTED SO THE SERVICE UNITS CAN BE JUDGED AGAINST IT, never re-typed:
+  //    the supervisor's socket count and this number are ONE fact, and a daemon
+  //    handed a different count REFUSES to start.
+  DEFAULT_LISTENERS,
   configPathArgument,
   conventionalConfigParts,
   APP_DIR_NAME,

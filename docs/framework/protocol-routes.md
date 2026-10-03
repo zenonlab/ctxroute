@@ -1,6 +1,7 @@
 ---
 match: [protocol-routes-pure.js, protocol-routes-pure.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # protocol-routes-pure.js — the four route names of our protocol, ONE owner
 

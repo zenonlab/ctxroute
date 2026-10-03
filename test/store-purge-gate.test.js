@@ -38,6 +38,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert';
 import { fileURLToPath } from 'node:url';
+import { stateStores } from '../src/memory-store-pure.js';
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RESET = 'src/hooks/ctxroute-reset.js';
@@ -62,10 +63,13 @@ function sourceFiles() {
  *    gate GREEN even if the real loop forgot one — a gate that
  *    settles for a mention is a gate that certifies prose.
  */
+// ✅ 23/09/2026: the loop no longer holds a literal — it iterates the STORE REGISTRY
+//    (`memory-store-pure.stateStores()`), so what the reset sweeps IS that registry. The
+//    loop is still READ (never assumed): a reset that stopped iterating the registry —
+//    back to a hand list, or to nothing — makes this return null and the gate names it.
 function purgedPrefixes(source) {
-  const block = /for\s*\(\s*const\s+prefix\s+of\s*\[([^\]]*)\]/.exec(source);
-  if (!block) return null;                       // loop not found ⇒ broken gate
-  return new Set([...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
+  if (!/for\s*\(\s*const\s*\{\s*prefix\s*\}\s*of\s+stateStores\(\)/.test(source)) return null;
+  return new Set(stateStores().map((s) => s.prefix));
 }
 
 /**

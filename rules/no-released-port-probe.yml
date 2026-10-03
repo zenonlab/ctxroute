@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a port asked of the kernel, then RELEASED
+# before somebody else binds it. NO POLICY, NO EXEMPTION.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 🔴 THE CLASS (measured 2026-09-23): `listen(0)` gets a port from the kernel's
+#    EPHEMERAL range; closing the probe and handing the number to a forked
+#    daemon leaves a window in which ANY outgoing connection of a parallel
+#    suite may be given that very port (that range is where local ports of
+#    `connect()` come from). The daemon then records `bind-refused lane=port`
+#    and exits 1. `stale-code-guard ⑥bis` reddened that way under the full run
+#    (code 1 where 90 was asserted) and passed 8/8 alone. SEVEN suites carried
+#    their own copy of the gesture.
+# ✅ THE CURE IS ONE PLACE: `test/support/free-port.js` takes ports from a band
+#    below every default ephemeral range, where no `connect()` is ever given one.
+#
+# ⚠️ WHAT IT LOOKS FOR: a `close` of a server INSIDE the call that made that
+#    same server listen on port 0 — the probe that releases what it measured.
+#    A server that listens on 0 and KEEPS serving (the dominant, legitimate
+#    shape: a stub the test talks to) is NOT matched, because nothing is
+#    handed over and nothing can be taken.
+#
+# 🛑 IT JUDGES NOTHING AND EXEMPTS NOTHING: zero tolerance lives in
+#    `test/released-port-probe-gate.test.js`. No `files:`/`ignores:` here — an
+#    exemption nobody would ever read again.
+#
+# ⚠️ AST, NEVER REGEX: the gesture quoted in a comment or a string is a FALSE
+#    POSITIVE (this very header quotes it).
+id: no-released-port-probe
+language: JavaScript
+severity: error
+message: >-
+  PORT PROBED THEN RELEASED — a port taken with listen(0) and closed before a
+  child binds it can be handed by the kernel to any outgoing connection in
+  between. Ask `test/support/free-port.js` instead: it allocates below every
+  default ephemeral range.
+
+# ⚠️ `has: resolve(...)` IS LOAD-BEARING, measured on its first run: without it
+#    the rule also matched `http-socket-activation`, where the probe is closed
+#    only once a child holds a DUPLICATE of the descriptor — the socket stays
+#    bound, nothing is released, nothing can be taken. What defines the class is
+#    that the NUMBER leaves AFTER the release: the close callback hands it out.
+rule:
+  pattern: $SERVER.close($$$)
+  has:
+    stopBy: end
+    pattern: resolve($$$)
+  inside:
+    stopBy: end
+    pattern: $SERVER.listen(0, $$$)

@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"state-eviction-pure.js","scope":["ctxroute"]},{"pattern":"state-eviction.js","scope":["ctxroute"]},{"pattern":"state-eviction-pure.test.js","scope":["ctxroute"]},{"pattern":"state-eviction.test.js","scope":["ctxroute"]},{"pattern":"session-store.js","scope":["ctxroute"]},{"pattern":"ctxroute-reset.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # state-eviction — `state/` HAS A CEILING NOW (2026-08-21)
 
@@ -11,4 +12,4 @@ mode: dumb
 🛑 **A THRESHOLD PROBE IS NOT AN EVICTION** (it constates, too late) and **AN EVICTION IS PROVEN BY WHAT IT DELETES** — a cleaner matching nothing is indistinguishable from one that works (`*.tar.gz` vs `*.sql.gz`: 0 bytes since forever, disk 87 %). Hence: the decision returns NAMES, its cell asserts survivors AND removals, and a missing bound is a NAMED REFUSAL, never a silent no-op.
 ⚠️ **THE DECISION IS PURE AND MUTATED** (`state-eviction-pure.js`); the shell only lists and unlinks. Written next to the `unlink` it would be measured by nothing.
 ⚠️ **TRIGGERED FROM `turn-count.js`** (UserPromptSubmit): once per human turn, ONE process, already wired on both harnesses, fail-open. 🛑 Never from a state WRITE (16 frames × every action = the "and at 10,000?" defect), never a timer, never a new process. HONEST LIMIT: a harness without UserPromptSubmit gets no eviction.
-⚠️ The class list is CONFRONTED with `ctxroute-reset.js`'s sweep by a cell — two hand-written enumerations of one truth diverge, and the sixth store would then grow for ever.
+✅ The classes are DERIVED from `memory-store-pure.stateStores()` since 23/09/2026 — the SAME registry the PreCompact sweep and the lock classes read, so they cannot diverge any more. `classify` reads a store's declared `durable` flag in ONE lookup; the durable list is `durablePrefixes()`, a function (derived at load, its mutant was a static survivor never really tried).

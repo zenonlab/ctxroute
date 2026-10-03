@@ -47,6 +47,26 @@
     "http-port-environment": {
       "value": "CTXROUTE_HTTP_PORT",
       "why": "The environment escape that wins over the declared port. Its NAME is a rendezvous of its own: `service/ctxroute-http.service` writes it and `service/install-windows.ps1` reads it back, so a second spelling would name a variable nobody set."
+    },
+    "daemon-http-port-offset-1": {
+      "value": "8788",
+      "why": "Listening socket 2 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 1` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+    },
+    "daemon-http-port-offset-2": {
+      "value": "8789",
+      "why": "Listening socket 3 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 2` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+    },
+    "daemon-http-port-offset-3": {
+      "value": "8790",
+      "why": "Listening socket 4 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 3` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+    },
+    "socket-file-last-rung": {
+      "value": "/tmp",
+      "why": "The LAST directory of the macOS socket-file ladder (2026-09-23): used only when neither the state directory nor the user temp directory keeps the path under sun_path. Always present and short on every POSIX system, so the daemon and its clients still compute ONE address when both longer rungs would be truncated by the kernel."
+    },
+    "socket-path-bound": {
+      "value": "103",
+      "why": "The byte length a socket FILE path may not exceed: sizeof(sockaddr_un.sun_path) - 1 on macOS, per Node's own doc. Beyond it Node truncates SILENTLY and the daemon binds a name nobody else computes — measured on the macOS runner, where a 105-byte path kept the daemon from ever coming back."
     }
   },
   "atoms": {
@@ -143,6 +163,27 @@
         "value": "CTXROUTE_HTTP_PORT",
         "origin": "environment",
         "why": "The spelling of the environment escape, written ONCE because it travels into the refusal message and into two files under service/. Unlike the CTXROUTE_*_DIR variables it is NOT test-reserved: an operator legitimately owns it, so a second spelling would name a variable nobody set."
+      },
+      "'0.0.0.0'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "The IPv4 wildcard, a member of the BIND_ALL DENYLIST of `hostOf`: declaring it as the listening host is a NAMED REFUSAL, because a wildcard bind publishes a daemon that has NO authentication and would answer anyone who can open a socket. This literal is a value a PREDICATE tests AGAINST, never an address by which one component of this repository reaches another — which is what this budget exists to compare. It matches the address atom because a denied address and a used one share a shape, and narrowing the atom to tell them apart would mean teaching it which strings are real rendezvous: a list, hence born stale. Declared here rather than excluded, so that the day somebody BINDS one of them the declaration is still the place that must change."
+      },
+      "'::'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "The IPv6 wildcard, the same denylist one family over. Written out rather than derived from the IPv4 form because the two notations share nothing a transformation could carry. This literal is a value a PREDICATE tests AGAINST, never an address by which one component of this repository reaches another — which is what this budget exists to compare. It matches the address atom because a denied address and a used one share a shape, and narrowing the atom to tell them apart would mean teaching it which strings are real rendezvous: a list, hence born stale. Declared here rather than excluded, so that the day somebody BINDS one of them the declaration is still the place that must change."
+      },
+      "'::1'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "The IPv6 loopback, and it is an EXCLUSION rather than a denial: `isPublicIPv6` answers false for it, which is what keeps a perfectly legitimate local bind from being refused. A predicate that REFUSES must never turn a doubt into a refusal. This literal is a value a PREDICATE tests AGAINST, never an address by which one component of this repository reaches another — which is what this budget exists to compare. It matches the address atom because a denied address and a used one share a shape, and narrowing the atom to tell them apart would mean teaching it which strings are real rendezvous: a list, hence born stale. Declared here rather than excluded, so that the day somebody BINDS one of them the declaration is still the place that must change."
       }
     },
     "src/kernel-endpoint.js": {
@@ -166,6 +207,20 @@
         "value": "ctxroute-<fingerprint>",
         "origin": "kernel",
         "why": "macOS socket file — the one kernel of the three that leaves a filesystem entry behind. Its directory comes from paths.stateDir() and is never composed here."
+      },
+      "'/tmp'": {
+        "count": 1,
+        "rendezvous": "socket-file-last-rung",
+        "value": "/tmp",
+        "origin": "kernel",
+        "why": "The third rung of endpoint(): a directory every POSIX kernel provides, short enough that `/tmp/ctxroute-<fingerprint>.sock` (31 bytes) always fits sun_path. Chosen by the kernel's constraint, not by taste; the fingerprint still names the data served."
+      },
+      "MAX_SOCKET_PATH_BYTES = 103": {
+        "count": 1,
+        "rendezvous": "socket-path-bound",
+        "value": "103",
+        "origin": "kernel",
+        "why": "Not an address but the bound the kernel imposes on one: matched by the SOCKET name shape. Declared rather than renamed because the name is exact, and a rendezvous whose bound drifts is the silent-truncation defect this constant exists to prevent."
       }
     },
     "src/protocol-routes-pure.js": {
@@ -214,6 +269,27 @@
         "value": "8787",
         "origin": "supervisor",
         "why": "systemd binds this socket ITSELF under socket activation, so the daemon own resolution is ignored on Linux and this copy cannot be derived away. Until this gate existed nothing compared this number with DEFAULT_HTTP_PORT; they agreed by luck. The host half of the same line belongs to the same address and moves this declared text if it ever changes."
+      },
+      "ListenStream=127.0.0.1:8788": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-1",
+        "value": "8788",
+        "origin": "supervisor",
+        "why": "Listening socket 2 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 1` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+      },
+      "ListenStream=127.0.0.1:8789": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-2",
+        "value": "8789",
+        "origin": "supervisor",
+        "why": "Listening socket 3 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 2` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+      },
+      "ListenStream=127.0.0.1:8790": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-3",
+        "value": "8790",
+        "origin": "supervisor",
+        "why": "Listening socket 4 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 3` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
       }
     },
     "service/ctxroute-http.service": {
@@ -227,25 +303,25 @@
     },
     "service/com.ctxroute.http.plist": {
       "<key>SockNodeName</key>": {
-        "count": 1,
+        "count": 4,
         "rendezvous": "daemon-http-host",
         "value": "127.0.0.1",
         "origin": "supervisor",
-        "why": "launchd name for the interface it binds. The KEY line is what this atom sees; the value sits on the next line and is declared beside it, so a change to either one moves a declared text and reddens."
+        "why": "launchd name for the interface it binds. The KEY line is what this atom sees; the value sits on the next line and is declared beside it, so a change to either one moves a declared text and reddens. Its count follows the declared `listeners` (4): launchd takes one socket dictionary per listening port, so this line is repeated exactly as many times, and the count is an EQUALITY rather than a ceiling."
       },
       "<string>127.0.0.1</string>": {
-        "count": 1,
+        "count": 4,
         "rendezvous": "daemon-http-host",
         "value": "127.0.0.1",
         "origin": "supervisor",
-        "why": "The launchd bind address itself. macOS is a LIVE target — the operator associate runs this framework there — so a divergence here costs a real user their injection lane, silently."
+        "why": "The launchd bind address itself. macOS is a LIVE target — the operator associate runs this framework there — so a divergence here costs a real user their injection lane, silently. Its count follows the declared `listeners` (4): launchd takes one socket dictionary per listening port, so this line is repeated exactly as many times, and the count is an EQUALITY rather than a ceiling."
       },
       "<key>SockServiceName</key>": {
-        "count": 1,
+        "count": 4,
         "rendezvous": "daemon-http-port",
         "value": "8787",
         "origin": "supervisor",
-        "why": "launchd name for the port it binds. On macOS the port lives ONLY here, EnvironmentVariables having been removed rather than left as a second copy the daemon ignores while activated."
+        "why": "launchd name for the port it binds. On macOS the port lives ONLY here, EnvironmentVariables having been removed rather than left as a second copy the daemon ignores while activated. Its count follows the declared `listeners` (4): launchd takes one socket dictionary per listening port, so this line is repeated exactly as many times, and the count is an EQUALITY rather than a ceiling."
       },
       "<string>8787</string>": {
         "count": 1,
@@ -253,6 +329,27 @@
         "value": "8787",
         "origin": "supervisor",
         "why": "The launchd port itself, the FOURTH site of one number. It is detected by an atom of its own rather than inferred from the key above, because a value nobody matches is a value nobody compares."
+      },
+      "<string>8788</string>": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-1",
+        "value": "8788",
+        "origin": "supervisor",
+        "why": "Listening socket 2 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 1` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+      },
+      "<string>8789</string>": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-2",
+        "value": "8789",
+        "origin": "supervisor",
+        "why": "Listening socket 3 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 2` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
+      },
+      "<string>8790</string>": {
+        "count": 1,
+        "rendezvous": "daemon-http-port-offset-3",
+        "value": "8790",
+        "origin": "supervisor",
+        "why": "Listening socket 4 of 4. DERIVED, never chosen: `service/render-units.js` renders it as `daemon-http-port + 3` from the `listeners` count the configuration declares, and `test/render-units-pure.test.js` proves the shipped units are that renderer own output byte for byte. It has a rendezvous of its OWN rather than sharing `daemon-http-port`, because the agreement check compares the value of one rendezvous across its sites: folding four ports into one name would make that name carry four values and disarm the only check an instance judge cannot do. The accept queue is capped PER SOCKET, so these are capacity, and a supervisor binding a different one than the wiring posts to loses those frames in silence."
       }
     },
     "wiring.json": {
@@ -262,6 +359,36 @@
         "value": null,
         "origin": "not-an-address",
         "why": "A FIELD-NAME map: it says that this framework url field is spelled url in this harness document. It matches because the manifest walk keys on the NAME of an address field, which is exactly what must stay armed — re-adding transport.port or transport.host here is the 2026-08-25 defect, and it would be RED."
+      }
+    },
+    "src/lifecycle-pure.js": {
+      "'/run'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A `schtasks` command-line SWITCH (run the task now), passed as an argv element to the Windows Task Scheduler CLI by `ensureCommand`/`supervisorQuery`. Windows command-line switches are written with a leading slash, so the literal matches the route atom — but it names no rendezvous: nothing listens on it and nothing knocks on it, it is an option of a third-party program. Declared here rather than excluded, so that the day a real route is spelt `/run` the declaration is still in front of a reader."
+      },
+      "'/tn'": {
+        "count": 2,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A `schtasks` command-line SWITCH (the task name follows), passed as an argv element to the Windows Task Scheduler CLI by `ensureCommand`/`supervisorQuery`. Windows command-line switches are written with a leading slash, so the literal matches the route atom — but it names no rendezvous: nothing listens on it and nothing knocks on it, it is an option of a third-party program. Declared here rather than excluded, so that the day a real route is spelt `/tn` the declaration is still in front of a reader."
+      },
+      "'/query'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A `schtasks` command-line SWITCH (read the task definition), passed as an argv element to the Windows Task Scheduler CLI by `ensureCommand`/`supervisorQuery`. Windows command-line switches are written with a leading slash, so the literal matches the route atom — but it names no rendezvous: nothing listens on it and nothing knocks on it, it is an option of a third-party program. Declared here rather than excluded, so that the day a real route is spelt `/query` the declaration is still in front of a reader."
+      },
+      "'/xml'": {
+        "count": 1,
+        "rendezvous": null,
+        "value": null,
+        "origin": "not-an-address",
+        "why": "A `schtasks` command-line SWITCH (answer in the language-neutral XML), passed as an argv element to the Windows Task Scheduler CLI by `ensureCommand`/`supervisorQuery`. Windows command-line switches are written with a leading slash, so the literal matches the route atom — but it names no rendezvous: nothing listens on it and nothing knocks on it, it is an option of a third-party program. Declared here rather than excluded, so that the day a real route is spelt `/xml` the declaration is still in front of a reader."
       }
     }
   }

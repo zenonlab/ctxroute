@@ -33,6 +33,8 @@
 // ⚠️ The gate's file name is load-bearing in TWO places (the consumer derivation and the split
 //    brain report) — declared ONCE so the two cannot drift apart.
 const GATE_FILE = 'doc-inject.js';
+// The harness's own words, as DATA (pure: zero logic, zero I/O) — never re-spelled here.
+const { AFTER_ANSWER } = require('./harness-profile');
 // ⚠️ JSDoc is a VERIFIED CONTRACT here (`npm run check:types`), not decoration: a block must be
 //    GLUED to its function, and a lying type is caught by `tsc`, never by a reader.
 /**
@@ -40,7 +42,7 @@ const GATE_FILE = 'doc-inject.js';
  * @typedef {{kind: "file", base: string, file: string, existsName: string, absentDetail: string, copyName: string, copyDetail: string}} FileFinding
  * @typedef {CheckFinding|FileFinding} Finding
  * @typedef {{base: string, label: string, absent?: (f: string) => string, copy?: (f: string, repo: string) => string}} HookSpec
- * @typedef {{settings: *, wantedFrames: (number|null), laneFlag: (string|null), consumers: string[], repoDir: string}} WiringInput
+ * @typedef {{settings: *, wantedFrames: (number|null), wantedAfterFrames?: (number|null), laneFlag: (string|null), consumers: string[], repoDir: string}} WiringInput
  */
 // ── THE DECLARATION READER ───────────────────────────────────────────────────
 // 🛑 BOTH TRANSPORTS, ALWAYS. A declaration is `type:"command"` (a spawned process, coordinates in
@@ -157,6 +159,10 @@ const GATE = Object.freeze({
 });
 // ⚠️ Two indices only, and no third: an unused constant is dead code, hence an EQUIVALENT mutant
 //    nobody can kill — this repository eliminates those at the source instead of testing them.
+// The harness event of the moment after the tool answered, READ FROM THE PROFILE — the settings this
+// doctor judges are Claude Code's, and the profile is the ONE place a harness's event names live.
+// ⚠️ A FUNCTION: read at call time, inside the test, never frozen at load.
+const afterEvent = () => AFTER_ANSWER.claudeCode.event;
 const RESET = 0;
 const SESSION = 1;
 /** @param {{name: string, ok: boolean, detail: (string|undefined)}} e @returns {CheckFinding} */
@@ -169,6 +175,7 @@ function said(e) {
  * @param {object} input
  * @param {*} input.settings parsed settings.json (never null: the shell judges readability)
  * @param {number|null} input.wantedFrames `frames` from ctxroute-config.json, null when undeclared
+ * @param {number|null} [input.wantedAfterFrames] `afterFrames` from ctxroute-config.json, null/absent when undeclared
  * @param {string|null} input.laneFlag `LANE_FLAG` read from client-core.js, null when unreadable
  * @param {string[]} input.consumers hook file names containing a `clientLane(` call
  * @param {string} input.repoDir the directory this doctor runs from, quoted verbatim in the "another copy" verdict
@@ -194,9 +201,18 @@ function wiringFindings(input) {
   // ⚠️ A GATE DECLARATION IS RECOGNISED BY WHAT IT CARRIES, NEVER BY ITS FILE NAME ALONE: on the
   //    http lane there is no file name at all, only a URL carrying the frame coordinates. Anchored
   //    on `frames=` and not on the host or the port, which are the operator's to choose.
-  const gate = commands.filter(
+  // 🔑 TWO MOMENTS, TWO FRAME SETS (2026-09-23). The same gate shell is wired BEFORE the action and
+  //    AFTER the tool answered, each with ITS bandwidth. Judged together they would read as
+  //    "divergent --frames" — a false alarm on a correct wiring — so each moment is read from its
+  //    own event and judged by the SAME coherence rules (`frameCoherence`), never a second copy.
+  const gateOf = (decls) => decls.filter(
     (c) => (/doc-inject\.js/.test(c) || /[?&]frames=\d+/.test(c)) && !/legacy-mcp-inject/.test(c),
   );
+  const hooks = (input.settings && input.settings.hooks) || {};
+  const gate = gateOf(declarations({ ...input.settings, hooks: { ...hooks, [afterEvent()]: undefined } }));
+  // ⚠️ Wrapped in an object, never `|| []`: an absent event then stringifies to an empty object and
+  //    yields no declaration — the fallback list was an EQUIVALENT mutant (any junk list matches nothing).
+  const afterGate = gateOf(declarations({ [afterEvent()]: hooks[afterEvent()] }));
   out.push(said({
     name: 'the GATE (doc-inject.js) is wired — otherwise NO doc is injected at all',
     ok: gate.length >= 1,
@@ -212,19 +228,74 @@ function wiringFindings(input) {
   //    so a corpus bigger than that needs several frames on the SAME gesture, i.e. N declarations.
   //    Falling back to 1 did not slow anything down: it made the agent act on incomplete knowledge
   //    for N-1 gestures. Do NOT resurrect them.
+  frameCoherence(out, gate, input.wantedFrames, '', 'frames');
+  // ⚠️ JUDGED ONLY WHEN IT EXISTS OR IS DECLARED: a machine that never wired the moment after the
+  //    answer is not accused of it, exactly like an undeclared `frames`. Declared and not wired is
+  //    still judged — the bandwidth check names the gap.
+  const wantedAfter = input.wantedAfterFrames === undefined ? null : input.wantedAfterFrames;
+  if (afterGate.length > 0 && wantedAfter === null) {
+    // 🔴 SWITCHED OFF AND STILL WIRED (2026-09-23): `afterFrames` absent or 0 means the moment is
+    //    OFF, and the generator then writes nothing for it — so declarations still sitting in
+    //    settings.json are a wiring nobody regenerated: the harness keeps paying the extra POSTs
+    //    the operator turned off, after every tool call, in silence.
+    out.push(said({
+      name: 'the moment after the tool answered is wired only when switched on',
+      ok: false,
+      detail: `settings.json wires ${afterGate.length} declaration(s) after the tool answered while ctxroute-config.json switches that moment OFF (afterFrames absent or 0): every tool call still pays them. Regenerate the wiring (tools/wiring-generate.js).`,
+    }));
+  }
+  // ⚠️ Whatever the switch says, frames that ARE wired are still judged for coherence: an extra
+  //    finding never replaces the four rules on what the harness really executes.
+  if (afterGate.length > 0) {
+    frameCoherence(out, afterGate, wantedAfter, ' (after the tool answered)', 'afterFrames');
+  } else if (wantedAfter !== null) {
+    // 🛑 DECLARED AND NOT WIRED IS ONE FACT — capacity ZERO — and it is said as such. Running the
+    //    coherence rules on an empty set printed "Divergent --frames values", a cause that does
+    //    not exist (caught by the doctor's own spawn cell the day this moment was wired).
+    out.push(said({
+      name: `the wiring honours the declared bandwidth (afterFrames: ${wantedAfter})`,
+      ok: false,
+      detail: `ctxroute-config.json asks for ${wantedAfter} frame(s) after the tool answered, settings.json wires NONE: every doc waiting for an answer (\`response\`) is never delivered. Regenerate the wiring (tools/wiring-generate.js).`,
+    }));
+  }
+  pushFiles(out, gate.concat(afterGate), GATE, input.repoDir);
+  // ── The remaining hooks, in wiring order: session gate, write guard, turn counter, canary.
+  // ⚠️ The `.filter` lives in `declsFor`, NOT inline in this loop: a traversal inside a traversal is
+  //    a declared O(N²) here, and this one has no reason to be one.
+  for (let i = SESSION; i < HOOKS.length; i += 1) {
+    const hook = HOOKS[i];
+    const decls = declsFor(commands, hook.re);
+    out.push(said({ name: hook.name, ok: decls.length >= 1, detail: hook.detail }));
+    if (hook.file) pushFiles(out, decls, hook, input.repoDir);
+  }
+  laneCoherence(out, input, commands, gate.concat(afterGate));
+  return out;
+}
+
+// The coherence of ONE moment's frames — same total everywhere, as many declarations as frames, the
+// declared bandwidth honoured, indices 1..N with no gap nor duplicate. Shared by the action and the
+// moment after the answer (2026-09-23): the rules were written once, they are applied twice.
+// ⚠️ `suffix` is EMPTY for the action, so every check name stays byte-identical to what the
+//    dead-man switch has always printed — its cells assert those names.
+/**
+ * @param {Finding[]} out @param {string[]} gate this moment's gate declarations
+ * @param {number|null} wanted the bandwidth the config declares for this moment, null if none
+ * @param {string} suffix appended to each check name @param {string} key the config key named
+ */
+function frameCoherence(out, gate, wanted, suffix, key) {
   const declares = gate.map((c) => {
     const n = coord(c, 'frames');
     return n === null ? 1 : n;
   });
   const uniqueN = [...new Set(declares)];
   out.push(said({
-    name: 'every gate declaration announces the SAME number of frames',
+    name: 'every gate declaration announces the SAME number of frames' + suffix,
     ok: uniqueN.length === 1,
     detail: `Divergent --frames values in settings.json: ${uniqueN.join(', ')}. The processes would split the content differently: the frames would no longer re-assemble.`,
   }));
   const expected = uniqueN.length === 1 ? uniqueN[0] : gate.length;
   out.push(said({
-    name: 'there are exactly as many declarations as announced frames',
+    name: 'there are exactly as many declarations as announced frames' + suffix,
     ok: gate.length === expected,
     detail: `${gate.length} declaration(s) of doc-inject.js for --frames ${expected}. Each frame is carried by ONE process: ${expected - gate.length} are missing, so that content will NEVER leave this gesture.`,
   }));
@@ -236,11 +307,11 @@ function wiringFindings(input) {
   //    diverging, and that divergence is silent.
   // ⚠️ Key absent from the config = no opinion, no blame: nobody is forced to declare their
   //    bandwidth (a language does not impose a policy — same doctrine as `skillsWithoutPerimeter`).
-  if (input.wantedFrames !== null) {
+  if (wanted !== null) {
     out.push(said({
-      name: `the wiring honours the declared bandwidth (frames: ${input.wantedFrames})`,
-      ok: expected === input.wantedFrames && gate.length === input.wantedFrames,
-      detail: `ctxroute-config.json asks for ${input.wantedFrames} frame(s), settings.json wires ${gate.length} (--frames ${expected}). The harness obeys settings.json: the REAL capacity is ${gate.length}, not ${input.wantedFrames}. Realign the two — this is exactly the silent divergence of 2026-08-05.`,
+      name: `the wiring honours the declared bandwidth (${key}: ${wanted})`,
+      ok: expected === wanted && gate.length === wanted,
+      detail: `ctxroute-config.json asks for ${wanted} frame(s), settings.json wires ${gate.length} (--frames ${expected}). The harness obeys settings.json: the REAL capacity is ${gate.length}, not ${wanted}. Realign the two — this is exactly the silent divergence of 2026-08-05.`,
     }));
   }
   const indices = gate.map((c) => {
@@ -250,22 +321,10 @@ function wiringFindings(input) {
   indices.sort((a, b) => a - b);
   const expectedOnes = Array.from({ length: expected }, (_, i) => i + 1);
   out.push(said({
-    name: 'the frame indices cover 1..N, with no gap and no duplicate',
+    name: 'the frame indices cover 1..N, with no gap and no duplicate' + suffix,
     ok: JSON.stringify(indices) === JSON.stringify(expectedOnes),
     detail: `Declared --frame indices: [${indices.join(', ')}] instead of [${expectedOnes.join(', ')}]. A missing index = a frame never emitted; a duplicated index = content delivered twice. Both are SILENT.`,
   }));
-  pushFiles(out, gate, GATE, input.repoDir);
-  // ── The remaining hooks, in wiring order: session gate, write guard, turn counter, canary.
-  // ⚠️ The `.filter` lives in `declsFor`, NOT inline in this loop: a traversal inside a traversal is
-  //    a declared O(N²) here, and this one has no reason to be one.
-  for (let i = SESSION; i < HOOKS.length; i += 1) {
-    const hook = HOOKS[i];
-    const decls = declsFor(commands, hook.re);
-    out.push(said({ name: hook.name, ok: decls.length >= 1, detail: hook.detail }));
-    if (hook.file) pushFiles(out, decls, hook, input.repoDir);
-  }
-  laneCoherence(out, input, commands, gate);
-  return out;
 }
 /** @param {string[]} commands @param {RegExp} re @returns {string[]} */
 function declsFor(commands, re) {
@@ -389,6 +448,11 @@ const OPTIONAL_GROUPS = Object.freeze([
     flag: '--codex-config',
     missing: 'the Codex feature flag (`hooks = true` present, deprecated `codex_hooks` absent)',
   }),
+  Object.freeze({
+    flag: '--deployed',
+    missing: 'whether the code actually SERVING PRODUCTION matches this repository, file for file, '
+      + 'under `src/`',
+  }),
 ]);
 /**
  * The notice a reduced run owes its reader. Empty array = nothing was reduced, say nothing.
@@ -425,7 +489,255 @@ function reducedNotice(input) {
   lines.push('   🛑 "I could not measure" is never "it is healthy".');
   return lines;
 }
+// ═══════════════════════════════════════════════════════════════════════
+// THE DECLARED ADDRESS MUST STILL EXIST ON THIS MACHINE — 2026-09-02
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 WHY THIS JUDGE EXISTS, AND WHY IT IS NOT THE ONE THAT WAS ASKED FOR.
+//    The Windows profile leaves `127.0.0.0/8` for a dedicated adapter, because
+//    libuv disables SYN retransmission on any address whose first byte is 127.
+//    The obvious guard would be "redden if libuv changes its mind" — and that
+//    is NOT MEASURABLE from here: no bench in this repository reproduces the
+//    loss (6,400 connections on each address, zero loss on both). Shipping it
+//    would be a guardrail that certifies instead of protecting.
+// ⇒ What IS measurable is the failure that will actually happen: **the address
+//    the configuration declares is no longer on this machine** — the adapter was
+//    removed, or its address reverted to an auto-assigned one. Then the daemon
+//    cannot bind, the whole fleet loses its injection, and nothing says WHY.
+// ⚠️ TRI-STATE, never a quiet green: a NAME (not an IP literal) cannot be
+//    compared to an interface list, and an EMPTY interface list means the shell
+//    could not observe — both answer `unmeasured` WITH their reason. "I could
+//    not measure" is never "it is healthy".
+const IPV4_LITERAL = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+/**
+ * Lowercase, and drop an IPv6 zone index (`fe80::1%eth0` and `fe80::1` are one
+ * address wearing two spellings). Comparing the raw strings would report a
+ * divergence that does not exist — the same class as the 8.3 short name that
+ * made `steering-single-copy` accuse a healthy machine.
+ * @param {unknown} a @returns {string}
+ */
+function normalizeAddress(a) {
+  return String(a === undefined || a === null ? '' : a).toLowerCase().split('%')[0];
+}
+
+/**
+ * Is the declared listening address present among this machine's addresses?
+ * @param {{host?: unknown, localAddresses?: unknown}} o
+ * @returns {{state: 'present'|'absent'|'unmeasured', host: string, reason?: string, available?: string[]}}
+ */
+function declaredHostPresence(o) {
+  const host = normalizeAddress(o && o.host);
+  const raw = o && Array.isArray(o.localAddresses) ? o.localAddresses : [];
+  const available = raw.map(normalizeAddress).filter((a) => a !== '');
+
+  if (host === '') {
+    return { state: 'unmeasured', host, reason: 'no address was declared to compare' };
+  }
+  if (!IPV4_LITERAL.test(host) && !host.includes(':')) {
+    return {
+      state: 'unmeasured', host,
+      reason: 'the declared host is a NAME, and a name is the resolver\'s business, never ours',
+    };
+  }
+  // 🛑 ANTI-VACUITY: an empty interface list is the shape a failed observation
+  //    takes, and answering `absent` there would accuse a healthy machine of a
+  //    defect the shell simply could not see.
+  if (available.length === 0) {
+    return { state: 'unmeasured', host, reason: 'no local address could be read from this machine' };
+  }
+  if (available.includes(host)) return { state: 'present', host };
+  return { state: 'absent', host, available };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DEPLOYED DRIFT — does the code SERVING PRODUCTION match this repository?
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 WHY THIS EXISTS: `0quater` ("PRODUCTION RUNS A FROZEN COPY") makes a delivery a GESTURE the
+//    operator chooses, never an automatic consequence of editing the repo — so the two CAN diverge,
+//    silently, for as long as nobody re-checks. Every other judge here proves the ENGINE decides
+//    correctly; none of them proves the bytes actually running are the ones this repo describes.
+// ⚠️ MEASURED FACT, NOT TO REDISCOVER: the deployed copy and the repo differ by LINE-ENDING STYLE
+//    on some files (repo `\r\n`, a deployed copy `\n` in places) while carrying byte-identical
+//    CONTENT once `\r` is stripped. A judge comparing raw bytes would be RED on day one — hence
+//    ignored, hence dead. The shell normalises BEFORE hashing; this module never sees a raw byte.
+// ⚠️ SCOPE = `git ls-files` under `src/`, THE AUTHORITY — never a hand-rolled glob (a glob is a
+//    list, and a list only knows what existed the day it was written).
+
+/**
+ * One entry of the deployed-drift comparison.
+ * @typedef {{relPath: string, repoHash: string, deployedHash: (string|null)}} DriftEntry
+ * @typedef {{state: 'unmeasured'}|{state: 'match', count: number}|{state: 'drift', count: number, paths: string[]}} DriftVerdict
+ */
+
+/**
+ * TRI-STATE verdict on whether the deployed copy matches the repo, file for file.
+ *
+ * 🛑 ANTI-VACUITY: an EMPTY list is `unmeasured`, never `match` — "I could not measure" is never
+ *    "it is healthy". `deployedHash: null` (the shell's spelling for "absent on the deployed
+ *    side") is compared like any other value: it can never equal a real hash, so a missing file
+ *    is drift, not silence.
+ *
+ * @param {DriftEntry[]} entries
+ * @returns {DriftVerdict}
+ */
+function deployedDriftVerdict(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return { state: 'unmeasured' };
+  // ⚠️ Written as TWO separate statements, never chained: `.filter().map()` is a NESTED traversal
+  //    in the AST (`no-undeclared-quadratic`) even though the real cost is linear — both passes
+  //    walk the SAME already-bounded comparison list once, never one per element of another.
+  const mismatched = entries.filter((e) => e.deployedHash !== e.repoHash);
+  const drifted = mismatched.map((e) => e.relPath);
+  if (drifted.length === 0) return { state: 'match', count: entries.length };
+  return { state: 'drift', count: entries.length, paths: drifted };
+}
+
+// ⚠️ Spelled ONCE: it travels into every refusal message below, and a second spelling would name a
+//    flag that does not exist.
+const DEPLOYED_FLAG = '--deployed';
+
+/**
+ * A NAMED REFUSAL about the `--deployed` launch argument — says WHAT (the received value) and
+ * WHY, never a silent fallback to "nothing was compared, but nothing screamed either".
+ * @param {unknown} value
+ * @param {string} why
+ * @returns {Error}
+ */
+function refuseDeployed(value, why) {
+  return new Error(
+    `ctxroute REFUSED: the launch argument "${DEPLOYED_FLAG}" is ${why} — received ${JSON.stringify(value)}. `
+    + 'It must be followed by ONE ABSOLUTE path to the directory serving production. A relative one '
+    + 'would be resolved against a working directory this doctor does not control, so two runs would '
+    + 'silently compare against two different copies — nothing would be measured at all, while '
+    + `looking measured. Fix the argument, or remove "${DEPLOYED_FLAG}" to skip this measurement: an `
+    + 'unmeasured drift is NAMED (the doctor\'s reduced-measurement notice), never silently assumed healthy.'
+  );
+}
+
+/**
+ * The deployed directory's address as DECLARED on the command line.
+ *
+ * ⚠️ IT TAKES `argv`, IT DOES NOT READ IT (a SHELL capability — `layers.json`). ABSENT ⇒
+ *    `undefined`: `--deployed` is OPTIONAL, a clean clone legitimately has no deployment to
+ *    compare against. PRESENT BUT UNUSABLE ⇒ a REFUSAL, never `undefined` — answering `undefined`
+ *    there would silently turn "the operator asked for a comparison" into "nothing was asked".
+ *
+ * @param {{argv: unknown, isAbsolute: (p: string) => boolean}} o
+ * @returns {string|undefined}
+ */
+function deployedArgument(o) {
+  if (!Array.isArray(o.argv)) return undefined;
+  const i = o.argv.indexOf(DEPLOYED_FLAG);
+  if (i === -1) return undefined;
+  if (o.argv.lastIndexOf(DEPLOYED_FLAG) !== i) throw refuseDeployed(DEPLOYED_FLAG, 'declared MORE THAN ONCE');
+  const next = o.argv[i + 1];
+  if (typeof next !== 'string' || next === '') throw refuseDeployed(next, 'followed by no address at all');
+  if (next.startsWith('-')) throw refuseDeployed(next, 'followed by another FLAG instead of an address');
+  if (!o.isAbsolute(next)) throw refuseDeployed(next, 'a RELATIVE path');
+  return next;
+}
+
+// 🔴 MEASURED IN PRODUCTION TWICE, TWO DIFFERENT FAULTS, SAME ROOT CAUSE (GUESSING A DURATION):
+//    ① 2026-09-13: NO delay at all — 20 retries exhausted in well under 1 ms against a REAL
+//    3828 ms SessionStart stall (a dozen browser-profile MCP connections booting at once). ②
+//    2026-09-14's FIRST attempt at a fix: a FIXED "20 × 250 ms" delay sized to THAT ONE measured
+//    stall, on THIS ONE machine — the operator named the fault directly: a slower machine, a
+//    busier one, a network drive, any of them can make the SAME transient last far longer, and a
+//    constant chosen from a single measurement is not a fix, it is the same bug with a bigger
+//    number. ⇒ THIS MODULE NOW OWNS NEITHER A DURATION NOR A RETRY COUNT. It asks the shell
+//    (which alone can watch the real filesystem) two questions: "has something changed since my
+//    last failed read?" (`nextSignal`) and "have YOU decided we are done waiting?"
+//    (`giveUp`) — the pure module never times anything, it only reacts.
+/**
+ * Reads settings.json THROUGH the rename window — the dead-man switch's own read must survive
+ * the exact transient it exists to be trusted through.
+ * 🔴 MEASURED IN PRODUCTION 2026-09-13: `checkWiring` did a SINGLE bare `readFileSync` wrapped in
+ *    an empty `catch`, so ANY error during the SessionStart I/O burst (a dozen MCP connections,
+ *    `.claude.json` rewritten, `settings.json` itself freshly opened for watching) was reported as
+ *    `settings.json not found`, screaming "ctxroute is BROKEN" over a file that read back fine one
+ *    second later. A diagnostic is worth nothing if the ONE time it screams is a lie.
+ * ⚠️ ONLY `ENOENT` IS RETRIED — the one error a concurrent rename can fabricate (identical
+ *    reasoning to `readThrough`, `EPERM`/`EACCES`/a lock are REAL problems: retrying them would
+ *    HIDE them, and a diagnostic that hides a real cause is the opposite of its purpose).
+ * ⚠️ NEVER swallow a non-ENOENT error into "not found": it is reported WITH ITS CODE, so the next
+ *    read of this exact banner tells the operator something a debug log currently has to.
+ * ⚠️ `giveUp()` IS CHECKED BEFORE waiting, never after: this is what removes the OLD "wait
+ *    once more after the last attempt" waste — the shell decides it is done, this module never
+ *    sleeps (or watches) for nothing.
+ * @param {(path: string) => string} lire injected reader (`fs.readFileSync` in production)
+ * @param {string} settingsPath
+ * @param {() => Promise<void>} nextSignal resolves on the NEXT real signal the shell can
+ *   observe (a filesystem change event, or its own safety ceiling) — never a guessed duration.
+ * @param {() => boolean} giveUp asks the shell "have you decided we give up?" — the shell
+ *   alone owns the clock and the ceiling; this module owns only the retry LOGIC.
+ * @returns {Promise<{raw: string} | {raw: null, detail: string}>}
+ */
+async function readSettingsThrough(lire, settingsPath, nextSignal, giveUp) {
+  for (;;) {
+    try {
+      return { raw: lire(settingsPath) };
+    } catch (e) {
+      if (!(e && /** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT')) {
+        return { raw: null, detail: `settings.json unreadable (${e.code || e.name || 'error'}): ${e.message}` };
+      }
+      if (giveUp()) return { raw: null, detail: `settings.json not found (gave up waiting for a real filesystem signal): ${settingsPath}` };
+      await nextSignal();
+    }
+  }
+}
+
+/**
+ * The hook events whose section of a Codex wiring text names `file`.
+ *
+ * ⚠️ SHAPE, NEVER A LIST OF EVENT NAMES: a section starts at `hooks.<Event>` (TOML, the managed
+ *    `requirements.toml`) or at `"<Event>":` (JSON, `hooks.json`), `<Event>` in PascalCase. A list
+ *    would be stale the day Codex adds an event, and an unknown event would then be swallowed by
+ *    the section before it, putting a script under the WRONG event in silence.
+ * ⚠️ Textual on purpose, like the rest of the Codex check: the two formats evolve with Codex and a
+ *    rigid parser would turn every change into a false negative.
+ * @param {string} raw the wiring text, TOML or JSON.
+ * @param {string} file a script file name, e.g. `codex-doc-inject.js`.
+ * @returns {string[]} the events, sorted, each once.
+ */
+function hookEventsOf(raw, file) {
+  const marks = [...raw.matchAll(/hooks\.([A-Z][A-Za-z]+)|"([A-Z][A-Za-z]+)"\s*:/g)];
+  const events = new Set();
+  for (let i = 0; i < marks.length; i += 1) {
+    const end = i + 1 < marks.length ? marks[i + 1].index : raw.length;
+    if (raw.slice(marks[i].index, end).includes(file)) events.add(marks[i][1] || marks[i][2]);
+  }
+  return [...events].sort();
+}
+
+/**
+ * Is the Codex injector ALSO wired after the tool answered, when the config asks for it?
+ *
+ * 🔴 BORN OF A HOLE MEASURED 2026-09-23: the Codex check asked "is `codex-doc-inject.js` wired?"
+ *    ANYWHERE. Once the same script also serves `PostToolUse`, dropping that one block left the
+ *    answer "yes" (the `PreToolUse` block still names it) while every `response` doc stopped
+ *    reaching Codex, in silence.
+ * ⚠️ SAME RULE AS THE CLAUDE SIDE: the moment is a CAPACITY, never an obligation. No `afterFrames`
+ *    in the config ⇒ no opinion (`null`), never a blame on a wiring that never asked for it.
+ * @param {string} raw the Codex wiring text.
+ * @param {string} file the Codex injector's file name.
+ * @param {number|null} wantedAfterFrames `afterFrames` from the config, `null` when absent.
+ * @returns {{name: string, ok: boolean, detail: string}|null}
+ */
+function codexAfterFinding(raw, file, wantedAfterFrames) {
+  if (wantedAfterFrames === null) return null;
+  const event = AFTER_ANSWER.codex.event;
+  return said({
+    name: `the CODEX shell (${file}) is ALSO wired after the tool answered (${event})`,
+    ok: hookEventsOf(raw, file).includes(event),
+    detail: `ctxroute-config.json asks for afterFrames: ${wantedAfterFrames}, the Codex wiring names ${file} `
+      + `under no ${event} section: every doc waiting for an answer (\`response\`) never reaches Codex.`,
+  });
+}
+
 module.exports = {
+  hookEventsOf, codexAfterFinding,
   GATE_FILE, GATE, DECL_RE, HOOKS, OPTIONAL_GROUPS,
   declarations, coord, filePath, wiringFindings, reducedNotice,
+  declaredHostPresence, normalizeAddress,
+  DEPLOYED_FLAG, deployedDriftVerdict, deployedArgument,
+  readSettingsThrough,
 };

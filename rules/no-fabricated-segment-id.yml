@@ -1,0 +1,63 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a SEGMENT id handed where the real caller
+# hands a BASE. NO POLICY.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ THE CLASS, stated precisely — it is NOT "a test used a wrong string":
+#    **A CELL THAT FABRICATES AN ARGUMENT PROVES ONLY WHAT ITS AUTHOR ALREADY
+#    BELIEVED.** When the fabricated shape differs from what the real caller
+#    produces, the cell is GREEN and the code it guards is DEAD in production.
+#    Nothing goes red, because nothing ever exercised the real shape.
+#
+# 🔴 PAID ON 2026-09-13, A WHOLE SESSION. `pretool-core` maps `baseId` over
+#    `plan.emitted` BEFORE calling an adapter, so `message()` and `badgeLabel()`
+#    receive BASES (`doc.md`) and never segments (`doc.md#1/2`). A fix asked
+#    `chunkPart(injected[0])` and was therefore DEAD ON ARRIVAL — the branch
+#    was never entered once in production. SIX cells passed, on 1885 green
+#    tests and a 100 % mutation score, because THEY passed ids carrying `#`.
+#    The OPERATOR found it by reading a badge on screen.
+#
+# ⚠️ WHAT IT LOOKS FOR: a string literal shaped like a chunk id (`…#j/m`)
+#    sitting in the FIRST argument of `badgeLabel(…)` or `…message(…)`. That
+#    first argument is `injected`, whose contract is BASES — the raw ids live
+#    in `ctx.emitted` and nowhere else.
+#
+# 🛑 IT MUST NOT MATCH `emitted`, AND THAT IS THE WHOLE DESIGN. Passing
+#    `emitted: ['doc.md#1/2']` is not only legitimate, it is the ONLY way to
+#    exercise the chunk path — the rule is anchored on the first argument
+#    precisely so the cure stays writable while the defect stays refused.
+#
+# ⚠️ AST, NEVER REGEX: `badgeLabel(['a#1/2'])` quoted in a comment or inside a
+#    string is a FALSE POSITIVE, and this file documents that exact defect at
+#    length. A text scan would redden its own explanation.
+#
+# 🛑 IT JUDGES NOTHING AND EXEMPTS NOTHING — no `files:`, no `ignores:`. The
+#    policy (floor, anti-vacuity, witnesses, negative check) lives in
+#    `test/fabricated-segment-id-gate.test.js`. Same separation as the
+#    quadratic and temporal twins.
+id: no-fabricated-segment-id
+language: JavaScript
+severity: error
+message: >-
+  SEGMENT ID HANDED WHERE THE CALLER HANDS A BASE — `pretool-core` reduces ids
+  with `baseId` BEFORE calling, so the first argument of `badgeLabel`/`message`
+  never carries a `#j/m`. A cell shaped this way exercises a caller that does
+  not exist: it stays green while the code it guards is dead. Pass the BASE
+  here and put the raw ids in `ctx.emitted`.
+
+rule:
+  kind: string
+  regex: '#[0-9]+/[0-9]+'
+  inside:
+    stopBy: end
+    # ⚠️ `nthChild: 1` is what pins this to `injected` and spares `emitted`:
+    #    the arguments node holds the argument list, and only its FIRST entry
+    #    carries the bases contract.
+    nthChild: 1
+    inside:
+      kind: arguments
+      inside:
+        kind: call_expression
+        has:
+          field: function
+          regex: '(badgeLabel|message)$'

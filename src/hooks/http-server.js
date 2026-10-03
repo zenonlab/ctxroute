@@ -100,7 +100,7 @@
 const http = require('http');
 // The four route names of our own wire protocol, from their single owner.
 const { routes: protocolRoutes } = require('../protocol-routes-pure');
-const { run } = require('../pretool-core');
+const { run, afterOutput } = require('../pretool-core');
 // ⚠️ WHICH CONTENT INDEX A CONNECTING FRAME RECEIVES (2026-08-29). The daemon is
 //    the single process that sees every connecting request of ONE invocation —
 //    see the block above `/pretool`'s handling, below, for the defect this
@@ -112,6 +112,28 @@ const frameSequencer = require('../frame-sequencer-pure');
 //    daemon can tell the two apart — it alone sees every connecting request of
 //    one invocation.
 const carryover = require('../carryover-pure');
+// ⚠️ THE ARRIVAL ORDER MUST SURVIVE THIS PROCESS'S DEATH — this daemon exits by
+//    design at every code delivery, and until 2026-09-19 that reset the three
+//    tables below, so the frames of an invocation in flight were counted as the
+//    FIRST again and re-served chunk 1. The decision of what may be adopted is
+//    PURE next door; this file only reads and writes the file.
+const invocationSnapshot = require('../invocation-snapshot-pure');
+// 🔑 ONE DIALECT FOR EVERY OPERATION ON A TABLE OR ON THE STORE (2026-09-20).
+//    With no pool, `createOps` forwards straight to the three pure modules with
+//    the three local maps — today's behaviour, one call deeper. With a pool, a
+//    server thread holds a CLIENT of the owner thread exposing the SAME shape.
+//    Two roads, one body: a second copy of "which argument, in which order"
+//    would drift on the first change to either.
+const ownerOps = require('../owner-ops');
+// 🔑 HOW MANY THREADS, AND WHICH ONE HOLDS WHICH SOCKET — the PURE decision,
+//    refusals included. The shell below only reports what it answers and starts
+//    what it names. `workers: 0`, the default, means no thread at all and
+//    today's path byte for byte.
+const workerPool = require('../worker-pool-pure');
+const threadChannel = require('../thread-channel-pure');
+const { Worker } = require('node:worker_threads');
+const { createClient } = require('./owner-client');
+const os = require('node:os');
 // -- THE HUMAN-FACING VERDICT DERIVED FROM THE SAME FACTS (2026-08-30): once
 //    `frame-sequencer-pure` has decided WHICH content index a connecting
 //    request receives, this PURE module decides whether that observation
@@ -148,7 +170,7 @@ const lockModule = require('../lock');
 //    protected in fact and unprotected in the eyes of the only thing that checks.
 //    Do not "tidy" this alias away.
 const withLock = lockModule.withLock;
-const { createMemoryStore } = require('../memory-store');
+
 // ⚠️ THE OWNER OF THE LOCK ADDRESSES — the daemon writes the DURABLE class
 //    through to the same files the spawned lane locks, so it must take the SAME
 //    lock, by the SAME name. Composing it here would be a second spelling.
@@ -171,6 +193,69 @@ const { bind } = require('../kernel-bind');
 // ⚠️ Bounded for life at 256 KB × 2 files, declared in `disk-writers.json`, and
 //    FAIL-OPEN everywhere: nothing below may cost this daemon its life.
 const lifecycle = require('../lifecycle-log');
+// ⚠️ THE PURE SIDE IS REQUIRED SEPARATELY, ON PURPOSE. `lifecycle-log` exports
+//    only the SHELL (`record`/`logPath`), because the shell is what touches the
+//    disk; the DECISION of whether a duration is worth a line is pure, mutated,
+//    and belongs to whoever asks the question — here, the request handler.
+const lifecyclePure = require('../lifecycle-log-pure');
+// ⚠️ NOT `lifecyclePure`: that name is the JOURNAL's pure half above. This one
+//    decides when the daemon RUNS (`http.lifecycle`) — two modules, two words.
+const daemonLifecycle = require('../lifecycle-pure');
+// 🔑 THE EVENT LOOP'S DELAY, ARMED ONCE FOR THE PROCESS'S WHOLE LIFE
+//    (2026-09-18). Node's own histogram (`perf_hooks.monitorEventLoopDelay`):
+//    the runtime samples itself, so there is no timer of ours, nothing to
+//    declare to `temporal-budget.json`, and the cost is a counter the runtime
+//    already maintains. `unref()` so a metric can never be the reason a process
+//    refuses to die — the same law the code and corpus watchers already obey.
+// 🛑 FAIL-OPEN, LIKE EVERY OTHER READER HERE: if this runtime does not expose
+//    it, `loopDelay` stays `null`, the fields go out as `null`, and NOTHING
+//    else changes. A measurement that cannot be taken is `null`, never zero —
+//    zero would read as "the loop was never blocked", which is the lying green
+//    this repository refuses everywhere else.
+const loopDelay = (() => {
+  try {
+    const h = require('node:perf_hooks').monitorEventLoopDelay({ resolution: 10 });
+    h.enable();
+    // ⚠️ PROBED, NEVER ASSUMED, AND THE PROBE IS NOT DECORATIVE: `unref` is absent
+    //    from the histogram on Node 22.15.1 (measured — calling it threw), while
+    //    the published type declares none at all. The guard is what keeps the
+    //    daemon from dying on a runtime that does expose it differently; the cast
+    //    only tells the checker we know we are reaching past its declaration.
+    const maybeUnref = /** @type {{ unref?: () => void }} */ (h).unref;
+    if (typeof maybeUnref === 'function') maybeUnref.call(h);
+    return h;
+  } catch {
+    return null;
+  }
+})();
+const backlogCeiling = require('../backlog-ceiling-pure');
+const http2Preface = require('../http2-preface-pure');
+
+/**
+ * The kernel's own ceiling on any `listen` backlog, or `null` when unknowable.
+ *
+ * 🛑 I/O LIVES HERE, THE DECISION DOES NOT — `backlog-ceiling-pure` judges, this
+ *    only reads. A verdict written next to a `readFileSync` is a verdict Stryker
+ *    never mutates, which is this fleet's worst defect class.
+ * ⚠️ ABSENCE IS THE NORMAL CASE, NOT AN ERROR: `/proc` does not exist on Windows
+ *    or macOS. It returns `null`, and the journal renders that as unknown — never
+ *    as a measured zero, which would accuse a kernel nobody asked.
+ *
+ * @returns {number|null}
+ */
+function readSomaxconn() {
+  try {
+    // ⚠️ REQUIRED HERE, not at module scope: this shell must stay loadable by the
+//    spawned clients, and a top-level `fs` binding did NOT exist in this file --
+//    the ReferenceError was swallowed by the catch below, so this measurement
+//    silently returned `null` on EVERY kernel, Linux included.
+  const raw = require('node:fs').readFileSync('/proc/sys/net/core/somaxconn', 'utf8').trim();
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
 // 🔴 FRESHNESS IS AN OBSERVATION SINCE 2026-08-24, IT WAS AN INFERENCE BEFORE.
 //    The daemon exited on ANY kernel notification, concluding "my code changed".
 //    MEASURED that day on the FROZEN copy: 258 deaths, and the event that killed
@@ -285,6 +370,129 @@ const SD_LISTEN_FDS_START = 3;
 //    this — the bound is a wall, never a working limit.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+// ⚠️ DECLARED, NEVER LEFT TO THE PLATFORM DEFAULT (2026-09-17) — a fixed-size
+//    accept QUEUE is capacity like any other in this project (frames, disk
+//    budgets) and was the one left undeclared. Node/libuv's own default is
+//    511 (nodejs.org, net.html, v26.9.0) — a generic constant, never sized
+//    against THIS fleet's real burst. Official Microsoft doc (winsock2
+//    `listen()`): "If a connection request arrives and the queue is full,
+//    the client will receive an error with an indication of WSAECONNREFUSED"
+//    — the EXACT symptom measured in production (ctxroute-daemon burst,
+//    2026-09-16/17).
+// 🔴🔴 THIS CONSTANT IS HYGIENE, **NOT** A FIX FOR THE `ECONNREFUSED` CLASS —
+//    SELF-CORRECTED 2026-09-17, HOURS AFTER SHIPPING IT. The session that
+//    added it claimed it was "the only lever on our side of the boundary".
+//    That claim CONTRADICTED three measurements already recorded in
+//    `http-lane.md`, and the honest reading is the opposite:
+//    ① the harness client opens **ONE** hook connection at a time
+//       (`maxSimultaneous = 1` over 21,500 requests, 32 frames, 6 parallel
+//       tool calls, 4 subagents) ⇒ there is NO simultaneous burst to absorb,
+//       and a queue of ~200 cannot overflow from our own traffic;
+//    ② the captured failures were **650/650 TIMEOUTS, never refusals** — a
+//       queue size repairs neither;
+//    ③ a fixed backlog threshold was ALREADY eliminated by name there
+//       ("511 broke once, then 600 passed — a coincidence read as a law").
+// 🛑 AND ON WINDOWS THE CEILING IS 200 — MEASURED, NOT "unmeasurable".
+//    libuv passes the RAW integer to `listen()` (`src/win/tcp.c`, read at
+//    source); Winsock then levels any POSITIVE backlog to 200, and libuv
+//    adds its 32 pre-posted `AcceptEx` on top. The ONLY documented way past
+//    it is `SOMAXCONN_HINT(b)`, defined as `(-(b))` — a NEGATIVE value.
+// 📐 MEASURED ON THIS MACHINE 2026-09-18, BY BEHAVIOUR (listen, BLOCK the
+//    loop so nothing is accepted, burst, count what the kernel queued before
+//    the first refusal; zero unresolved attempts, which is what makes it a
+//    proof rather than an artefact). 🔴 An earlier line here read Microsoft's
+//    "no standard provision to find out the actual backlog value" as "the
+//    change is not even measurable there" — that is FALSE: the sentence
+//    bounds the API, never the measurement.
+//      backlog     64  ->  depth    96   (the argument IS honoured below the cap)
+//      backlog    200  ->  depth   232
+//      backlog    300  ->  depth   232   (levelled to 200)
+//      backlog   -300  ->  depth   232   (hint lost — 332 if it had applied)
+//      backlog  -1000  ->  depth   232   (hint lost — 1032 if it had applied)
+//    ⇒ a positive value BELOW the cap reaches the kernel exactly; everything
+//    above it is levelled; and the negative hint does NOT take effect from
+//    Node, while .NET reaches 700/1500 with that same hint on this machine
+//    (`accept-queue-ceiling.md`). 🛑 WHERE it is lost is NOT established.
+//    Microsoft's page notes the hint is "only supported by the Microsoft
+//    TCP/IP service provider" — a sourced CANDIDATE, never a conclusion.
+//    Do not write a cause for it without opening the layer in between.
+// 🛑 Do NOT "fix" this by passing a negative number: it is a Windows-only
+//    dialect, and Linux clamps a negative backlog to 0 — the same line would
+//    give the fleet a queue of ZERO on the other platform.
+// ✅ THE VALUE STAYS 65535, AND THAT WAS RE-EXAMINED ON 2026-09-18 RATHER
+//    THAN INHERITED. Lowering it to nginx's 511 was proposed, written, and
+//    REVERTED the same hour: on Windows both give 232 (everything is levelled
+//    to 200 anyway), so the ONLY platform the figure changes is Linux — where
+//    511 would grant 511 and 65535 grants `net.core.somaxconn` (4096 on 5.4+).
+//    **The "cleaner" number was a capacity REGRESSION of 8x, bought for
+//    appearances.** 🔑 Declaring above the kernel ceiling is a normal idiom
+//    meaning "grant me your maximum", and the reference implementation says so:
+//    systemd.socket(5) defaults `Backlog=` to **4294967295**.
+// 🔴 WHAT WAS ACTUALLY WRONG HERE WAS NEVER THE FIGURE — IT WAS THE PROSE.
+//    This block claimed the change was "not even measurable" on Windows and
+//    that the class had "no known fix on our side". Both are measured false
+//    above. The operator read `65535`, believed the queue was 65535, and
+//    reasoned from it for weeks: **a declared value is only honest when the
+//    value a caller actually GETS is written beside it.** That is now the
+//    table above, and it is what must never be deleted.
+// 🔑 CAPACITY DOES NOT COME FROM THIS NUMBER — IT COMES FROM THE NUMBER OF
+//    SOCKETS, and that is MEASURED the same day, strictly linear inside ONE
+//    process: 1 socket 232 · 2 sockets 464 · 4 sockets 928. Windows caps ONE
+//    counter; it does not cap how many counters a process owns. That is what
+//    `http.listeners` exists for. 🛑 Never cite THIS constant as the remedy
+//    for a refused connection.
+//
+// 🔴 THE FULL SOLUTION SPACE WAS WALKED, OUT LOUD, ON 2026-09-17 — READ THIS
+//    BEFORE PROPOSING ANY OF THESE AGAIN, THEY WERE ALL REJECTED WITH A REASON:
+//    ① Client-side retry-with-backoff — the textbook answer for a transient
+//       stall, and the one every reliable HTTP client uses. DOES NOT APPLY
+//       HERE: the client on the http-type declarations is Claude Code's own
+//       binary, which we do not own and which is CONFIRMED to never retry
+//       (`anthropics/claude-code` #29963, closed NOT_PLANNED).
+//    ② Move the affected content to the `command` lane and write OUR OWN
+//       client with retry baked in — real, and it DOES close the gap for
+//       that lane. But it cannot rescue THIS lane's traffic: a hook
+//       declaration's type is fixed at config time, the harness fires
+//       whatever is declared, and there is no runtime "http failed, spawn a
+//       command hook instead" — that switch does not exist in the harness.
+//    ③ Windows named pipe + `WaitNamedPipe` (the rendezvous lane already in
+//       this codebase) instead of the TCP port — REJECTED, and this is the
+//       one worth remembering: it is NOT a different fix, it is THIS SAME
+//       fix (widen how long a caller waits before failing) wearing a
+//       different transport. It buys nothing extra. It is also structurally
+//       unavailable to Claude Code's native `http` hook type, which needs a
+//       URL — a pipe path is not one (see the address split in `paths.js` /
+//       `kernel-endpoint.js`).
+//    🔑 WHY ①③② ALL COLLAPSE TO THE SAME ANSWER — this is the actual root
+//       cause, measured and documented independently in `http-lane.md`: the
+//       daemon answers in ~8 ms; the stall lives in the CLIENT PROCESS
+//       (Claude Code / the harness) BEFORE it ever opens a connection to us.
+//       Any fix that runs on OUR side of that connection — pipe, retry
+//       script, bigger queue — starts AFTER the harness has already decided
+//       to call us, so none of them can shorten or prevent an upstream
+//       stall we have zero code and zero visibility inside of.
+//    🔴 THE RETRACTION THAT USED TO END THIS LIST IS ITSELF WITHDRAWN
+//       (2026-09-18). It read: "the fourth candidate is refuted: this class
+//       has no known fix on our side". Both halves have since been measured
+//       false, and each is a WITHDRAWAL rather than a reversal — the earlier
+//       readings were real, they simply measured too little:
+//       · `maxSimultaneous = 1` was taken against a STUB ON ANOTHER PORT,
+//         never the production daemon; sampling the live one gives 32 for a
+//         single session and `peakConn = 254` on the incident of 2026-09-18
+//         (`accept-queue-ceiling.md`, which withdrew the burial by name).
+//       · "no fix on our side" is refuted by a MEASUREMENT: the accept
+//         ceiling is PER SOCKET and strictly linear — 232 · 464 · 928 for
+//         1, 2 and 4 listening sockets in one process. That lever is ours,
+//         it is a config key (`http.listeners`), and it needs nothing from
+//         the client.
+//       ⇒ ①②③ stay rejected FOR THE REASONS WRITTEN ABOVE — none of them
+//       is about capacity. What is no longer true is that nothing on our
+//       side can help. 🛑 The CAUSE of the client stall is still OPEN and
+//       is not ours to close; say "OPEN", never "closed". And a plugin does
+//       not debug its host: the answer to an uncontrollable client is a
+//       side that cannot refuse, never an explanation of why it froze.
+const LISTEN_BACKLOG = 65535;
+
 // ⚠️ WHAT "NOTHING TO SAY" LOOKS LIKE OVER HTTP — and it is DECLARED UNMEASURED.
 //    On the spawn lane, silence is an exit 0 with no stdout. The official doc
 //    says the endpoint answers "using the same JSON output format as command
@@ -318,6 +526,40 @@ const NO_OUTPUT = {};
 //    `src/freshness-scope-pure.js` carries the rationale and the measurements.
 const freshnessScope = require('../freshness-scope-pure');
 const freshnessVerified = freshnessScope.createState();
+// 🔑 THE SAME DEFECT ONE LAYER UP, CLOSED THE SAME WAY (2026-09-18). The code
+//    was verified 32 times per action until 2026-08-31; the CORPUS was still
+//    COLLECTED 32 times per action after it. MEASURED: `collectAll` = 6.36 ms,
+//    an action = 282.92 ms of single-threaded CPU of which ~198 ms was that
+//    recomputation; after this, 510.7 ms → 143 ms with a byte-identical output.
+// 🛑 THE MEMOISATION IS THE DAEMON'S, NEVER THE CORE'S — only a long-lived
+//    process can know that two requests belong to ONE action. `pretool-core`
+//    takes a `collect` argument exactly as it takes `store` and `withLock`, and
+//    absent it falls back to `collectAll`, i.e. the spawn lane byte for byte.
+const collectScope = require('../collect-scope-pure');
+const collectCache = collectScope.createState();
+// 🔑 AND THE THIRD FLOOR OF THAT SAME STAIRCASE (2026-09-19). The code stopped
+//    being verified per frame, then the corpus stopped being collected per
+//    frame — and the SPLIT of that corpus was still recomputed by all 32.
+//    MEASURED: `budget.planFrames` called 32 times for ONE action, `budget.js`
+//    26.7 % of this daemon's CPU (its `fingerprint` alone 16.3 %); A/B on the
+//    real server, twice each arm, **180/186 ms → 128/131 ms per action** with
+//    every delivered body IDENTICAL (one SHA-1 over the sorted responses).
+// 🛑 KEYED ON THE INPUTS, NEVER ON THE INVOCATION: `pretool-core` splits the
+//    plan of ANOTHER invocation when it harvests a carryover, so an invocation
+//    key would file one action's frames under another's name — silently, and
+//    with wrong CONTENT. `src/split-scope-pure.js` carries the reasoning.
+// 🛑 THE HASHER IS THE SHELL'S: the pure module may not import `node:crypto`,
+//    and a hash is I/O-free but dependency-bearing, so it is INJECTED.
+const splitScope = require('../split-scope-pure');
+const splitCache = splitScope.createState();
+const emissionCore = require('../emission-core');
+const nodeCrypto = require('node:crypto');
+// ⚠️ A FACTORY, NOT A DIGEST FUNCTION: the segments are hashed INCREMENTALLY, so
+//    nothing ever concatenates the ~190 KB of an action into one more string.
+const newActionHash = () => {
+  const h = nodeCrypto.createHash('sha1');
+  return { update: (s) => h.update(s), digest: () => h.digest('hex') };
+};
 
 /**
  * Reads the request body, bounded.
@@ -594,9 +836,17 @@ function emitRoute(data, store) {
  *   kernel refuses the address. Absent ⇒ NOTHING happens here: a builder must
  *   not decide whether its caller lives or dies. `main` throws; `kernel-bind`
  *   inspects a possibly dead entry instead.
+ * @property {((err: Error) => void)|null} onLaneLost what to do for a socket
+ *   error NO caller claimed by name — an absent address, a refused permission,
+ *   an errno nobody has met yet. Absent ⇒ the error is RETHROWN, never
+ *   swallowed. Same house rule as above: this reports, the shell decides.
  * @property {(() => {stale: boolean, checked: number, reasons: string[]})|null} freshness
  *   asked ONCE per request, before anything else. Absent ⇒ no verification at
  *   all, i.e. the behaviour that shipped before 2026-08-24, byte for byte.
+ * @property {Int32Array|null} activity the process-wide activity counter
+ *   (one `Int32Array` over a `SharedArrayBuffer`), bumped once per request so
+ *   an on-demand daemon can tell a quiet window from a busy one. Absent ⇒
+ *   nothing counted.
  * @property {((freshness: {stale: boolean, checked: number, reasons: string[]}) => void)|null} onStaleCode
  *   what the SHELL does when the code on disk no longer matches. Absent ⇒
  *   NOTHING happens here beyond refusing to answer: a builder must not decide
@@ -605,6 +855,11 @@ function emitRoute(data, store) {
  *   backend. Absent/null ⇒ the historical disk store, byte-identical. A daemon
  *   passes its MEMORY store and, with it, an empty lock: the kernel already
  *   serialises its callers. The two always travel together.
+ * @property {Record<string, Function>|null} tables the six invocation-table
+ *   operations, as `owner-ops.createOps().tables` exposes them. Absent ⇒ built
+ *   here over the three maps below, which is today's behaviour byte for byte.
+ *   A SERVER THREAD passes a client of the owner thread instead: same shape,
+ *   same arguments, and the only place in this file that knows the difference.
  * @property {Map<string, number>|null} frameSequencerState which content
  *   index each connecting frame of an invocation has already received —
  *   `frame-sequencer-pure.js`'s bookkeeping, DEFAULT-CREATED (never `null`
@@ -655,6 +910,25 @@ function emitRoute(data, store) {
  */
 function handle(body, url, deps) {
   const { runFn, outputFn, parseFrames, store, frameSequencerState, deliveryNoticeState, carryoverState } = deps;
+  // ═════════════════════════════════════════════════════════════════════
+  // 🔑 ONE DIALECT FOR A TABLE OPERATION, TWO ROADS TO IT (2026-09-20).
+  // ═════════════════════════════════════════════════════════════════════
+  // With no pool this object forwards straight to the three pure modules with
+  // the three local maps — today's behaviour, byte for byte, one function call
+  // deeper. With a pool it is a CLIENT of the owner thread, and the calls below
+  // are unchanged: a shell that could tell the difference would be a shell
+  // holding a second copy of the rules, which is how the two roads drift.
+  // 🛑 BUILT HERE AND NOT ONLY IN `createServer`: `handle` is exported and three
+  //    suites drive it with a bare `deps`. Those callers must keep getting
+  //    exactly what they got before — the pure modules over whatever states
+  //    they passed, absent ones included (every entry point fails open on a
+  //    missing map, which IS the historical behaviour).
+  const tables = deps.tables || ownerOps.createOps({
+    sequencer: frameSequencerState,
+    notice: deliveryNoticeState,
+    carryover: carryoverState,
+    store: null,
+  }).tables;
   let data;
   try {
     data = JSON.parse(body);
@@ -696,10 +970,19 @@ function handle(body, url, deps) {
   const capture = (decision, fullDoc, systemMessage) => {
     captured = true;
     const combined = showNotice ? lib.joinSystemMessage(systemMessage, noticeText) : systemMessage;
-    answer = outputFn(decision, fullDoc, combined);
+    answer = dialect(decision, fullDoc, combined);
   };
   const frames = frameFromUrl(url, parseFrames);
-  const invocationId = typeof data.tool_use_id === 'string' ? data.tool_use_id : '';
+  // 🔑 BEFORE OR AFTER THE TOOL RAN (2026-09-23). The harness POSTs BOTH events to this route, and
+  //    its own words say which — read through the profile, exactly like the spawn shell. After
+  //    the answer the moment is a SECOND invocation (`lib.momentInvocation`): the frame sequencer,
+  //    the harvest table and the collection memo below are all keyed by it, and sharing the
+  //    BEFORE key would replay the plan decided before the action — nothing new, nothing red.
+  // ⚠️ THE DIALECT FOLLOWS THE MOMENT, and `outputFn` stays the injected one BEFORE the answer so
+  //    every existing cell drives this shell exactly as before.
+  const after = lib.afterAnswer(data, harnessProfile.AFTER_ANSWER.claudeCode);
+  const dialect = after ? afterOutput : outputFn;
+  const invocationId = lib.momentInvocation(typeof data.tool_use_id === 'string' ? data.tool_use_id : '', after);
   // ═════════════════════════════════════════════════════════════════════
   // 🔴 THE DEFECT THIS REMAP CLOSES, MEASURED 2026-08-28. Windows disables TCP
   //    retransmission on loopback (`SIO_TCP_INITIAL_RTO`, libuv `src/win/tcp.c`)
@@ -726,7 +1009,7 @@ function handle(body, url, deps) {
   //    tracking cannot apply (no state map, single frame, empty invocation id)
   //    — that is what keeps every caller that supplies none of it (a test, a
   //    future client) byte-identical to before this change.
-  const frame = frameSequencer.nextIndex(frameSequencerState, invocationId, frames.frame, frames.nbFrames);
+  const frame = tables.nextIndex(invocationId, frames.frame, frames.nbFrames);
   // ═════════════════════════════════════════════════════════════════════
   // THE DEFECT THIS CLOSES, MEASURED 2026-08-30. A transport that is
   // CORRECT but says NOTHING gets mistaken for a transport that is
@@ -771,13 +1054,13 @@ function handle(body, url, deps) {
   //    several tool calls at once — 31 false alarms out of 32 were paid for
   //    assuming otherwise on 2026-08-30). Only two FACTS are used: a frame
   //    arrived, and a new invocation is deciding its plan.
-  if (carryover.isHarvested(carryoverState, invocationId)) return NO_OUTPUT;
+  if (tables.isHarvested(invocationId)) return NO_OUTPUT;
   // 🛑 THE SCOPE IS COMPOSED BY ITS OWNER, `lib.scopeId` — never `session_id`
   //    alone: master and sub-agents share it, and two spellings of one scope
   //    would harvest across agents. Same single source the core uses.
   const scopeId = lib.scopeId(data.session_id, data.agent_id);
-  carryover.observe(carryoverState, scopeId, invocationId, frame, frames.nbFrames);
-  const notice = deliveryNotice.observe(deliveryNoticeState, invocationId, frame, frames.nbFrames);
+  tables.observe(scopeId, invocationId, frame, frames.nbFrames);
+  const notice = tables.notice(invocationId, frame, frames.nbFrames);
   const noticeText = deliveryNotice.messageFor(notice);
   const showNotice = noticeText !== '' && lib.shouldShowNotification(collectCore.loadConfig());
   try {
@@ -785,6 +1068,40 @@ function handle(body, url, deps) {
       frame,
       nbFrames: frames.nbFrames,
       invocationId,
+      after,
+      // 🔑 ONE COLLECTION PER ACTION. The thunk is what the core calls INSTEAD
+      //    of `collect-core.collectAll`; it answers from the table when this
+      //    action already built its accumulator, and otherwise collects for
+      //    real and remembers it. 🛑 The decision (hit, miss, eviction) lives in
+      //    `collect-scope-pure.js` and is MUTATED there — an inverted condition
+      //    here would serve one action's documents to another, silently, and
+      //    Stryker never looks inside this shell.
+      // ⚠️ FAILS TOWARDS MORE WORK: no invocation id ⇒ `lookup` answers null ⇒
+      //    we collect, exactly as before.
+      collect: (cfg, pl) => {
+        const memo = collectScope.lookup(collectCache, invocationId);
+        if (memo !== null) return memo;
+        const fresh = collectCore.collectAll(cfg, pl);
+        collectScope.remember(collectCache, invocationId, fresh);
+        return fresh;
+      },
+      // 🔑 ONE SPLIT PER ACTION. The core calls this INSTEAD of
+      //    `emission-core.split`; it answers from the table when this exact
+      //    input has already been split, and otherwise splits for real and
+      //    remembers it. 🛑 The decision (key, hit, eviction) lives in
+      //    `split-scope-pure.js` and is MUTATED there — an inverted condition
+      //    here would serve one action's FRAMES to another, silently, and
+      //    Stryker never looks inside this shell.
+      // ⚠️ FAILS TOWARDS MORE WORK: no usable key ⇒ `signature` answers `''` ⇒
+      //    `lookup` answers null ⇒ we split, exactly as before.
+      split: (segments, budgetMax, nbFrames) => {
+        const key = splitScope.signature(segments, budgetMax, nbFrames, newActionHash);
+        const memo = splitScope.lookup(splitCache, key);
+        if (memo !== null) return memo;
+        const fresh = emissionCore.split(segments, budgetMax, nbFrames);
+        splitScope.remember(splitCache, key, fresh);
+        return fresh;
+      },
       // 🔑 FACTS IN, SEGMENTS OUT — the shell OBSERVES, the core READS the plan.
       //    This daemon knows which invocations of this scope still owe content
       //    and how many of their frames connected; it does NOT know what a plan
@@ -793,8 +1110,8 @@ function handle(body, url, deps) {
       // ⚠️ `pending` IS CALLED ONLY ON THE DECIDING FRAME, inside the core's
       //    lock: frames 2..N return on the memoized plan before reaching it, so
       //    one invocation harvests exactly once.
-      pending: () => carryover.pendingFor(carryoverState, scopeId, invocationId),
-      onHarvested: (id) => carryover.markHarvested(carryoverState, id),
+      pending: () => tables.pendingFor(scopeId, invocationId),
+      onHarvested: (id) => tables.markHarvested(id),
       // 🔑 THE STATE OF A LIVING DAEMON LIVES IN MEMORY, AND THE LOCK GOES WITH
       //    IT. Sixteen short-lived processes had no common ground but the disk,
       //    so a FILE was made to carry a conversation between them — a lock to
@@ -842,7 +1159,7 @@ function handle(body, url, deps) {
   //    the SAME envelope shape through the SAME single dialect function —
   //    never a hand-built object bypassing it.
   if (!captured && showNotice) {
-    answer = outputFn('none', '', noticeText);
+    answer = dialect('none', '', noticeText);
   }
   return answer;
 }
@@ -880,6 +1197,16 @@ function createServer(deps = {}) {
     //    IS the behaviour from before this change.
     carryoverState: deps.carryoverState || carryover.createState(),
     onAddressInUse: deps.onAddressInUse || null,
+    // 🛑 PASSED THROUGH, NEVER BUILT HERE. `handle` builds the local facade
+    //    itself when this is absent, so a caller that drives `handle` with a
+    //    bare `deps` keeps exactly the behaviour it had. Building it in this
+    //    place too would be the same decision taken twice.
+    tables: deps.tables || null,
+    // 🛑 NO DEFAULT, AND THE ABSENCE IS THE GUARANTEE. `null` here means "nobody
+    //    claimed this error", and the handler then RETHROWS — the loud, natural
+    //    course. A default that quietly absorbed it would recreate, one layer
+    //    up, the exact swallowing this key exists to end.
+    onLaneLost: deps.onLaneLost || null,
     parseFrames: deps.parseFrames || require('../lib-pure').parseFrameArgs,
     // ⚠️ NO DEFAULT, EXACTLY LIKE `store`, AND FOR THE SAME REASON. Absent ⇒ the
     //    previous behaviour BYTE FOR BYTE, so every differential and every test
@@ -888,8 +1215,46 @@ function createServer(deps = {}) {
     //    never a silent default a test inherits.
     freshness: deps.freshness || null,
     onStaleCode: deps.onStaleCode || null,
+    // 🔑 THE ACTIVITY COUNTER (2026-09-29) — one `Int32Array` over a
+    //    `SharedArrayBuffer`, the SAME one in every thread, bumped by every
+    //    request of every socket. An on-demand daemon leaves when a whole idle
+    //    window passes without it moving (`lifecycle-pure.idleVerdict`).
+    // 🛑 SHARED, NEVER PER SOCKET: a counter held by one server would let the
+    //    main thread see a quiet socket and leave while another thread serves.
+    // ⚠️ NO DEFAULT, like `freshness`: absent ⇒ nothing is counted, the
+    //    previous behaviour byte for byte for every test driving this builder.
+    activity: deps.activity || null,
   };
+  // ⚠️ PER SERVER, NEVER MODULE-LEVEL. A module-level counter would be SHARED by
+  //    the port lane and the rendezvous lane — two transports whose concurrency is
+  //    a different fact — and by every server a test builds in the same process,
+  //    so a suite would carry another suite's peak. See the `connection` handler
+  //    below for what these two numbers are for.
+  const concurrency = { open: 0, peak: 0 };
+  // ⚠️ A WeakMap keyed by the socket: the entry dies with the connection, so nothing accumulates
+  //    over a daemon's weeks of life (`http-daemon-lifecycle` counts handles and listeners exactly).
+  /** @type {WeakMap<import('net').Socket, {requests: number, answered: number, bytesAtAnswer: number, errorCode: string|null, threw: string|null, route: string|null, lastRequestAt: number}>} */
+  const socketStates = new WeakMap();
   const server = http.createServer((req, res) => {
+    // ⚠️ THE ONLY WORK `serve-stall` COSTS ON A HEALTHY REQUEST: one clock read.
+    //    Nothing is written, nothing is counted, nothing accumulates — the
+    //    decision to spend a disk line is taken once, at the very end, by
+    //    `lifecyclePure.isStall`. See the vocabulary entry for why the event
+    //    exists and why it must never become a line per request.
+    const startedAt = Date.now();
+    // 🔑 ONE atomic add per request, no I/O: this is what tells an on-demand
+    //    daemon it is still wanted. Every route counts — a turn counter or a
+    //    reset from the client lane is a harness that is alive.
+    if (wired.activity) Atomics.add(wired.activity, 0, 1);
+    // ⚠️ `socket-cut` bookkeeping: two counters and a byte mark per connection, no I/O. The line
+    //    is decided at close by `lifecyclePure.socketCut` — see the `connection` listener below.
+    const cut = socketStates.get(req.socket);
+    if (cut) {
+      cut.requests += 1;
+      cut.route = String(req.url || '').split('?')[0] || '<none>';
+      cut.lastRequestAt = startedAt;
+      res.once('finish', () => { cut.answered += 1; cut.bytesAtAnswer = req.socket.bytesRead; });
+    }
     // ═══════════════════════════════════════════════════════════════════
     // 🛑 THE GUARANTEE, AND IT LIVES HERE — AT THE POINT OF USE (2026-08-24).
     // ═══════════════════════════════════════════════════════════════════
@@ -976,6 +1341,12 @@ function createServer(deps = {}) {
         // Unparseable ⇒ no identity ⇒ verify, exactly as before. `handle` is the
         // one that decides what an unreadable payload means.
       }
+      // ⚠️ THREE CLOCK READS, AND THEY BUY THE DECOMPOSITION OF A STALL. A 9.4 s
+      //    request was MEASURED on 2026-09-02 and the journal could only say
+      //    "9.4 s" — which of the three phases ate it was still a guess, and a
+      //    guess here costs a night. These marks are carried into the
+      //    `serve-stall` record and are written NOWHERE otherwise.
+      const bodyReadAt = Date.now();
       if (wired.freshness && !freshnessScope.alreadyVerified(freshnessVerified, invocationId)) {
         const freshness = wired.freshness();
         if (freshness.stale) {
@@ -983,8 +1354,24 @@ function createServer(deps = {}) {
           return;
         }
       }
+      const freshDoneAt = Date.now();
       const answer = body === null ? NO_OUTPUT : handle(body, req.url, wired);
+      const handleDoneAt = Date.now();
+      // 🔴 THE SERIALISATION IS WORK, AND IT SAT OUTSIDE EVERY MEASUREMENT UNTIL
+      //    2026-09-19. `handleMs` stops at the line above, so the journal reported
+      //    2 ms per frame while an end-to-end measurement against this very daemon
+      //    read **15.78 ms** — sequential, one connection at a time, floor
+      //    subtracted. The gap is HERE: turning the answer into ~8 KB of JSON, and
+      //    writing it. **Two instruments disagreed and the honest reading was that
+      //    the cheaper one measured less, not that the daemon was cheap.**
+      // 🛑 IT DECIDES THE MULTI-CORE QUESTION, so it may not stay invisible: the
+      //    DECISION (2 ms) is small, and whether a worker pool is worth its
+      //    complexity depends entirely on how much of the rest is SERIALISATION
+      //    (movable — a worker can return the bytes) versus the socket WRITE
+      //    (not movable: this Node cannot hand a TCP handle to a thread, measured
+      //    `Found invalid value in transferList` on 22.15.1).
       const payload = JSON.stringify(answer);
+      const payloadDoneAt = Date.now();
       // ⚠️ Answering a socket the client already closed is pointless work, and
       //    on some runtimes an error. 🔴 MEASURED on Node 22.15.1: it does NOT
       //    throw there — the earlier claim that an abort could kill the daemon
@@ -997,11 +1384,150 @@ function createServer(deps = {}) {
         'content-length': Buffer.byteLength(payload),
       });
       res.end(payload);
-    }).catch(() => {
+      // ⚠️ AFTER `res.end`, NEVER BEFORE — housekeeping never delays the thing
+      //    it observes. The client already has its answer when this runs.
+      // 🛑 THE PREDICATE IS WHAT MAKES THIS LEGAL. A healthy request is ~11 ms,
+      //    so `isStall` answers `false` and NOTHING is written: no line, no
+      //    file, no SSD wear. Only a request that took >= 1 s — the shape that
+      //    loses a whole 32-frame action — costs one line.
+      // 🔴 WHAT IT IS FOR, so nobody deletes it as noise: production loses
+      //    connections ALL-OR-NOTHING (a single action losing 30 of its 32
+      //    frames while the busiest seconds of the same night lose none,
+      //    MEASURED 2026-09-02). That shape means this single-threaded daemon
+      //    was ENTIRELY unavailable for a moment, and nothing here could say so.
+      //    This line is what turns that autopsy into an observation.
+      // ⚠️ `route` is the URL PATH ONLY — the query carries frame coordinates
+      //    that would make every line unique and the journal unreadable.
+      const elapsedMs = Date.now() - startedAt;
+      if (lifecyclePure.isStall({ elapsedMs })) {
+        // ⚠️ THE THREE PHASES, so a stall NAMES ITS OWN CAUSE instead of posing a
+        //    question. `bodyMs` = reading the request off the socket (a slow or
+        //    stalled CLIENT lands here) · `freshMs` = the point-of-use code
+        //    verification (~3.7 ms of disk when it runs, ONCE per action) ·
+        //    `handleMs` = the engine, and that is where the cross-process LOCK
+        //    lives — it BUSY-WAITS and fails open at 2,000 ms, so a `handleMs`
+        //    near a multiple of 2,000 accuses the lock by arithmetic alone.
+        // 🛑 They are DERIVED from marks already taken, never a second timing
+        //    pass, and they are written ONLY inside this anomaly branch.
+        // ⚠️ `peakConn` / `openConn` RIDE HERE AS FIELDS — never their own event,
+        //    never their own frequency. See the `connection` handler: they are the
+        //    only measurement of simultaneous connections taken AT THE SOURCE, and
+        //    they are what decides whether the accept-queue hypothesis for
+        //    `ECONNREFUSED` survives (`accept-queue-ceiling.md`). `peakConn` is
+        //    CUMULATIVE over the process's life; `openConn` is this instant, so a
+        //    burst that already ended is distinguishable from one still in flight.
+        lifecycle.record('serve-stall', {
+          elapsedMs,
+          bodyMs: bodyReadAt - startedAt,
+          freshMs: freshDoneAt - bodyReadAt,
+          handleMs: handleDoneAt - freshDoneAt,
+          payloadMs: payloadDoneAt - handleDoneAt,
+          route: String(req.url || '').split('?')[0] || '<none>',
+          pid: process.pid,
+          peakConn: concurrency.peak,
+          openConn: concurrency.open,
+          // 🔑 THE EVENT LOOP'S OWN DELAY — the ONE measurement that can settle
+          //    whether the refusals are OURS (2026-09-18). `http-lane.md`
+          //    documents a chain it cannot close: the daemon falls behind in
+          //    RECEIVING ⇒ connections pile up ⇒ the accept queue (232) is
+          //    exceeded (`peakConn=254`) ⇒ Windows answers `WSAECONNREFUSED`.
+          //    Its first domino — WHY the bytes are late — has never been named.
+          //    A BLOCKED SINGLE THREAD stops draining its sockets, which IS the
+          //    definition of the `win 0` seen toward this daemon; this records
+          //    it, so the question stops being an argument.
+          // 🔑 READING IS BINARY, no interpretation: a refusal landing beside a
+          //    loop PEAK accuses us · a refusal landing while the loop is idle
+          //    EXONERATES us, definitively, and the declared limit at the top of
+          //    `http-lane.md` can then close for real.
+          // ⚠️ IT RIDES `serve-stall` AND NOTHING ELSE — no timer, no threshold,
+          //    no event of its own. That is a DECISION resting on this file's own
+          //    measurement: refusal clusters FOLLOW `serve-stall` bursts by
+          //    1-20 s, so this carrier lands where the comparison is needed.
+          // 🛑 DECLARED BLIND SPOT, stated rather than hidden: a refusal with no
+          //    stall anywhere near it leaves NO loop record — `http-lane.md`
+          //    measured one such second where the daemon received NOTHING at all.
+          //    This narrows the question; it does not close it alone.
+          // ⚠️ `max`/`mean` are NANOSECONDS (Node doc) — the conversion AND the
+          //    "is there anything to report at all" question both live in
+          //    `loopFieldMs`, which is PURE and MUTATED. 🔴 Doing it here with a
+          //    bare `Math.round` is what shipped `loopMaxMs=0 loopMeanMs=NaN` on
+          //    this instrument's FIRST DAY: right after a reset the histogram has
+          //    collected no sample, so `max` is 0 and `mean` is NaN, and a zero
+          //    reads as "the loop was never blocked" — the lying green this
+          //    module's own header forbids in those very words.
+          //    Reset AFTER reading so the next stall reports ITS OWN window and
+          //    never a peak inherited from an hour ago.
+          loopMaxMs: loopDelay === null ? null
+            : lifecyclePure.loopFieldMs(loopDelay.max, loopDelay.count),
+          loopMeanMs: loopDelay === null ? null
+            : lifecyclePure.loopFieldMs(loopDelay.mean, loopDelay.count),
+        });
+        // 🛑 AFTER the record, never before: resetting first would publish an
+        //    empty window and the instrument would certify instead of measuring.
+        if (loopDelay !== null) loopDelay.reset();
+        return;
+      }
+      // 🔑 AND THE LOOP IS ASKED ON **EVERY** REQUEST, NOT ONLY ON STALLED ONES
+      //    — that is what closes the hole the fields above could not
+      //    (2026-09-18). A refused connection NEVER REACHES this process, so a
+      //    burst refused whole produces no request and no stall; riding only on
+      //    `serve-stall` left the decisive case unrecorded, and `http-lane.md`
+      //    measured exactly it (32 POSTs issued, 31 lost, nothing received).
+      // 🔑 NO TIMER IS NEEDED because the histogram samples CONTINUOUSLY and is
+      //    reset only when we write: the block survives inside it across the
+      //    refused burst, and recovery is instant, so the first request that
+      //    gets through afterwards still carries the peak.
+      // 🛑 STILL NOT A LINE PER REQUEST: `isLoopBlock` is FAIL-CLOSED and its
+      //    threshold sits at ~6x a measured idle loop, so a healthy night writes
+      //    ZERO. The decision is PURE and MUTATED — written here it would be
+      //    measured by nothing, and a journal that grows with traffic is the one
+      //    failure `lifecycle-log-pure.js` exists to forbid.
+      const loopMaxMs = loopDelay === null ? null
+        : lifecyclePure.loopFieldMs(loopDelay.max, loopDelay.count);
+      if (lifecyclePure.isLoopBlock({ loopMaxMs })) {
+        // 🔴 THE ATTRIBUTION RIDES WITH THE LAG, AND IT IS NOT DECORATION —
+        //    ADDED 2026-09-19 BECAUSE THIS LINE WAS READ BACKWARDS.
+        //    `loop-block` carried `elapsedMs` alone, which is body-read PLUS
+        //    freshness PLUS work. An agent read `loopMaxMs=604 elapsedMs=21`,
+        //    concluded "the handler is burning CPU", calibrated a bench at 17 ms
+        //    per frame and designed a worker pool on it — while the repository's
+        //    own measurement says the opposite: **on 200 consecutive stalls,
+        //    100 % of the elapsed time is the daemon WAITING FOR THE CLIENT to
+        //    finish sending its body, and 0 % is work.** `serve-stall` has
+        //    carried that split since the day it was written; this event did
+        //    not, so the two lines invited opposite conclusions about the same
+        //    daemon. **A line that cannot say where its time went will be read
+        //    as blaming whoever is nearest.**
+        // 🛑 SO THE SPLIT IS NOT OPTIONAL HERE: whoever reads a loop lag must
+        //    see, in the SAME line, that the work took 2 ms. The knowledge was
+        //    written down in prose and it did not govern — the observation
+        //    itself is the only place it cannot be missed.
+        // ⚠️ DERIVED FROM MARKS ALREADY TAKEN, never a second timing pass — the
+        //    same rule the neighbouring fields obey.
+        lifecycle.record('loop-block', {
+          loopMaxMs,
+          loopMeanMs: lifecyclePure.loopFieldMs(loopDelay.mean, loopDelay.count),
+          elapsedMs,
+          bodyMs: bodyReadAt - startedAt,
+          freshMs: freshDoneAt - bodyReadAt,
+          handleMs: handleDoneAt - freshDoneAt,
+          payloadMs: payloadDoneAt - handleDoneAt,
+          route: String(req.url || '').split('?')[0] || '<none>',
+          pid: process.pid,
+          peakConn: concurrency.peak,
+          openConn: concurrency.open,
+        });
+        loopDelay.reset();
+      }
+    }).catch((err) => {
       // ⚠️ THE FLOOR, and it must stay empty. Whatever went wrong on ONE
       //    request, the service keeps serving the others. A daemon that dies on
       //    an edge case is strictly worse than the spawn lane it replaces,
       //    where a crash cost exactly one short-lived process.
+      // 🔴 AND IT USED TO BE SILENT (2026-09-24): the destroy below is a reset the harness reads as
+      //    `read ECONNRESET`, and nothing said WHY. The reason now rides on the socket's `socket-cut`
+      //    line. Behaviour unchanged: the request is still destroyed, the daemon still serves.
+      if (cut) cut.threw = String((err && /** @type {Error} */ (err).message) || err).slice(0, 300);
       try { res.destroy(); } catch { /* already gone, which is the desired end state */ }
     });
   });
@@ -1023,11 +1549,164 @@ function createServer(deps = {}) {
   // ⚠️ `listenerCount` is not consulted, deliberately: "does someone else handle
   //    this?" is a question about intent, and answering it by counting is how a
   //    guard becomes conditional on load order. The handler simply reports.
+  // 🔴 AND EVERY OTHER ERROR WAS SWALLOWED HERE UNTIL 2026-09-03 — MEASURED, NOT
+  //    REASONED. A registered `error` listener SUPPRESSES the throw, so any code
+  //    but `EADDRINUSE` left the process ALIVE AND DEAF: `listening === false`,
+  //    no exception, no log line, nothing. Probe on Node 22.15.1, binding an
+  //    address held by no interface: `SWALLOWED: EADDRNOTAVAIL / process STILL
+  //    ALIVE after bind failure; listening = false`.
+  // 🔑 THE CLASS BECAME REACHABLE THE DAY WE LEFT `127.0.0.1` (2026-09-03). The
+  //    loopback is present on every machine that boots, so a bind to it could
+  //    only ever fail as a DUPLICATE. A declared address that lives on a real
+  //    interface can be ABSENT — and then this handler was the only thing
+  //    standing between the fleet and total silence. **We opened the door with
+  //    the address fix; this is the lock.**
+  // 🛑 FAIL-CLOSED, AND THE LIST IS THE *DELEGATED*, NEVER THE REFUSED. A code
+  //    leaves this handler quietly only if a caller CLAIMED it by name. Anything
+  //    unclaimed resumes its natural course — the uncaught exception it would
+  //    have been had no listener existed. Enumerating what to DIE on is how a
+  //    guard is born stale: the next errno nobody thought of would be swallowed
+  //    exactly like `EADDRNOTAVAIL` was.
+  // ⚠️ ZERO OS KNOWLEDGE, and that is deliberate: this reacts to what the kernel
+  //    ALREADY said at bind time. `EADDRNOTAVAIL` is a POSIX errno Node
+  //    normalises on all three platforms, so there is no branch here and none is
+  //    ever needed — the OS-specific half of the address story lives in
+  //    `service/`, one script per platform, and never in the engine.
   server.on('error', (err) => {
     // ⚠️ `code` lives on `ErrnoException`, not on `Error` — `tsc` is right to
     //    ask, and a JSDoc that hid it would be a lying contract.
     const code = /** @type {NodeJS.ErrnoException} */ (err).code;
-    if (code === 'EADDRINUSE' && typeof deps.onAddressInUse === 'function') deps.onAddressInUse(err);
+    if (code === 'EADDRINUSE' && typeof deps.onAddressInUse === 'function') { deps.onAddressInUse(err); return; }
+    if (typeof deps.onLaneLost === 'function') { deps.onLaneLost(err); return; }
+    throw err;
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔴 THE ONE NUMBER THIS PROJECT HAS ARGUED ABOUT FOR THREE NIGHTS AND NEVER
+  //    MEASURED AT THE SOURCE: how many connections are open AT ONCE (2026-09-17).
+  // ═══════════════════════════════════════════════════════════════════════
+  // The accept-queue hypothesis for `ECONNREFUSED` stands or falls on it, and every
+  // attempt to answer it so far used an EXTERNAL sampler — `Get-NetTCPConnection`
+  // takes tens of milliseconds while a frame connection lives ~11 ms, so the sampler
+  // is SLOWER THAN WHAT IT OBSERVES and structurally misses the peaks. It read 32
+  // and that number is worth nothing. **Only the server knows, exactly, for free.**
+  // 🛑 IT IS A HIGH-WATER MARK, NEVER A GAUGE, AND THAT IS WHAT KEEPS IT LEGAL.
+  //    `lifecycle-log` forbids a writer proportional to traffic; a cumulative peak
+  //    needs no line of its own — it rides as FIELDS on `serve-stall`, an event that
+  //    already exists and already fires only on an anomaly. Nothing is written here.
+  // 🔑 AND A PEAK ANSWERS THE QUESTION EVEN IF IT IS REPORTED ONCE: it accumulates
+  //    over the whole life of the process, so a single stall hours later still says
+  //    whether concurrency ever approached the measured 232-deep accept queue.
+  //    Never below ~200 over a busy night ⇒ the hypothesis is DEAD and must be
+  //    written so. Reaching it ⇒ it is confirmed and the remedy is N listening
+  //    sockets (`accept-queue-ceiling.md`).
+  // ⚠️ TWO COUNTERS, NOT ONE: `open` is the instantaneous truth the peak is derived
+  //    from, and it is reported too — a peak with no current value cannot tell a
+  //    burst that ENDED from one still in flight at the moment of the stall.
+  // ⚠️ `close` FIRES ON EVERY SOCKET, error or not (Node `net` doc), so the counter
+  //    cannot drift upwards on a refused or reset connection. A counter that only
+  //    ever grows would manufacture the very peak it exists to look for.
+  server.on('connection', (socket) => {
+    concurrency.open += 1;
+    if (concurrency.open > concurrency.peak) concurrency.peak = concurrency.open;
+    socket.once('close', () => { concurrency.open -= 1; });
+    // ═══════════════════════════════════════════════════════════════════
+    // 🔴 WHO HUNG UP? — `socket-cut` (2026-09-24)
+    // ═══════════════════════════════════════════════════════════════════
+    // From 2026-09-23 10:42Z the harness read `read ECONNRESET` on 1.44 % of its POSTs (≤ 0.07 %
+    // every earlier day). A reset only says somebody slammed the connection. Every path by which
+    // THIS process can do it now leaves a line: a request read and never answered, bytes received
+    // and never parsed, a socket error, a handler that threw. Silence while resets continue means
+    // the reset came from elsewhere — that is the other half of the answer, and why it is written.
+    // 🛑 NOTHING HERE CHANGES WHAT THE SOCKET DOES: an `error` listener only OBSERVES (Node's http
+    //    server keeps its own), and the decision is `lifecyclePure.socketCut`, fail-closed, so an
+    //    ordinary close writes nothing.
+    const state = { requests: 0, answered: 0, bytesAtAnswer: 0, errorCode: null, threw: null, route: null, lastRequestAt: 0 };
+    socketStates.set(socket, state);
+    // ⚠️ READ NOW, NEVER AT `close`: a destroyed socket answers `undefined` for both, which is how
+    //    the first version of this line lost the very ports that tie it to the harness's reset.
+    const localPort = socket.localPort;
+    const remotePort = socket.remotePort;
+    socket.on('error', (e) => { state.errorCode = /** @type {NodeJS.ErrnoException} */ (e).code || 'unknown'; });
+    socket.once('close', () => {
+      const fields = lifecyclePure.socketCut({
+        requests: state.requests,
+        answered: state.answered,
+        unreadBytes: state.requests === state.answered ? socket.bytesRead - state.bytesAtAnswer : 0,
+        errorCode: state.errorCode,
+        threw: state.threw,
+      });
+      if (!fields) return;
+      lifecycle.record('socket-cut', {
+        ...fields,
+        requests: state.requests,
+        answered: state.answered,
+        route: state.route,
+        sinceRequestMs: state.lastRequestAt ? Date.now() - state.lastRequestAt : null,
+        port: localPort,
+        remotePort,
+        pid: process.pid,
+        openConn: concurrency.open,
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // A PROTOCOL MISMATCH NAMES ITSELF (2026-09-18)
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔑 A cleartext port serves ONE protocol — no TLS means no ALPN means nothing
+  //    is negotiated — so `http.protocol` is DECLARED, and a declaration can be
+  //    wrong. It used to surface as `HPE_INVALID_CONSTANT`: a parser complaint
+  //    that names no remedy, on a daemon refusing every request from one
+  //    harness. An HTTP/2 client announces itself with 24 FIXED octets
+  //    (RFC 9113 §3.4), so the daemon can say what to change instead.
+  // 🛑 IT DIAGNOSES, IT NEVER SWITCHES PROTOCOL. Serving HTTP/2 because someone
+  //    knocked in HTTP/2 would make the served protocol depend on who arrives
+  //    first — one declaration, two answers. The decision is PURE and lives in
+  //    `http2-preface-pure.js`; this shell only reads bytes and writes a line.
+  // 🛑 NODE'S DEFAULT BEHAVIOUR IS REPRODUCED EXACTLY FOR EVERY OTHER ERROR.
+  //    Attaching a `clientError` listener TAKES OVER from Node, so anything not
+  //    reproduced here is silently lost: per its documentation the default
+  //    closes with `400 Bad Request`, or `431` on `HPE_HEADER_OVERFLOW`, and
+  //    destroys immediately when the socket is not writable. A diagnosis that
+  //    changed how malformed requests are answered would be a regression bought
+  //    with a log line.
+  // ⚠️ THE JOURNAL IS THE CHANNEL, NOT THE RESPONSE. The client speaking HTTP/2
+  //    cannot read an HTTP/1 error body — it is not listening for one. The
+  //    operator reads `stderr` and the lifecycle record; the socket still gets
+  //    the standard answer so nothing downstream changes.
+  // ⚠️ ONCE PER PROCESS LIFE. A misdeclared protocol fails on EVERY connection,
+  //    and a line per failure is the traffic-proportional writer
+  //    `lifecycle-log-pure` exists to forbid. One sentence is one reading.
+  let prefaceReported = false;
+  server.on('clientError', (err, socket) => {
+    const notice = http2Preface.mismatchNotice(
+      err && /** @type {{ rawPacket?: Buffer }} */ (err).rawPacket,
+      // 🛑 'http1' IS WRITTEN HERE, never read from the endpoint: `protocol` does
+      //    NOT exist on `{ host, port }`, so reading it always yielded `undefined`
+      //    and the `|| 'http1'` fallback HID that phantom access. This build serves
+      //    HTTP/1 only; the day a protocol becomes declarable, it arrives as a real
+      //    config key and the type checker will point at this line.
+      'http1',
+    );
+    if (notice && !prefaceReported) {
+      prefaceReported = true;
+      lifecycle.record('lane-degraded', {
+        lane: 'port', fatal: false, pid: process.pid, code: 'PROTOCOL_MISMATCH',
+        message: 'client spoke HTTP/2 to an HTTP/1 listener',
+      });
+      process.stderr.write(`${notice}\n`);
+    }
+    // Node's documented default, reproduced rather than replaced.
+    try {
+      if (!socket.writable) { socket.destroy(); return; }
+      const status = err && /** @type {{ code?: string }} */ (err).code === 'HPE_HEADER_OVERFLOW'
+        ? '431 Request Header Fields Too Large'
+        : '400 Bad Request';
+      socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+    } catch {
+      try { socket.destroy(); } catch { /* already gone, the desired end state */ }
+    }
   });
   return server;
 }
@@ -1253,6 +1932,37 @@ function inheritedFd(env, pid) {
 }
 
 /**
+ * HOW MANY descriptors the supervisor handed us — 0 when it handed us none.
+ *
+ * 🔴 WRITTEN 2026-09-18 BECAUSE `http.listeners` WAS SILENTLY BROKEN ON EVERY
+ *    SOCKET-ACTIVATED OS. `inheritedFd` reads `LISTEN_FDS`, checks it is at
+ *    least one, and then returns ONLY the first descriptor — the count was
+ *    validated and thrown away. Meanwhile `tools/wiring-generate.js` spreads the
+ *    frames over `paths.httpListenEndpoints()` with NO idea which platform will
+ *    run them. ⇒ a Linux or macOS adopter declaring `listeners: 4` got a wiring
+ *    POSTing to four ports and a daemon serving ONE: **24 frames of every 32
+ *    landing on nothing, on every action, in silence**. Nobody had seen it
+ *    because nobody had ever raised the key above 1.
+ * 🛑 THE COUNT IS THE SUPERVISOR'S ANSWER, NEVER OUR REQUEST. sd_listen_fds(3)
+ *    gives "3, 4, 5, ..., 3+LISTEN_FDS-1": what the unit declared is what we
+ *    get, and a mismatch with our config is a REFUSAL, never a silent minimum.
+ * ⚠️ Same parsing law as its sibling: anything that is not exactly an integer
+ *    is a NO. A malformed environment means "I do not know what I was handed".
+ *
+ * @param {Record<string, string|undefined>} env the environment to read
+ * @param {number} pid this process's own pid
+ * @returns {number} how many descriptors were inherited; 0 when none were
+ */
+function inheritedFdCount(env, pid) {
+  const whole = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
+  const owner = whole(env.LISTEN_PID);
+  if (owner === null || owner !== pid) return 0;
+  const count = whole(env.LISTEN_FDS);
+  if (count === null || count < 1) return 0;
+  return count;
+}
+
+/**
  * Puts the server to work — on the INHERITED descriptor when the OS passed one,
  * on the port otherwise.
  *
@@ -1277,7 +1987,7 @@ function listenOn(server, env, pid, port, host) {
     // ⚠️ BOTH halves come from the CALLER, which read them from the single
     //    resolution point. This function chooses NEITHER: it decides only
     //    WHETHER we bind at all.
-    server.listen(port, host);
+    server.listen(port, host, LISTEN_BACKLOG);
     return null;
   }
   // ⚠️ `server.listen(handle)` with an object carrying an `fd` member is the
@@ -1288,10 +1998,30 @@ function listenOn(server, env, pid, port, host) {
   return fd;
 }
 
+/**
+ * The error hooks of the RENDEZVOUS lane's server: both are CLAIMS that do nothing.
+ *
+ * 🔴 `onAddressInUse` THREW HERE, AND ON macOS THE DAEMON NEVER CAME BACK — red 2/2 on the runner,
+ *    cause read in the child's stderr (2026-09-23). macOS is the one kernel of the three that leaves
+ *    a socket FILE behind a dead daemon, so the next start meets `EADDRINUSE` on EVERY restart —
+ *    and the stale-code exit makes restarts the normal regime. The builder's `'error'` listener is
+ *    registered FIRST, so a throw there killed the process before `kernel-bind` could ask the
+ *    kernel whether the entry was dead. 🛑 `EADDRINUSE` on this lane BELONGS TO `kernel-bind`:
+ *    living owner ⇒ its `onError` refuses the duplicate (and `main` dies there, the kernel being the
+ *    authority), dead entry ⇒ unlink and bind. A claim here, never a policy.
+ * ⚠️ A FUNCTION, exported, so the cell that guards this drives the REAL hooks `main` passes —
+ *    never a hand-built copy of them.
+ * @returns {{onAddressInUse: (err: Error) => void, onLaneLost: (err: Error) => void}}
+ */
+function rendezvousLaneHooks() {
+  return { onAddressInUse: () => {}, onLaneLost: () => {} };
+}
+
 module.exports = {
   main,
+  rendezvousLaneHooks,
   createServer, handle, frameFromUrl, watchOwnCode, watcherFactory, staleCodeFields, kernelFields,
-  inheritedFd, listenOn,
+  inheritedFd, inheritedFdCount, listenOn,
   routeOf, purgeRoute, turnRoute, emitRoute,
   NO_OUTPUT, MAX_BODY_BYTES, EXIT_STALE_CODE, SD_LISTEN_FDS_START,
   KERNEL_NAMED_NOTHING,
@@ -1345,11 +2075,120 @@ function main() {
   //    the whole fleet: it exits BY DESIGN at every edit of this repository, and
   //    each exit withheld every `once` document until it came back (15 silent
   //    minutes measured that morning). Do not put durable keys back into it.
-  const state = createMemoryStore({
-    snapshotPath: path.join(paths.stateDir(), 'daemon-state.json'),
-    durableStore: require('../session-store'),
-  });
-  state.restore();
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🧵 HOW MANY THREADS — DECIDED BEFORE ANYTHING IS OWNED (2026-09-20)
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🛑 IT IS ANSWERED FIRST BECAUSE IT DECIDES WHO OWNS THE STATE. With no pool
+  //    this process holds the store and the three tables, exactly as it always
+  //    has. With a pool, an OWNER THREAD holds them and this thread becomes a
+  //    client like every other participant — and building a local store first
+  //    "just in case" would be the two-memories defect, created by the very
+  //    code meant to remove it.
+  // 🛑 A REFUSAL REACHES THE OPERATOR AND STOPS THE START. `poolSize` names what
+  //    is wrong with a declaration; a daemon that started anyway would hand them
+  //    a parallelism they believe in and do not have — the silent class.
+  // ⚠️ `workers: 0` (the default, and an absent key) ⇒ `size === 0` ⇒ every
+  //    branch below is the historical one, byte for byte. That is the acceptance
+  //    criterion, not a preference.
+  const declaredEndpoints = paths.httpListenEndpoints();
+  const declaredWorkers = paths.httpWorkers();
+  const pool = workerPool.poolSize(declaredWorkers, os.availableParallelism(), declaredEndpoints.length);
+  if (pool.refusal) {
+    lifecycle.record('lane-degraded', {
+      lane: 'port', fatal: true, pid: process.pid, code: 'WORKERS_REFUSED', message: pool.refusal,
+    });
+    process.stderr.write(`ctxroute: ${pool.refusal}\n`);
+    throw new Error(`ctxroute: workers refused (${pool.refusal})`);
+  }
+  // 🔴 SOCKET ACTIVATION AND A POOL IS A NAMED REFUSAL, AND IT IS DECLARED DEBT
+  //    RATHER THAN AN UNMEASURED PATH. Whether a worker thread may `listen({fd})`
+  //    on a descriptor the SUPERVISOR handed to the process has been measured on
+  //    NO kernel here — and this repository does not ship a path whose only
+  //    support is that it looks plausible. Exit condition, written so it can be
+  //    closed rather than inherited: measure an inherited descriptor served from
+  //    a worker on the three kernels (the shape `test/thread-listener.test.js`
+  //    already has for a bound port), then delete this refusal in that gesture.
+  const activated = inheritedFd(process.env, process.pid) !== null;
+  if (pool.size > 0 && activated) {
+    process.stderr.write('ctxroute: `http.workers` is declared and this process was handed its '
+      + 'listening sockets by the supervisor. Serving an inherited descriptor from a worker thread '
+      + 'is UNMEASURED on every kernel here, and an unmeasured transport is not something this '
+      + 'daemon starts. Either set `http.workers` to 0, or stop using socket activation for it.\n');
+    throw new Error('ctxroute: `http.workers` with socket activation is unmeasured and refused');
+  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // ⏻ WHEN THIS DAEMON RUNS — DECIDED BEFORE ANYTHING IS BOUND (2026-09-29)
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🛑 RESOLVED HERE, BEFORE THE FIRST SOCKET, like the pool: a refused
+  //    declaration must stop the start, never surface after the daemon has
+  //    begun serving under a mode nobody declared.
+  // ⚠️ `os.version()` is the edition string ("Windows 11 Home", "Windows Server
+  //    2022 Datacenter") — the one fact `auto` needs on Windows. Read here, the
+  //    shell's job; judged in `lifecycle-pure.js`.
+  const declaredLifecycle = paths.httpLifecycle();
+  const lifecyclePlan = daemonLifecycle.resolveMode(declaredLifecycle.lifecycle,
+    { platform: process.platform, osVersion: os.version() });
+  const idleWindow = daemonLifecycle.idleWindow(declaredLifecycle.idleSeconds);
+  const lifecycleRefusal = lifecyclePlan.refusal || idleWindow.refusal;
+  if (lifecycleRefusal) {
+    lifecycle.record('lane-degraded', {
+      lane: 'port', fatal: true, pid: process.pid, code: 'LIFECYCLE_REFUSED', message: lifecycleRefusal,
+    });
+    process.stderr.write(`ctxroute: ${lifecycleRefusal}\n`);
+    throw new Error(`ctxroute: lifecycle refused (${lifecycleRefusal})`);
+  }
+  // 🔑 ONE counter for the whole process, handed to every server of every lane
+  //    and every thread (see `activity` in `createServer`).
+  const activity = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  const multi = pool.size > 0;
+  // 🔑 THE CHANNEL HOLDS ONE SLOT PER PARTICIPANT, AND THIS THREAD IS SLOT 0 —
+  //    it keeps the rendezvous lane, so it asks like everybody else. One
+  //    authority, no exception: the day one participant answered locally there
+  //    would be two memories again.
+  const channelWiring = multi ? (() => {
+    const clients = pool.size + 1;
+    const control = new Int32Array(new SharedArrayBuffer(threadChannel.controlLength(clients) * 4));
+    const payload = new Uint8Array(new SharedArrayBuffer(threadChannel.payloadLength(clients)));
+    return { clients, control, payload };
+  })() : null;
+  const ownerThread = channelWiring ? new Worker(path.join(__dirname, 'thread-boot.js'), {
+    workerData: {
+      role: 'owner',
+      control: channelWiring.control.buffer,
+      payload: channelWiring.payload.buffer,
+      clients: channelWiring.clients,
+    },
+  }) : null;
+  // 🔑 THE DAEMON OWNS ITS STATE, IN MEMORY — the kernel serialises its callers,
+  //    so nothing needs a lock, a tmp+rename or a retry to take turns.
+  // 🛑 RESTORE BEFORE LISTEN, AND THE ORDER IS THE WHOLE GUARANTEE (or, with a
+  //    pool, the OWNER restores before any server thread exists — same law, one
+  //    thread further away).
+  // ⚠️ TWO NAMES FOR ONE ROLE, AND THE SECOND IS NOT REDUNDANT: `memory` is the
+  //    store THIS PROCESS owns, and it exists only without a pool. Everything
+  //    that belongs to an OWNER — restoring the snapshot, flushing it on the way
+  //    out — is written against `memory`, so with a pool those gestures cannot
+  //    even be spelled here. `state` is what is HANDED to a server: local store
+  //    or a client of the owner, and nothing downstream can tell which.
+  // 🛑 ASKED, NEVER OPENED — CHANGED 2026-09-20, AND IT SHRINKS THE DEBT. This
+  //    shell used to build the daemon's pair itself, one of the five INHERITED
+  //    importers `only-store-resolve-opens-a-store` lists as debt rather than as
+  //    permission. The owner thread needed the same pair, and a sixth importer
+  //    is precisely what that rule exists to redden — so the construction moved
+  //    to its owner and BOTH sides ask. The list loses an entry instead of
+  //    gaining one, which is the direction a ratchet is allowed to move.
+  const memory = channelWiring ? null : /** @type {{restore: Function, flush: Function, loadState: Function, saveState: Function, purge: Function}} */ (
+    storeResolve.resolveStore({ backend: 'daemon' }).store
+  );
+  if (memory) memory.restore();
+  const state = channelWiring
+    ? createClient({
+      control: channelWiring.control,
+      payload: channelWiring.payload,
+      clients: channelWiring.clients,
+      index: 0,
+    }).store
+    : /** @type {{loadState: Function, saveState: Function, purge: Function}} */ (memory);
 
   // ═══════════════════════════════════════════════════════════════════════
   // 🔑 FRESHNESS — ONE pair, shared by BOTH transports and by the watchers.
@@ -1362,6 +2201,32 @@ function main() {
   //    SEEN RED of this guard is a driver that replaces the comparison in memory
   //    with one that always answers "identical", and a destructured binding
   //    would make that sabotage impossible — hence the guard unprovable.
+  /**
+   * ASK THE OWNER TO SAVE, AND WAIT FOR IT TO SAY IT HAS.
+   *
+   * 🔴 IT IS CALLED ON EVERY PATH THAT LEAVES, AND THE STALE-CODE EXIT IS THE
+   *    FREQUENT ONE — dozens of times a day, by design. `process.exit` kills a
+   *    worker outright (no event, no `finally`), so without this the owner dies
+   *    mid-save and the arrival order of every invocation in flight is lost,
+   *    while the death looks exactly as clean as it always did. That is the
+   *    2026-09-19 defect, put back by the exit path instead of the start one.
+   * 🛑 BOUNDED AND RE-CHECKING like every wait here, and its exhaustion costs
+   *    exactly what the old behaviour cost: nothing is retried, nothing is
+   *    guessed, the process simply leaves.
+   * ⚠️ NO POOL ⇒ NOTHING TO DRAIN: this thread owns the store and writes its own
+   *    snapshot, exactly as before.
+   * @returns {void}
+   */
+  const drainOwner = () => {
+    if (!channelWiring) return;
+    Atomics.store(channelWiring.control, threadChannel.SHUTDOWN, 1);
+    Atomics.notify(channelWiring.control, threadChannel.DOORBELL);
+    const askedAt = Date.now();
+    while (Atomics.load(channelWiring.control, threadChannel.DRAINED) === 0
+      && threadChannel.keepWaiting(Date.now() - askedAt, threadChannel.WAIT_CEILING_MS)) {
+      Atomics.wait(channelWiring.control, threadChannel.DRAINED, 0, threadChannel.WAIT_SLICE_MS);
+    }
+  };
   const freshness = () => staleCode.check();
   /**
    * @param {{stale: boolean, checked: number, reasons: string[]}} verdict
@@ -1384,6 +2249,9 @@ function main() {
         more: verdict.reasons.length > 1 ? verdict.reasons.length - 1 : null,
       });
     } catch { /* a lost line costs a diagnosis; a survived exit costs stale logic */ }
+    // 🛑 THE STATE BEFORE THE EXIT — this is the daemon's most frequent death,
+    //    so it is the one where losing the arrival order would be routine.
+    try { drainOwner(); } catch { /* a stop must never be blocked by its own housekeeping */ }
     process.exit(EXIT_STALE_CODE);
   };
   /** The request path's half: report, then die. */
@@ -1392,10 +2260,114 @@ function main() {
   // 🛑 THE LIFECYCLE LIVES HERE, in the executable shell — not in the builder.
   //    A second instance must NOT start: the kernel already refused the address,
   //    and it is the authority on duplicates (never a PID file, never a probe).
-  const laneFd = listenOn(createServer({
+  // ═══════════════════════════════════════════════════════════════════
+  // THE PER-INVOCATION TABLES BELONG TO THE DAEMON, NEVER TO A SOCKET
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔴 CREATED HERE, ONCE, BECAUSE NOT DOING SO SHIPPED A SILENT DATA LOSS
+  //    (measured 2026-09-18, the day `http.listeners` was first raised above 1).
+  //    `createServer` DEFAULT-CREATES these three tables when a caller omits
+  //    them — correct for the single socket that existed before, and a trap the
+  //    moment a second one is opened: each socket then counted arrivals in ITS
+  //    OWN map. MEASURED on a bench, one document of 17 chunks over 32 frames:
+  //    at 4 sockets, chunks 1..8 were delivered FOUR TIMES EACH and chunks
+  //    9..17 — more than half the document — were delivered NEVER. The visible
+  //    half was the duplication; the half nobody could see was the loss.
+  // 🛑 SO THEY ARE PASSED TO EVERY `createServer` BELOW, WITHOUT EXCEPTION.
+  //    `frame-sequencer-pure` decides WHICH content index a connecting frame
+  //    serves by counting arrivals for one `tool_use_id`, and its whole premise
+  //    — written in its own doc — is "the daemon is a SINGLE PROCESS that sees
+  //    every connecting request of one invocation". One process with N tables
+  //    breaks that premise while looking exactly like one that honours it.
+  // 🛑 IF YOU OPEN ANOTHER SOCKET ANYWHERE IN THIS FILE, YOU MUST HAND IT THESE
+  //    THREE. The default-creation stays for tests that drive `handle()` with a
+  //    bare `deps`; it must never again be what a real socket receives.
+  const frameSequencerState = frameSequencer.createState();
+  const deliveryNoticeState = deliveryNotice.createState();
+  const carryoverState = carryover.createState();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔴 THE ARRIVAL ORDER SURVIVES THE DEATH — MEASURED DEFECT, 2026-09-19
+  // ═══════════════════════════════════════════════════════════════════════
+  // This daemon exits BY DESIGN at every delivery of new code, and the accepted
+  // criterion is that a restart is invisible to the agent. It was NOT, for an
+  // invocation IN FLIGHT: `doc-seen-` survives (disk, write-through) so the
+  // documents stayed marked delivered, while these three tables died with the
+  // process — so the frames landing after the restart were counted as the FIRST
+  // and re-served chunk 1. **The document is not re-decided; the CHUNK is
+  // re-served**, and the agent sees its skill arrive a second time mid-session.
+  // It happened today, in production, on the operator's other conversations.
+  // 🛑 RESTORED BEFORE ANY SOCKET IS TAKEN — the order is the guarantee, exactly
+  //    as it is for the durable store above: once a client can connect, a table
+  //    filled from a file would be racing a table being written by a request.
+  // 🛑 AND SAVED AT DEATH, NEVER PER FRAME. Writing these on every frame would be
+  //    32 disk writes per action on a machine whose SSD wear is a declared
+  //    budget — refused for that reason. One write while the process is exiting
+  //    costs a SERVING daemon exactly nothing, which is also why this is not a
+  //    development-mode feature: it guards a production defect and costs
+  //    production zero.
+  // ⚠️ COVERS `process.exit(90)`, WHICH IS THE FREQUENT DEATH (Node fires
+  //    `'exit'` on an explicit exit). `SIGKILL` and a power loss are NOT covered
+  //    and the residual is BOUNDED: it degrades to exactly today's behaviour, on
+  //    a death that is rare instead of routine.
+  // ⚠️ NO tmp+rename here, DELIBERATELY: a truncated file fails `JSON.parse`, the
+  //    decode is fail-open to empty, and the next clean exit rewrites it whole.
+  //    The atomicity that protects the durable store protects a TRUTH; this is a
+  //    cache of arrival counters whose worst loss is what we already accept.
+  const fsNode = require('node:fs');
+  const invocationsPath = path.join(paths.stateDir(), 'daemon-invocations.json');
+  const liveTables = {
+    sequencer: frameSequencerState,
+    notice: deliveryNoticeState,
+    carryover: carryoverState,
+  };
+  // 🛑 THE COUNT RIDES ON `start`, IT IS NOT AN EVENT OF ITS OWN — and the first
+  //    version of this block DID make it one, which broke the daemon outright:
+  //    the journal's vocabulary is a CLOSED, fail-closed list, so an undeclared
+  //    name takes `main()` down and every suite that drives a real daemon went
+  //    red at once. The rule was already written — *fields on an EXISTING event,
+  //    never a new event and never a new frequency* — because the journal's
+  //    512 KB ceiling is STRUCTURAL, not a number somebody maintains.
+  // ⚠️ AND `start` IS THE RIGHT CARRIER: it fires exactly once per process life,
+  //    which is exactly how often this restoration happens.
+  // 🔴 WITH A POOL, NEITHER HALF HAPPENS HERE — AND FORGETTING THAT WOULD LOSE
+  //    THE ARRIVAL ORDER WHILE LOOKING LIKE IT SAVED IT. The owner thread holds
+  //    the live tables; the three maps above would be EMPTY, so this exit writer
+  //    would overwrite the owner's file with nothing, on every death, and the
+  //    invocations in flight would have their opening chunks re-served exactly
+  //    as they were before the snapshot existed. The owner restores and saves
+  //    them (`state-owner-entry.js`), which is the same law one thread further
+  //    away: one owner, one file.
+  let invocationsRestored = 0;
+  if (!multi) {
+    try {
+      invocationsRestored = invocationSnapshot.adopt(
+        liveTables,
+        invocationSnapshot.decode(JSON.parse(fsNode.readFileSync(invocationsPath, 'utf8'))),
+      );
+    } catch {
+      // fail-open: no file, unreadable, or malformed — which is today's behaviour.
+    }
+    process.on('exit', () => {
+      try {
+        fsNode.writeFileSync(invocationsPath, JSON.stringify(invocationSnapshot.encode(liveTables)));
+      } catch {
+        // fail-open: a process already dying must never throw on its way out.
+      }
+    });
+  }
+
+  // 🛑 WITH A POOL THIS THREAD BINDS NO PORT. Every declared socket belongs to a
+  //    server thread (`assignSockets`), and a socket held by TWO acceptors is two
+  //    accept loops on one handle — the shape the kernel already refuses between
+  //    threads (`EADDRINUSE`, measured) and that nothing would refuse here.
+  const laneFd = multi ? null : listenOn(createServer({
     store: state,
     freshness,
     onStaleCode,
+    frameSequencerState,
+    deliveryNoticeState,
+    carryoverState,
+    activity,
     onAddressInUse: (err) => {
       // ⚠️ The kernel refused the address: a second instance. Say WHICH lane and
       //    WHY before dying, otherwise the supervisor's restart loop is the only
@@ -1403,18 +2375,315 @@ function main() {
       lifecycle.record('bind-refused', { lane: 'port', host, port, pid: process.pid });
       throw err;
     },
+    // 🛑 THE PORT LANE DIES ON A LOST ADDRESS, AND THE ASYMMETRY WITH THE
+    //    RENDEZVOUS BELOW IS DELIBERATE — read this before "harmonising" them.
+    //    The rendezvous degrades ONE lane and keeps serving, correctly: the port
+    //    is still there for everyone. The reverse is NOT symmetric, because a
+    //    port-less daemon GOES ON TO TAKE THE RENDEZVOUS — so it squats the very
+    //    address its replacement needs, and every restart the supervisor
+    //    attempts dies on `EADDRINUSE`. **A deaf daemon that stays alive blocks
+    //    its own relief, for ever.** Dying hands recovery back to the pieces that
+    //    own it: the supervisor restarts, and the boot task puts the address
+    //    back. Neither is this process's job.
+    // 🛑 AND IT DOES NOT RETRY, ON PURPOSE. Waiting for an address to reappear
+    //    would be this daemon doing the reconciler's work, from the one place
+    //    that cannot see whether the address is coming back.
+    // 🛑 `lane-degraded`, NOT A NEW EVENT — the vocabulary is a CLOSED LIST and
+    //    the journal's own header says it: FIELDS on an existing event, never a
+    //    new one, so the 512 KB ceiling stays a consequence of the mechanism and
+    //    never a number anyone maintains. The FACT is identical to the
+    //    rendezvous lane's — *a transport could not take its address* — and only
+    //    the shell's POLICY differs. `fatal` is what says which.
+    onLaneLost: (err) => {
+      lifecycle.record('lane-degraded', {
+        lane: 'port', fatal: true, host, port, pid: process.pid,
+        code: /** @type {NodeJS.ErrnoException} */ (err).code,
+        message: err && err.message,
+      });
+      process.stderr.write(`ctxroute: the port lane could not take ${host}:${port} `
+        + `(${/** @type {NodeJS.ErrnoException} */ (err).code}). Dying rather than staying alive and deaf: `
+        + 'this process would still hold the rendezvous, so every restart would be refused as a duplicate.\n');
+      throw err;
+    },
   }), process.env, process.pid, port, host);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THE EXTRA LISTENING SOCKETS — capacity, never speed (2026-09-18)
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔑 WHY MORE THAN ONE SOCKET AT ALL: the accept queue is capped PER SOCKET,
+  //    and that cap is the one lever measured to work. On Windows the depth is
+  //    `min(backlog, 200) + 32` = 232 whatever we declare — the backlog argument
+  //    and `SOMAXCONN_HINT` are both measured INERT from this runtime — while N
+  //    sockets give N × 232, strictly linear at 1/2/4. On 2026-09-18 the daemon's
+  //    own journal read `peakConn = 254` against that 232, twelve seconds before
+  //    a burst of refusals, and Microsoft documents the signal exactly: a full
+  //    queue answers `WSAECONNREFUSED`.
+  // 🛑 IT BUYS A WAITING ROOM, NEVER SERVICE SPEED. This process stays
+  //    single-threaded: N sockets let more callers WAIT, they do not make it
+  //    answer faster. The other wall is a different lever entirely (worker
+  //    threads) and must never be confused with this one.
+  // 🛑 ZERO DEFAULT CHANGE, AND THAT IS THE ACCEPTANCE CRITERION: with nothing
+  //    declared this list holds exactly ONE endpoint — the one already bound
+  //    above — so the loop body never runs and the daemon is byte-identical to
+  //    what it was.
+  // ⚠️ SKIPPED ENTIRELY UNDER SOCKET ACTIVATION (`laneFd !== null`): the OS owns
+  //    the listening sockets there, their count is the unit's business
+  //    (`ListenStream=`), and binding our own beside them would serve an address
+  //    no supervisor knows about.
+  // ⚠️ AND IT DOES NOT GO THROUGH `listenOn`, deliberately: that function answers
+  //    "an inherited descriptor, or a port?" — a question already settled here,
+  //    since these exist only when nothing was inherited. Handing it a fabricated
+  //    environment to re-ask a question we have answered is how a caller starts
+  //    lying to its own helper.
+  // ⚠️ READ ONCE, AT THE TOP OF `main` — the pool decision needs the same list,
+  //    and two calls would be two readings of one fact.
+  const extraEndpoints = laneFd === null ? declaredEndpoints.slice(1) : [];
+
+  // ═══════════════════════════════════════════════════════════════════
+  // UNDER SOCKET ACTIVATION THE SUPERVISOR'S COUNT IS THE AUTHORITY
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔴 THIS BLOCK EXISTS BECAUSE `http.listeners` WAS BROKEN IN SILENCE ON EVERY
+  //    ACTIVATED OS (found 2026-09-18, the day the key was first raised above 1).
+  //    The wiring generator spreads the frames over EVERY declared endpoint and
+  //    has no idea which platform runs them; the daemon served only descriptor 3.
+  //    ⇒ `listeners: 4` on Linux or macOS = 24 frames of every 32 POSTing to a
+  //    port nobody holds, on every action, with nothing going red.
+  // 🛑 WE DO NOT BIND HERE, EVER — the OS owns these sockets. What we can do is
+  //    USE all of them, and REFUSE when their number is not the number the
+  //    operator declared. Binding our own beside them would serve an address no
+  //    supervisor knows about; serving fewer than declared is the silent hole.
+  // 🔑 THE REFUSAL IS THE POINT, NOT THE COUNTING. A mismatch means the unit and
+  //    the config disagree — one truth in two files, which is the class this
+  //    repository removes everywhere else. Dying hands the problem to the
+  //    installer that owns BOTH files; starting anyway hands the operator a
+  //    capacity they believe in and do not have.
+  // ⚠️ Windows never reaches this branch (no socket activation there, measured
+  //    and enumerated in `service-units.md`), so its behaviour is untouched.
+  const extraFds = [];
+  if (laneFd !== null) {
+    const handed = inheritedFdCount(process.env, process.pid);
+    if (handed !== declaredEndpoints.length) {
+      lifecycle.record('lane-degraded', {
+        lane: 'port',
+        fatal: true,
+        pid: process.pid,
+        code: 'LISTENERS_MISMATCH',
+        message: `declared ${declaredEndpoints.length}, supervisor handed ${handed}`,
+      });
+      process.stderr.write('ctxroute: the configuration declares '
+        + `${declaredEndpoints.length} listening socket(s) and the supervisor handed ${handed}. `
+        + 'Refusing to start: the wiring POSTs to every declared address, so serving fewer '
+        + 'would drop that share of EVERY action in silence. Make the socket unit declare as '
+        + 'many sockets as `http.listeners`, or lower the key — the two are ONE number.\n');
+      throw new Error(`ctxroute: listeners mismatch (declared ${declaredEndpoints.length}, `
+        + `inherited ${handed})`);
+    }
+    for (let i = 1; i < handed; i += 1) extraFds.push(SD_LISTEN_FDS_START + i);
+  }
+  for (const fd of extraFds) {
+    createServer({
+      store: state,
+      freshness,
+      onStaleCode,
+      // 🛑 THE THREE TABLES ARE SHARED, NEVER DEFAULT-CREATED PER SOCKET — see
+      //    the block that builds them: omitting them here delivered half a
+      //    document four times and the other half not at all.
+      frameSequencerState,
+      deliveryNoticeState,
+      carryoverState,
+      activity,
+      // ⚠️ NEITHER HOOK CAN FIRE ON AN INHERITED DESCRIPTOR — we never bind, so
+      //    there is no address to find taken and none to find missing. They are
+      //    declared anyway because `createServer` treats an UNCLAIMED code as a
+      //    rethrow, and a builder that decides its caller's fate is the defect
+      //    `kernel-bind` paid three CI round trips for.
+      onAddressInUse: (err) => { throw err; },
+      onLaneLost: (err) => { throw err; },
+    }).listen({ fd });
+  }
+
+  for (const extra of multi ? [] : extraEndpoints) {
+    createServer({
+      store: state,
+      freshness,
+      onStaleCode,
+      // 🛑 SAME THREE TABLES AS THE FIRST SOCKET — the sequencer's premise is
+      //    that ONE authority sees every frame of an invocation. N maps in one
+      //    process look identical and are not.
+      frameSequencerState,
+      deliveryNoticeState,
+      carryoverState,
+      activity,
+      onAddressInUse: (err) => {
+        lifecycle.record('bind-refused', {
+          lane: 'port', host: extra.host, port: extra.port, pid: process.pid,
+        });
+        throw err;
+      },
+      // 🛑 SAME POLICY AS THE FIRST SOCKET, and for the same reason: a daemon
+      //    that stayed alive having lost one of its declared addresses would
+      //    serve a capacity nobody can see is missing — the silent degradation
+      //    this repository refuses. It dies; the supervisor restarts it.
+      onLaneLost: (err) => {
+        lifecycle.record('lane-degraded', {
+          lane: 'port',
+          fatal: true,
+          host: extra.host,
+          port: extra.port,
+          pid: process.pid,
+          code: /** @type {NodeJS.ErrnoException} */ (err).code,
+          message: err && err.message,
+        });
+        process.stderr.write(`ctxroute: the port lane could not take ${extra.host}:${extra.port} `
+          + `(${/** @type {NodeJS.ErrnoException} */ (err).code}). A declared listening socket that `
+          + 'cannot bind is capacity the operator believes they have.\n');
+        throw err;
+      },
+    }).listen(extra.port, extra.host, LISTEN_BACKLOG);
+  }
   // ⚠️ Recorded HERE, right after the listen call, and it says "we began serving"
   //    — not "the bind succeeded": `listen` reports its failure asynchronously,
   //    on the error path just above. Two records, two facts, never one guess.
   // 🛑 `uptimeMs` on every exit below is what makes the RATE readable without any
   //    counter to maintain: nine short lives in an hour ARE the nine lines, and a
   //    separate restart count would be a second truth that drifts from the file.
+  // ═══════════════════════════════════════════════════════════════════
+  // 🧵 THE POOL — N THREADS, EACH HOLDING ITS OWN LISTENING SOCKETS
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔑 THIS IS WHAT MAKES IT A NETWORK DAEMON RATHER THAN A COMPUTE POOL, and
+  //    the operator is who drew that line: a pool that only BUILDS answers
+  //    leaves accept, parsing and the response on one thread, so that thread is
+  //    still the whole daemon. Here thread `t` owns sockets `assignSockets`
+  //    gives it and does ALL the expensive work of their requests.
+  // 🛑 THE DISTRIBUTION IS THE PURE MODULE'S, REFUSALS INCLUDED. A socket held
+  //    by two threads is two accept loops on one handle; a socket held by none
+  //    is an address the wiring POSTs to and nobody answers. Both are silent,
+  //    which is why neither is ever clamped into existence here.
+  const serverThreads = [];
+  if (channelWiring && ownerThread) {
+    const wire = channelWiring;
+    const spread = workerPool.assignSockets(declaredEndpoints.length, pool.size);
+    if (spread.refusal) {
+      lifecycle.record('lane-degraded', {
+        lane: 'port', fatal: true, pid: process.pid, code: 'WORKERS_REFUSED', message: spread.refusal,
+      });
+      process.stderr.write(`ctxroute: ${spread.refusal}\n`);
+      throw new Error(`ctxroute: socket assignment refused (${spread.refusal})`);
+    }
+    /** @type {number[][]} */ (spread.assignment).forEach((sockets, t) => {
+      const worker = new Worker(path.join(__dirname, 'thread-boot.js'), {
+        workerData: {
+          role: 'server',
+          control: wire.control.buffer,
+          payload: wire.payload.buffer,
+          clients: wire.clients,
+          // ⚠️ SLOT 0 IS THIS THREAD'S — the rendezvous lane asks like everyone
+          //    else, so the pool starts at one.
+          index: t + 1,
+          endpoints: sockets.map((i) => declaredEndpoints[i]),
+          fds: [],
+          backlog: LISTEN_BACKLOG,
+          // 🛑 THE BUFFER, NEVER THE VIEW: only a `SharedArrayBuffer` crosses
+          //    into a worker; a typed array would arrive as a COPY, and the
+          //    main thread would watch a counter no request ever touches.
+          activity: activity.buffer,
+        },
+      });
+      // 🛑 A THREAD CANNOT KILL THE PROCESS, SO IT REPORTS AND THIS DOES.
+      //    `process.exit()` inside a worker ends the WORKER: a stale-code verdict
+      //    handled there would leave the daemon alive, serving from its other
+      //    threads, with one socket dead and nothing said.
+      worker.on('message', (/** @type {{kind?: string, verdict?: any, code?: string, message?: string}} */ note) => {
+        if (!note || typeof note !== 'object') return;
+        if (note.kind === 'stale-code') { dieOnStaleCode(note.verdict); return; }
+        if (note.kind === 'lane-lost') {
+          lifecycle.record('lane-degraded', {
+            lane: 'port', fatal: true, pid: process.pid, code: note.code, message: note.message,
+          });
+        }
+      });
+      // 🛑 A DEAD SERVER THREAD IS A DEAD DAEMON, LOUDLY. Its sockets are gone
+      //    and nothing else will ever bind them: a process that stayed up would
+      //    serve a share of every action into silence, which is exactly the hole
+      //    `http.listeners` shipped with on every activated OS.
+      worker.on('error', (/** @type {Error} */ err) => {
+        lifecycle.record('lane-degraded', {
+          lane: 'port', fatal: true, pid: process.pid, code: 'WORKER_ERROR', message: err && err.message,
+        });
+        process.stderr.write(`ctxroute: server thread ${t} died — ${err && err.message}\n`);
+        process.exit(EXIT_STALE_CODE);
+      });
+      serverThreads.push(worker);
+    });
+    // 🛑 THE OWNER IS NOT OPTIONAL: without it every thread blocks on a wait
+    //    nobody answers, and the whole daemon stops at the ceiling. Its death is
+    //    the process's death, handed to the supervisor.
+    ownerThread.on('error', (/** @type {Error} */ err) => {
+      lifecycle.record('lane-degraded', {
+        lane: 'port', fatal: true, pid: process.pid, code: 'OWNER_ERROR', message: err && err.message,
+      });
+      process.stderr.write(`ctxroute: the state owner thread died — ${err && err.message}\n`);
+      process.exit(EXIT_STALE_CODE);
+    });
+  }
+
   lifecycle.record('start', {
     pid: process.pid,
     lane: laneFd === null ? 'port' : 'inherited-fd',
     port: laneFd === null ? port : null,
     fd: laneFd,
+    // ⚠️ HOW MANY ARRIVAL COUNTERS CROSSED THE DEATH — a FIELD, for the same
+    //    reason as `listeners` below. Zero is the ordinary case (a first start,
+    //    or an unreadable snapshot, both fail-open); a non-zero number is what
+    //    tells an operator that the invocations in flight during the last
+    //    restart did NOT have their opening chunks re-served at them.
+    invocationsRestored,
+    // ⚠️ HOW MANY THREADS ACTUALLY STARTED — a FIELD on an event that already
+    //    fires once per process life, never a new event (the journal's
+    //    vocabulary is a closed list and its 512 KB ceiling is structural).
+    //    Zero is the ordinary case and it means today's daemon, byte for byte.
+    // ⚠️ WRITTEN AFTER `invocationsRestored` ON PURPOSE: a judge reads the
+    //    first 900 characters of this record to prove the restoration is
+    //    announced, and pushing that field out of its window would redden a
+    //    guard that is perfectly right.
+    workers: serverThreads.length,
+    // ⚠️ HOW MANY SOCKETS WE ACTUALLY OPENED — a FIELD on an event that already
+    //    fires once per process life, never a new event (the vocabulary is a
+    //    closed list). Without it the capacity is invisible: an operator who
+    //    raised `http.listeners` and mistyped the key would read a healthy start
+    //    line and believe in a margin they never got.
+    // 🔴 IT WAS `null` UNDER SOCKET ACTIVATION UNTIL 2026-09-18, on the reasoning
+    //    that "the count is the unit's and not ours to claim". That reasoning is
+    //    what let the silent hole above live: the ONE number that would have
+    //    shown a Linux adopter they were serving 1 socket while their wiring
+    //    aimed at 4 was deliberately withheld. We SERVE these descriptors, so we
+    //    say how many — whose they are is a different question from how many
+    //    are working.
+    // ⚠️ WITH A POOL THIS PROCESS BOUND NONE OF THEM — the THREADS did, one
+    //    socket each per `assignSockets`. The number is still the number of
+    //    listening sockets the daemon serves, which is the question an operator
+    //    reading this line is asking; WHICH thread holds each is the `workers`
+    //    field's business, and confusing the two is how a capacity goes unseen.
+    listeners: multi ? declaredEndpoints.length
+      : (laneFd === null ? 1 + extraEndpoints.length : 1 + extraFds.length),
+    // ⚠️ WHEN THIS DAEMON RUNS, AND WHY (2026-09-29) — FIELDS, never a new event.
+    //    `auto` resolves on the environment, and a default nobody can see
+    //    deciding is an outage nobody can explain. `idleSeconds` is null when
+    //    no idle window is armed (`login`).
+    lifecycle: lifecyclePlan.mode,
+    lifecycleReason: lifecyclePlan.reason,
+    idleSeconds: lifecyclePlan.mode === 'on-demand' ? idleWindow.ms / 1000 : null,
+    // ⚠️ WHAT WE ASKED THE KERNEL FOR, AND WHAT IT WILL ACTUALLY ALLOW — the Redis
+    //    pattern: SAY IT, never refuse to start over it. `listen(2)` is silently
+    //    capped by `net.core.somaxconn`, so a declared 65535 can quietly become
+    //    128 and nothing anywhere would show it. An installer WALL over this was
+    //    removed the same day it shipped (`install-linux.sh` says why); this is
+    //    what replaces it — an observation, on an event that already fires once
+    //    per process life, so the journal's ceiling is untouched.
+    // 🛑 The read is the SHELL's job and its failure is a `null`, never a zero:
+    //    off Linux the file does not exist, and "I could not measure" must never
+    //    render as a measured zero.
+    ...backlogCeiling.backlogFields(LISTEN_BACKLOG, readSomaxconn()),
     // ⚠️ ANTI-VACUITY, IN THE JOURNAL AND NOT ONLY IN A TEST. A guard that
     //    verifies ZERO modules is indistinguishable from one that verifies them
     //    all and finds them clean — this repository's worst defect, printed here
@@ -1461,7 +2730,21 @@ function main() {
   try { require('fs').mkdirSync(paths.stateDir(), { recursive: true }); } catch { /* the bind below will say it */ }
 
   bind(
-    createServer({ store: state, freshness, onStaleCode, onAddressInUse: (err) => { throw err; } }),
+    // 🛑 `onLaneLost` IS CLAIMED HERE AND DOES NOTHING — a CLAIM, never a
+    //    swallow, and removing it re-creates a defect that already cost three CI
+    //    round trips (2026-08-20, macOS). This lane's errors belong to
+    //    `kernel-bind`, which attaches its own `once('error')` to inspect a
+    //    possibly DEAD socket file — macOS is the only kernel of the three that
+    //    leaves one behind. Ours is registered FIRST, so the rethrow the builder
+    //    now performs by default would kill the process before that inspection
+    //    ever ran, exactly as the old throwing builder did.
+    // ⚠️ AND THE CALLBACK BELOW IS WHERE THIS LANE'S POLICY LIVES: anything but
+    //    `EADDRINUSE` degrades ONE lane loudly and leaves the port serving. The
+    //    port lane above decides the OPPOSITE, and its reason is written there.
+    createServer({
+      store: state, freshness, onStaleCode, activity,
+      ...rendezvousLaneHooks(),
+    }),
     endpoint(),
     () => {},
     (err) => {
@@ -1481,7 +2764,11 @@ function main() {
       //    checker, and a lying JSDoc is what `check:types` exists to refuse.
       const e = /** @type {NodeJS.ErrnoException} */ (err);
       if (e && e.code === 'EADDRINUSE') {
-        lifecycle.record('bind-refused', { lane: 'rendezvous', code: e.code, pid: process.pid });
+        // ⚠️ `rendezvous`/`unlinkCode` come from `kernel-bind`: WHICH branch refused (a living
+        //    owner, or a re-bind that failed after the cleanup) — the fact that tells a correct
+        //    refusal from a defect, and that the bare `EADDRINUSE` never carried.
+        lifecycle.record('bind-refused', lifecyclePure.rendezvousRefusal(
+          /** @type {{code?: string, rendezvous?: string, unlinkCode?: string|null}} */ (/** @type {unknown} */ (e)), process.pid));
         throw err;
       }
       // ⚠️ ONE lane lost, the other still serving. The stderr line reaches a
@@ -1567,17 +2854,74 @@ function main() {
   //    look). A store returns a verdict; the shell decides to die.
   // ⚠️ `SIGKILL` stays uncoverable BY DESIGN — it cannot be caught, which is why
   //    the COUNT exists. Two authorities, and neither pretends to be the other.
+  /**
+   * LEAVE CLEANLY — the ONE exit shared by a supervisor's stop and an idle end.
+   *
+   * 🛑 EXIT 0, AND THAT IS WHAT MAKES AN IDLE END SAFE ON EVERY SUPERVISOR: a
+   *    supervisor restarts on FAILURE only, so 0 reads as "job done" — the
+   *    Windows task's event trigger fires on a non-zero result, systemd has
+   *    `Restart=no`, launchd has no `KeepAlive`. The next start is asked by a
+   *    harness session (Windows) or by the next connection (socket activation).
+   * @param {() => void} recordExit writes the exit's journal line. ⚠️ A THUNK
+   *   carrying the event name LITERALLY, never a name passed as a string:
+   *   `lifecycle-log.test.js` proves every declared event is emitted by reading
+   *   `lifecycle.record('<name>'` in this file, and a variable would blind it.
+   * @returns {never}
+   */
+  const leaveCleanly = (recordExit) => {
+    // ⚠️ THE STATE FIRST, THE TRACE SECOND. Losing the snapshot costs
+    //    re-deliveries; losing one journal line costs a diagnosis. Both are
+    //    swallowed — housekeeping must never delay nor break a stop.
+    // 🛑 ONLY WHAT THIS PROCESS OWNS. With a pool the store belongs to the
+    //    owner thread, which flushes it itself as it returns
+    //    (`state-owner-entry.persist`); flushing a CLIENT here would mean a
+    //    blocking round trip from inside a signal handler, and the owner is
+    //    being asked to stop at the same instant.
+    try { if (memory) memory.flush(); } catch { /* housekeeping must never delay a stop */ }
+    // ⚠️ ASK, THEN WAIT FOR THE ANSWER — never kill. The flag is what lets the
+    //    owner write its snapshot, and `process.exit` below would kill it
+    //    mid-save: the arrival order of every invocation in flight would be
+    //    lost while the shutdown looked perfectly clean (the defect of
+    //    2026-09-19, restored by the shutdown path).
+    // 🛑 THE WAIT IS BOUNDED AND RE-CHECKS, like every other wait here, and
+    //    its exhaustion costs exactly what the old behaviour cost: nothing is
+    //    retried, nothing is guessed, the process simply leaves.
+    try { drainOwner(); } catch { /* a stop must never be blocked by its own housekeeping */ }
+    try { recordExit(); } catch { /* a lost line costs a diagnosis, never the stop */ }
+    process.exit(0);
+  };
   for (const signal of ['SIGTERM', 'SIGINT']) {
-    process.on(signal, () => {
-      // ⚠️ THE STATE FIRST, THE TRACE SECOND. Losing the snapshot costs
-      //    re-deliveries; losing one journal line costs a diagnosis. Both are
-      //    swallowed — housekeeping must never delay nor break a stop.
-      try { state.flush(); } catch { /* housekeeping must never delay a stop */ }
-      lifecycle.record('signal-exit', {
-        pid: process.pid, signal, uptimeMs: Math.round(process.uptime() * 1000),
-      });
-      process.exit(0);
-    });
+    process.on(signal, () => leaveCleanly(() => lifecycle.record('signal-exit', {
+      pid: process.pid, signal, uptimeMs: Math.round(process.uptime() * 1000),
+    })));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ⏻ ON DEMAND: LEAVE WHEN A WHOLE WINDOW PASSES WITH NOBODY ASKING
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔑 WHICH MODE RUNS AND WHY rides the `start` line (fields `lifecycle`,
+  //    `lifecycleReason`, `idleSeconds`): a default resolved from the
+  //    environment that nobody can see is an outage nobody can explain.
+  // 🛑 THE STOP IS BY INACTIVITY, NEVER BY COUNTING SESSIONS (`lifecycle-pure`
+  //    says why). A window closes on EQUALITY of the shared counter: any request
+  //    in between re-arms it, so the daemon leaves between ONE and TWO windows
+  //    after its last request — never while a request of any thread is recent.
+  // ⚠️ ONE timer call site, re-armed from itself; declared `undecidable` in
+  //    `temporal-budget.json`: whether another harness will ever ask is the
+  //    future of a human, and no local authority can answer it.
+  if (lifecyclePlan.mode === 'on-demand') {
+    let seenAtArm = Atomics.load(activity, 0);
+    const arm = () => setTimeout(() => {
+      const seenNow = Atomics.load(activity, 0);
+      if (daemonLifecycle.idleVerdict(seenAtArm, seenNow) === 'exit') {
+        leaveCleanly(() => lifecycle.record('idle-exit', {
+          pid: process.pid, idleSeconds: idleWindow.ms / 1000, uptimeMs: Math.round(process.uptime() * 1000),
+        }));
+      }
+      seenAtArm = seenNow;
+      arm();
+    }, idleWindow.ms);
+    arm();
   }
 
   // ═══════════════════════════════════════════════════════════════════════

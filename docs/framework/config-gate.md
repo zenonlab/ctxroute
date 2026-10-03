@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"ctxroute-config.json","scope":["ctxroute"],"rank":359},{"pattern":"config-gate.test.js","scope":["ctxroute"],"rank":360},{"pattern":"legacy-mcp-inject.test.js","scope":["ctxroute"],"rank":361},{"pattern":"ctxroute-config.schema.json","rank":567}]
 mode: smart
-threshold: 20
+threshold: 73
 rank: 359
 ---
 # ctxroute-config.json / config-gate.test.js — invariants
@@ -23,3 +23,4 @@ Shipped config: `enabled` not false, global `mode` never `"dumb"` (debug fixture
 ⚠️ **Composition, one rule at BOTH levels**: at least one `-` ⇒ the entry ADJUSTS its category's universe · only bare names ⇒ it REPLACES it. The entry's addition beats its category's removal. `scope`/`exclude` never compose (values, not universes); an EMPTY list means "not declared", so it inherits. A PURE addition has NO form at either level — known, written.
 🛑 Single resolution point = `sources/file.js` (`heriterFiltres`, next to `keyDecision`): a cascade resolved away from its decision needs a second reading of the same rule, and two readings diverge (paid twice: ㊱, ㊳).
 ✅ **`keys` MIXED FORM IS ADMITTED SINCE 2026-08-20** — the schema’s description says so on BOTH tiers (skill level and `rules.items`). Rule: at least one `-` ⇒ ADJUST the default universe · no `-` ⇒ REPLACE it. The schema never structurally forbade the mixed form (it is a list of strings): the refusal lived in `frontmatter.validate` alone, and the description is what kept the two declarations honest. ⚠️ A description that contradicts the validator is the mirror of class ㊴ — "works and forbidden" instead of "accepted and inert".
+⚠️ **`afterFrames` (2026-09-23) = the bandwidth of the moment AFTER a tool answered** (docs waiting for a `response`). Declared apart from `frames` and meant to stay SMALL — the harness POSTs its whole payload, answer included, to every declaration. Like `frames` it drives nothing at runtime: `wiring-generate` writes from it and `doctor --settings` confronts it with the wiring. 🔑 **ABSENT OR 0 = THE MOMENT IS OFF, the default** (operator decision, 2026-09-23, after measuring two extra POSTs per tool call for a capacity no doc used): the generator writes nothing for it, and the doctor names any after-answer declaration still wired while it is off. It used to be a REFUSAL, so a clean install without the key could not generate its wiring at all. 🛑 Only absent and 0 mean off: any other non-integer or negative value stays a named refusal, a typo never reads as off.

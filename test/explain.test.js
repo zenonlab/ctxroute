@@ -247,3 +247,17 @@ test('CWD: a `cwd` inside --input does NOT feed the payload cwd (the 2026-08-27 
   assert.ok(!/cwd\s+: C:\/decoy/.test(out), 'an --input cwd must not be taken for the payload cwd');
   assert.match(out, /DEFAULTED/);
 });
+
+// ── `--response` (2026-09-23): the moment AFTER the tool answered ──
+test('RESPONSE: a doc waiting for the answer is NAMED as waiting before the action, INJECTED after a matching answer, NAMED again after a refused one', () => {
+  const fleetRoot = fleetWith({ 'odoo-posted.md': '---\ntool: ["mcp__odoo__odoo_call"]\nresponse: {"scope": ["posted"]}\nmode: dumb\n---\nPOSTED.\n' });
+  const base = ['--tool', 'mcp__odoo__odoo_call', '--input', '{}', '--cwd', 'C:/x'];
+  const beforeOut = launch(base, fleetRoot);
+  assert.match(beforeOut, /WAITING FOR THE TOOL'S ANSWER/);
+  assert.match(beforeOut, /odoo-posted\.md/);
+  assert.doesNotMatch(beforeOut, /DISCARDED BY THE CADENCE/, 'a waiting doc is never blamed on the cadence');
+  // The measured Claude Code shape of a structured MCP answer: a JSON text.
+  assert.ok(json([...base, '--response', '{"state":"posted"}'], fleetRoot).inject.some((d) => /odoo-posted/.test(d)));
+  const refused = launch([...base, '--response', 'draft invoice'], fleetRoot);
+  assert.match(refused, /NOT FOR THIS ANSWER/);
+});

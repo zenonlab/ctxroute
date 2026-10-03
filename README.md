@@ -14,19 +14,20 @@ tool call — where it matters. Predictable, explainable, harness-agnostic.
 
 ## Platform status — what is PROVEN, and what is not
 
-🔴 **The badge above is red, and this section says exactly why rather than leaving you to guess.** The engine is platform-agnostic by construction — a CI gate forbids any source from knowing a harness or an OS dialect. What differs is the plumbing around it, and only a run on the real machine proves that.
+The engine is platform-agnostic by construction — a CI gate forbids any source from knowing a harness or an OS dialect. What differs is the **plumbing** around it, and only a run on the real machine proves that. This table is what a real supervisor said on a real runner, and nothing else.
 
-| Platform | Suite | What that means |
+| Platform | Service units | What that means |
 |---|---|---|
-| **Linux** | green | the full suite passes on a clean CI clone |
-| **Windows** | green locally, verdict missing on CI | it is the maintainer machine, exercised daily; the CI job is cancelled the moment another OS fails, so its own run has not completed recently |
-| **macOS** | **one test fails** | `dual-transport`, the cell asserting the daemon REFUSES a second instance |
+| **Linux** | **green** | installed, loaded by systemd, and it ANSWERS a real request |
+| **macOS**, eager mode | **green** | same, via the direct-bind plist |
+| **macOS**, socket activation | **fails** | the daemon installs and answers, but the cell proving the OUTAGE WINDOW IS CLOSED does not pass |
+| **Windows** | **fails on CI** | the installer cannot register the scheduled task on a GitHub runner; it works on the maintainer's machine daily |
 
-⚠️ **The macOS failure, stated plainly — including the fact that its CAUSE is not established.** The cell forks a daemon against an address a live occupant already holds and requires it to die; on macOS it neither binds nor dies. Three explanations fit that silence equally well — a bind never attempted, an errno other than the fatal one sent down the degradation path, or a liveness probe that never settles — and reading the code from a machine that does not reproduce it cannot separate them. The cell now FAILS while quoting what the child wrote, so the next run says which one it is. **Naming a cause before that would be a guess, and this project does not ship those.**
+⚠️ **The macOS failure, stated plainly — its CAUSE is NOT established.** Socket activation exists so that a request arriving while no daemon runs is QUEUED by the kernel and served by the next instance; that is the whole point, and the cell that proves it does not pass. **A cause read off a machine that does not reproduce it would be a guess, and this project does not ship those.** What is known: the same platform in **eager mode is green**, so macOS is usable today — it simply keeps the small outage window socket activation was meant to remove.
 
-⚠️ **Whether it affects a real installation is equally unknown**: it has never been reproduced outside CI, and the supervision unit shipped for macOS is socket-activated — there the OS itself owns the listening socket, so a duplicate cannot arise by this path at all.
+⚠️ **The Windows failure is about the CI ENVIRONMENT, and that is a claim, not a proof.** A GitHub runner has no interactive logon session, which is what the task's trigger needs; the same installer runs daily on the maintainer's machine. Until someone separates "the runner cannot host this" from "the installer is wrong", **it is written here as unresolved** rather than explained away.
 
-🛑 **So this repository does not claim macOS is proven.** Running it there is reasonable and probably fine; being told it is verified would be false. A framework whose entire purpose is to refuse silent defects cannot begin by hiding one of its own.
+🛑 **So this repository does not claim macOS or Windows are proven.** Linux is. A framework whose entire purpose is to refuse silent defects cannot begin by hiding one of its own.
 
 ---
 
@@ -52,43 +53,52 @@ Details and proofs: `LANGUAGE.md`.
 
 ## Choosing a harness
 
-Routing is deterministic on every harness. Transport is not — and the gap between
-harnesses is **structural**, not a question of maturity.
+Routing is deterministic on every harness. Transport is not, and the gap between
+harnesses is **structural**, not a question of maturity. The conditions a harness
+must satisfy to be deployed as a FLEET — and the verdict on each known harness —
+are published in [`HARNESS-CONTRACT.md`](HARNESS-CONTRACT.md#industrial-deployment--not-the-same-question-as-compatibility).
+In one line: **HTTP is the only industrial transport, and an HTTP handler is
+necessary but not sufficient** — a harness that caps the size of a hook's output
+forces the knowledge across N declarations, and fires them as N simultaneous
+connections it owns.
 
-**The most reliable configuration that exists here is a PAIR**, and quoting half of
-it will mislead whoever applies it: *one single `command` declaration* **and** *a
-harness with no output cap*.
+**What is measured here, and the honest answer is that the CAUSE is still open:**
 
-- **Codex CLI satisfies both.** `additionalContextLimit = 0` passes the handler's
-  complete additional context to the model, so nothing needs fragmenting: one
-  declaration, one process, zero simultaneous connections. The whole class of
-  transport loss is **absent by construction**, not mitigated. Price: one process
-  start per action (~330 ms measured).
-- **Claude Code does not.** Its per-output cap is undocumented and real (the engine
-  works to a conservative 8,000-character floor; beyond it the harness files the
-  text away and hands the agent a short preview), so several hook declarations stay
-  required, and the harness fires them in parallel. Under load — around 38
-  simultaneous connections, produced by ~12 parallel tool calls or by spawning a
-  subagent — connections are lost. Normal use (1 to 5 parallel calls) is clean.
-
-**What is measured, and what is not:**
-
-- The loss is a Node client behaviour **on Windows**: the kernel disables TCP
-  retransmission on loopback, and a .NET client against the same server loses
-  nothing. On Linux and macOS the client retransmits on its own, so this may well be
-  clean there — **not measured**, and it is the cheapest decisive measurement left.
-- Upstream will not fix it: `anthropics/claude-code#29963` describes this exact
-  failure and is closed as *not planned*. We are the server; no line of our code can
-  retry a connection that never arrived.
+- **Rate, not red lines.** On the current deployment the loss sits between
+  **0.5 % and 1.6 % of POSTs**, stationary over weeks and going back down on its
+  own (20,896 POSTs over six live sessions on 2026-09-20: 1.13 %). An earlier, far
+  worse regime — 16 % and never recovering — belonged to a **loopback address the
+  project left on 2026-09-03**, and must not be read as this one.
+- **Nothing on the server side explains it, and the accept queue does NOT settle
+  it either way.** The daemon's connection high-water mark has read **32** against
+  an accept queue measured at **232** on one calm minute, and **254 against that
+  same 232** twelve seconds before a live burst. That counter increments on
+  ACCEPT, so a queue that is full while the loop is starved accepts nothing and is
+  counted as nothing: **a low reading is not evidence of a healthy queue.** A packet
+  capture at the moment of a failure shows no connection attempt on the wire at all
+  — no SYN leaves, no RST answers. Several plausible stories (queue overflow, a
+  blocked event loop, a filtering driver) were each built and each refuted.
+- **Three clients, one loses.** A Node client and a .NET client against the very
+  same daemon, on the very same address, under the documented reproducer load
+  (4,800 connections, six concurrent writers): **zero failures.** Only the harness's
+  own client fails.
+- **Upstream will not fix it**: [`anthropics/claude-code#29963`](https://github.com/anthropics/claude-code/issues/29963)
+  describes a matching failure and is closed as *not planned* (re-verified
+  2026-09-20). We are the server; no line of our code can retry a connection that
+  was never attempted.
 - **Nothing is lost silently**: content promised to a frame that never connects is
   harvested and carried by the next invocation (`src/carryover-pure.js`). A lost
   frame is still an occasion lost for *that* tool call — a consolation, never a
   repair.
+- **And it has never been measured on anything but a developer workstation**, a
+  machine also running browsers, other services and full test suites. Under a
+  saturating local run the rate reaches ~2 %; at rest, the same session lost zero.
 
-⇒ **Where an error is costly, pick Codex** (or the `command` lane). Where speed
-matters more, take Claude Code's `http` lane and accept a bounded, measured,
-non-silent loss. Reliability here is a property of the **deployment**, not of the
-framework.
+⇒ **Reliability here is a property of the DEPLOYMENT, not of the framework.** Where
+an error is costly, pick the configuration with no burst; where speed matters more,
+take the `http` lane and accept a bounded, measured, non-silent loss. **A client you
+write yourself removes the class entirely**: HTTP/2 carries N frames as N streams
+over ONE connection, so the accept queue is touched once and a refusal cannot occur.
 
 Gemini CLI is not a candidate today: its `PreToolUse` does not expose the injection
 channel at all — a capability hole, not a size one.
@@ -97,8 +107,36 @@ channel at all — a capability hole, not a size one.
 
 1. Clone this folder anywhere.
 2. Wire the hooks in `~/.claude/settings.json` (absolute paths). The gate is
-   declared **N times** — that is the per-gesture bandwidth (frames), checked
-   by `node tools/doctor.js --settings` against `frames` in the config:
+   declared **N times** — that is the per-gesture BANDWIDTH, checked by
+   `node tools/doctor.js --settings` against `frames` in the config.
+
+   🛑 **N IS NOT A TUNING KNOB, IT IS THE CAPACITY OF ONE ACTION.** The harness
+   caps each hook's OUTPUT, so one declaration carries roughly 7,700 characters.
+   A 50,000-character skill declared at `frames: 2` therefore spreads over seven
+   tool calls, and **the agent acts six times without knowledge it was owed** —
+   which is the exact defect this project exists to remove. The example below is
+   minimal on purpose; size `frames` against the LARGEST thing you will inject,
+   never against a round number. The live deployment runs **32**.
+
+   ⚠️ Claude Code also implements `type: "http"`, which replaces ~330 ms of node
+   startup per declaration with one local POST to a resident daemon (measured
+   5,300 ms → 182 ms per action). Read
+   [`HARNESS-CONTRACT.md`](HARNESS-CONTRACT.md#industrial-deployment--not-the-same-question-as-compatibility)
+   before choosing: it is faster, and it is the lane where the transport loss
+   described above exists at all.
+
+   ⏻ **The daemon runs only while a harness uses it, by default** —
+   `http.lifecycle` in the config: `auto` (default) · `on-demand` · `login`.
+   `on-demand` starts with the first session (Windows: the
+   `src/hooks/daemon-ensure.js` hook asks Task Scheduler; Linux/macOS: the
+   socket-activated unit starts it at the first connection) and leaves by itself
+   after `http.idleSeconds` (default 1800) with no request. `login` keeps it up
+   from login. `auto` picks `on-demand` on Linux and macOS (the OS holds the
+   socket, so a restart is guaranteed) and `login` on Windows, where security
+   suites' "do not disturb" modes can pause Task Scheduler and leave an idle-exited
+   daemon unable to restart — Windows users opt into `on-demand` knowingly. An idle daemon costs no CPU; what
+   `on-demand` gives back is its memory. Wire `daemon-ensure.js` on
+   `SessionStart` and `UserPromptSubmit` (the generated wiring does).
 
 ```json
 {
@@ -200,3 +238,41 @@ harness dialect; the dialect lives in `harness-profile.js`, as data).
 - `node tools/doctor.js [--settings …] [--codex-hooks …] [--harness …]` — is the
   wiring alive, does the harness conform.
 - `node tools/lint-corpus.js` — audit of the whole doc corpus.
+
+
+## Known issues
+
+### Windows: a security suite's "do not disturb" / game mode pauses the daemon's task
+
+**Symptom.** At a prompt, Claude Code shows `ctxroute: the daemon could not be started — the
+scheduled task "ctxroute-http" is DISABLED …`, or `node tools/doctor.js --settings …` reports
+`the OS supervisor can start the daemon` as failed. Agents then act without the knowledge
+ctxroute delivers, until the daemon is back.
+
+**Cause, measured (2026-09-29).** Some security suites pause Windows scheduled tasks while an
+application runs full screen — a browser in full screen, the screenshot tool, a game. On Avast
+the rule is "Pause system background tasks" in Do Not Disturb Mode; its own log
+(`C:\ProgramData\Avast Software\Avast\log\GamingMode.log`) shows the rule turning on and off at
+the exact second Windows records the task as disabled then updated. A daemon that is already
+running is NOT affected: a disabled task never stops its running instance. What is affected is a
+START that falls inside a pause — typically the logon trigger, right after a reboot, while a
+full-screen application restores itself.
+
+**What ctxroute does on its own.**
+- On Windows the daemon stays up from login (`http.lifecycle` resolves to `login`), so a pause
+  mid-session costs nothing.
+- Every harness session and every prompt asks Task Scheduler to start the daemon again
+  (`src/hooks/daemon-ensure.js`), so a start that was paused succeeds at the next prompt once the
+  pause ends.
+- You are told, live, only when it matters: the notice above appears when the task is disabled
+  AND the daemon does not answer. A disabled task under a daemon that still answers stays silent.
+
+**What you can do.** In your security suite, exclude `ctxroute-http` from the full-screen /
+game-mode rules, or turn off the option that pauses background or scheduled tasks. On Avast:
+Performance → Do Not Disturb Mode → settings (gear icon) → untick
+"Pause system background tasks" (path reported by Avast users, not by Avast's own documentation —
+the wording may differ between versions). Nothing else needs changing, and you never need to disable
+your antivirus.
+
+**Linux and macOS** are not affected: the OS holds the listening socket and starts the daemon on
+the first connection, whatever any other program does to scheduled jobs.

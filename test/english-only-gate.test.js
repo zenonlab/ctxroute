@@ -45,11 +45,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { eld } from 'eld/large';
 
 const REPO = path.join(import.meta.dirname, '..');
-const MIRROR_DIR = path.join(REPO, 'docs', 'framework');
 const MIN_CHARS = 90;
 
 /** PROSE only: code spans, links and markdown syntax are never a language. */
@@ -74,8 +74,48 @@ export function foreignLines(text) {
   return out;
 }
 
-const publishedDocs = () =>
-  (fs.existsSync(MIRROR_DIR) ? fs.readdirSync(MIRROR_DIR) : []).filter((f) => f.endsWith('.md'));
+/**
+ * Every PUBLISHED prose file, as a path relative to the repository.
+ *
+ * 🔴 IT SCANNED `docs/framework/*.md` ALONE UNTIL 2026-09-19, NON-RECURSIVELY, AND
+ *    THE GAP HELD REAL FRENCH. `docs/mcp/*.md.example` and `docs/session/*.md*`
+ *    are TRACKED — a fork receives them — and three of them carried whole French
+ *    paragraphs while this gate stayed green. A judge whose scope is narrower
+ *    than the thing it protects certifies instead of protecting.
+ * ⚠️ AND THE OLD READER WAS FLAT, so a `.md` dropped in a future
+ *    `docs/framework/<subdir>/` would never have been read — a hole that opens by
+ *    itself the day somebody makes a folder. Deriving the list from git closes
+ *    that too, without anybody having to remember it.
+ * 🛑 `.js` IS DELIBERATELY OUT, AND THE REASON IS WRITTEN SO NOBODY "FIXES" IT.
+ *    The project rule covers comments too, but several suites must carry French
+ *    ON PURPOSE — `backlog-coherence-gate` feeds French backlog headings,
+ *    `leak-gate` feeds French words, `pretool-differential` pins a French
+ *    fixture. A gate reddening on those would be red for being CORRECT, hence
+ *    disarmed within the week. Identifiers already have their own judge
+ *    (`foreign-identifier-gate`); French PROSE in a comment stays a written,
+ *    measured gap — not a silence.
+ */
+const publishedDocs = () => {
+  // 🔑 GIT IS THE AUTHORITY ON "WHAT A FORK RECEIVES", never a path pattern.
+  //    A first attempt walked `docs/` on DISK and immediately accused
+  //    `docs/mcp/browser-*.md` — the maintainer's PERSONAL docs, deliberately
+  //    gitignored and never published. That is the shape of a gate widened
+  //    wrongly: red on correct content, therefore disarmed within the week.
+  //    Asking git removes the question instead of answering it by hand.
+  // 🛑 SCRUB THE WHOLE `GIT_*` FAMILY: git EXPORTS `GIT_DIR`/`GIT_INDEX_FILE` to
+  //    every hook it runs and a child INHERITS them — they BEAT `cwd`, so this
+  //    listing would describe whichever repository the parent hook was acting on,
+  //    not ours, and the judged surface would be somebody else's. Nobody can
+  //    enumerate what a future git version exports, so the whole family goes.
+  // ⚠️ WRITTEN `env: env`, NOT the `{ env }` shorthand: `git-env-door-gate` reads
+  //    the EXPLICIT property and reports a shorthand as "no env: option".
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k];
+  const listed = execFileSync('git', ['ls-files'], { cwd: REPO, env: env, encoding: 'utf8' });
+  return listed.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /\.md(\.example)?$/.test(l));
+};
 
 test('ANTI-VACUITY — the detector recognises a foreign sentence and stays silent on English', () => {
   // 🛑 Without this, a broken import or a dead detector makes the whole gate green.
@@ -95,7 +135,7 @@ test('ANTI-VACUITY — the scan really reads the published mirror', () => {
 test('㉒ — the PUBLISHED surface carries no non-English prose', () => {
   const offenders = [];
   for (const f of publishedDocs()) {
-    for (const l of foreignLines(fs.readFileSync(path.join(MIRROR_DIR, f), 'utf8'))) {
+    for (const l of foreignLines(fs.readFileSync(path.join(REPO, f), 'utf8'))) {
       offenders.push(`  ${f} [${l.langue}] ${l.text.slice(0, 100)}`);
     }
   }

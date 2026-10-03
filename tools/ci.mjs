@@ -41,54 +41,64 @@ function usage() {
   );
 }
 
-const requested = process.argv.slice(2);
-for (const g of requested) {
-  if (!KNOWN_GROUPS_SET.has(g)) {
-    usage();
-    process.stderr.write(`⛔ unknown group: \`${g}\`\n`);
-    process.exit(2);
+// 🛑 THE EXIT CODE IS SET, NEVER FORCED (2026-10-01): `process.exit` cut the
+//    summary on a POSIX pipe — on a GitHub runner, the very lines saying WHICH
+//    step failed. Every child is awaited synchronously, so no handle is left and
+//    the process ends NATURALLY once its streams drained (Node's documented way).
+function main() {
+  const requested = process.argv.slice(2);
+  for (const g of requested) {
+    if (!KNOWN_GROUPS_SET.has(g)) {
+      usage();
+      process.stderr.write(`⛔ unknown group: \`${g}\`\n`);
+      process.exitCode = 2;
+      return;
+    }
   }
+  const activeGroups = requested.length > 0 ? requested : KNOWN_GROUPS;
+  const activeGroupsSet = new Set(activeGroups);
+  const steps = CI_STEPS.filter((s) => activeGroupsSet.has(s.group));
+
+  if (steps.length === 0) {
+    process.stderr.write('⛔ PRECONDITION: no step to run — canonical table empty or filter empty.\n');
+    process.exitCode = 2;
+    return;
+  }
+
+  process.stdout.write(`▶ local CI — ${steps.length} step(s), group(s): ${activeGroups.join(', ')}\n\n`);
+
+  const results = [];
+  for (const step of steps) {
+    const realCommand = step.localBinary || step.command;
+    process.stdout.write(`▶ [${step.group}] $ ${realCommand}\n`);
+    const start = Date.now();
+    // ⚠️ `shell: true`: the commands are strings ("npm run test:all", "npm run check:types", …),
+    //    resolved via PATH the way GitHub Actions would — nothing here is PIPED, `stdio:"inherit"`
+    //    transits straight to the operator's terminal, so there is NO risk of the "npm test | tail
+    //    && git commit" trap (the exit code comes from the process, never from a pipe).
+    const res = spawnSync(realCommand, { cwd: ROOT, shell: true, stdio: 'inherit' });
+    const durationMs = Date.now() - start;
+    results.push({ step, code: res.status, durationMs, error: res.error ? String(res.error.message) : null });
+    process.stdout.write(`${res.status === 0 ? '✅' : '❌'} [${step.group}] ${realCommand} — ${durationMs}ms (code ${res.status})\n\n`);
+  }
+
+  const failures = results.filter((r) => r.code !== 0);
+  const totalMs = results.reduce((n, r) => n + r.durationMs, 0);
+
+  process.stdout.write('──────────────────────────────────────────────────────────────────────\n');
+  process.stdout.write('LOCAL CI SUMMARY\n');
+  for (const r of results) {
+    const state = r.code === 0 ? '✅ OK  ' : '❌ FAIL';
+    process.stdout.write(`  ${state}  [${r.step.group}] ${r.step.command} (${r.durationMs}ms)\n`);
+  }
+  process.stdout.write(`Total duration: ${(totalMs / 1000).toFixed(1)}s\n`);
+  process.stdout.write(
+    failures.length === 0
+      ? '✅ ALL GREEN — this command replays exactly the targeted CI jobs.\n'
+      : `❌ ${failures.length} step(s) failed — see the detail above.\n`,
+  );
+
+  process.exitCode = failures.length === 0 ? 0 : 1;
 }
-const activeGroups = requested.length > 0 ? requested : KNOWN_GROUPS;
-const activeGroupsSet = new Set(activeGroups);
-const steps = CI_STEPS.filter((s) => activeGroupsSet.has(s.group));
 
-if (steps.length === 0) {
-  process.stderr.write('⛔ PRECONDITION: no step to run — canonical table empty or filter empty.\n');
-  process.exit(2);
-}
-
-process.stdout.write(`▶ local CI — ${steps.length} step(s), group(s): ${activeGroups.join(', ')}\n\n`);
-
-const results = [];
-for (const step of steps) {
-  const realCommand = step.localBinary || step.command;
-  process.stdout.write(`▶ [${step.group}] $ ${realCommand}\n`);
-  const start = Date.now();
-  // ⚠️ `shell: true`: the commands are strings ("npm run test:all", "npm run check:types", …),
-  //    resolved via PATH the way GitHub Actions would — nothing here is PIPED, `stdio:"inherit"`
-  //    transits straight to the operator's terminal, so there is NO risk of the "npm test | tail
-  //    && git commit" trap (the exit code comes from the process, never from a pipe).
-  const res = spawnSync(realCommand, { cwd: ROOT, shell: true, stdio: 'inherit' });
-  const durationMs = Date.now() - start;
-  results.push({ step, code: res.status, durationMs, error: res.error ? String(res.error.message) : null });
-  process.stdout.write(`${res.status === 0 ? '✅' : '❌'} [${step.group}] ${realCommand} — ${durationMs}ms (code ${res.status})\n\n`);
-}
-
-const failures = results.filter((r) => r.code !== 0);
-const totalMs = results.reduce((n, r) => n + r.durationMs, 0);
-
-process.stdout.write('──────────────────────────────────────────────────────────────────────\n');
-process.stdout.write('LOCAL CI SUMMARY\n');
-for (const r of results) {
-  const state = r.code === 0 ? '✅ OK  ' : '❌ FAIL';
-  process.stdout.write(`  ${state}  [${r.step.group}] ${r.step.command} (${r.durationMs}ms)\n`);
-}
-process.stdout.write(`Total duration: ${(totalMs / 1000).toFixed(1)}s\n`);
-process.stdout.write(
-  failures.length === 0
-    ? '✅ ALL GREEN — this command replays exactly the targeted CI jobs.\n'
-    : `❌ ${failures.length} step(s) failed — see the detail above.\n`,
-);
-
-process.exit(failures.length === 0 ? 0 : 1);
+main();

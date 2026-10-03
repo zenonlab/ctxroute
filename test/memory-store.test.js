@@ -29,8 +29,24 @@ import { createRequire } from 'node:module';
 import {
   key, evict, touch, adopt, purge, isEphemeral, isWriteThrough, persistTick, shouldFlush,
   createState, set as poser, keys as clefs, size as taille,
-  MAX_SCOPES, MAX_EPHEMERAL, PERSIST_EVERY,
+  MAX_SCOPES, MAX_EPHEMERAL, PERSIST_EVERY, stateStores,
+  MAX_EPHEMERAL_BYTES, weightOf,
 } from '../src/memory-store-pure.js';
+
+// ═══ THE STATE-STORE REGISTRY IS A CONTRACT (23/09/2026) ═══
+// ⚠️ Written HARD-CODED on purpose (a test never derives its expectation from what it checks):
+//    this table decides which lock guards a store, whether compaction purges it and whether
+//    eviction may age it out. Changing a line here is changing that contract, knowingly.
+test('stateStores: every per-scope store, its lock class and its lifetime', () => {
+  assert.deepEqual(stateStores(), [
+    { prefix: 'doc-seen-', lock: 'doc', durable: true },
+    { prefix: 'ctxroute-seen-', lock: 'doc', durable: true },
+    { prefix: 'turn-count-', lock: 'turn', durable: true },
+    { prefix: 'plan-', lock: 'doc', durable: false },
+    { prefix: 'remainder-', lock: 'doc', durable: true },
+    { prefix: 'category-', lock: 'doc', durable: true },
+  ]);
+});
 
 // ⚠️ A HELPER, NOT A TWIN: the pure state is TWO maps (one LRU per lifetime)
 //    since 2026-08-21, so a cell can no longer hand it a bare `Map`. Building it
@@ -168,6 +184,42 @@ test('SNAPSHOT: what a daemon knew, the next daemon finds again', () => {
   assert.equal(b.restore(), 1, 'the new daemon must restore exactly what the previous one held');
   assert.deepEqual(b.loadState('doc-seen-', 'sess'), { 'docs/x.md': { seen: true } },
     'without this, every daemon restart re-delivers every `once` — the flaky we just closed, through a new door');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 THE MEMOISED PLAN SURVIVES A CLEAN RESTART — AND NOTHING PROVED IT
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 WRITTEN 2026-09-20 AFTER A CHANGE THAT REMOVED EXACTLY THIS AND SHIPPED
+//    GREEN. The snapshot was made to carry the DURABLE class only, on the
+//    reasoning that a plan costs "a recomputation and never a re-delivery" —
+//    a sentence quoted from a doc that had gone stale. The whole suite passed:
+//    **2,798 tests, zero red**, because no cell drove "restart mid-action, then
+//    a late frame". The operator caught it by asking the right question.
+// 🔑 WHY IT MATTERS, AND IT IS THE PAIR THAT MATTERS, NEVER EITHER HALF:
+//    `invocation-snapshot-pure.js` restores the ARRIVAL ORDER across a clean
+//    death, so the daemon comes back knowing "this frame serves chunk 7". The
+//    plan is the CONTENT that order points into. Keep the order and drop the
+//    content and the daemon knows which chunk to serve and no longer has it —
+//    the late frames of an invocation in flight then deliver NOTHING, silently,
+//    exactly the kind of failure this project refuses.
+// 🛑 SO THE TWO SNAPSHOTS ARE ONE GUARANTEE IN TWO FILES: `daemon-invocations.json`
+//    holds the order, the store snapshot holds the plan. **IF you change what
+//    either one carries, you MUST ask what the other one still points at.**
+// ⚠️ This says nothing about the COST, which is real and measured: the live
+//    production snapshot reached 35.46 MB of which 96 % was this class, rewritten
+//    whole and synchronously in 183 ms. Making it cheaper is legitimate; making
+//    it DISAPPEAR is what this cell forbids.
+test('SNAPSHOT: the memoised plan SURVIVES a clean restart — the arrival order points into it', () => {
+  const filePath = path.join(TMP, 'plan-survit', 'snapshot.json');
+  const a = createMemoryStore({ snapshotPath: filePath, ...WITHOUT_OUTPUT });
+  a.saveState('plan-', 'inv-7', { segments: ['chunk-one', 'chunk-seven'] });
+  assert.equal(a.flush(), true, 'a clean exit must write what the count had not yet flushed');
+
+  const b = createMemoryStore({ snapshotPath: filePath, ...WITHOUT_OUTPUT });
+  assert.equal(b.restore(), 1, 'the new daemon restored nothing at all');
+  assert.deepEqual(b.loadState('plan-', 'inv-7'), { segments: ['chunk-one', 'chunk-seven'] },
+    'the plan did NOT survive the restart: the restored arrival order now names a chunk whose '
+    + 'content is gone, so every late frame of an invocation in flight delivers NOTHING — silently');
 });
 
 // ⚠️ ANTI-VACUITY: the temporary file must really disappear, otherwise the
@@ -397,6 +449,82 @@ test('EVICT with no ephemeral ceiling given falls back to the DECLARED default',
     'one over the DECLARED default must be dropped: without a real fallback the ephemeral class '
     + 'grows for ever, silently, on a daemon that runs for weeks');
   assert.equal(clefs(full).length, MAX_EPHEMERAL, 'and it lands exactly on the ceiling');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE EPHEMERAL CLASS IS BOUNDED IN BYTES TOO (2026-10-01)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 MEASURED 2026-09-20: 1 787 plans reached 35 MB of snapshot at LESS THAN HALF
+//    the key ceiling — a count never bounded the memory. These cells drive the
+//    byte ceiling through the real `set`/`evict`, never a hand-built state.
+
+/** The exact total a state must carry: the sum of the weights of what it holds. */
+const heldBytes = (e) => [...e.ephemeral.values()].reduce((n, v) => n + weightOf(v), 0);
+
+test('BYTES: the coldest plan leaves when the BYTE ceiling bites, far below the KEY ceiling', () => {
+  const e = createState();
+  const plan = { segments: ['x'.repeat(1000)] }; // ~1 KB each
+  for (let i = 0; i < 5; i += 1) poser(e, `plan-s--inv-${i}`, plan);
+  const one = weightOf(plan);
+  assert.equal(e.ephemeralBytes, 5 * one, 'the running total is the sum of the five weights');
+  // A byte ceiling of 3 plans, a key ceiling of 100: only bytes can bite.
+  assert.equal(evict(e, 100, 100, 3 * one), 2, 'two plans over the byte ceiling are dropped');
+  assert.deepEqual(clefs(e), ['plan-s--inv-2', 'plan-s--inv-3', 'plan-s--inv-4'],
+    'the COLDEST go first (insertion order is the LRU)');
+  assert.equal(e.ephemeralBytes, 3 * one, 'and the total follows what is still held');
+  assert.equal(evict(e, 100, 100, 3 * one), 0, 'exactly AT the byte ceiling nothing is dropped');
+});
+
+test('BYTES: the YOUNGEST plan is never evicted, even alone above the ceiling (it is the action in flight)', () => {
+  const e = createState();
+  poser(e, 'plan-s--old', { segments: ['a'.repeat(500)] });
+  poser(e, 'plan-s--live', { segments: ['b'.repeat(5000)] });
+  assert.equal(evict(e, 100, 100, 10), 1, 'the old plan goes');
+  assert.deepEqual(clefs(e), ['plan-s--live'],
+    'the live plan stays although it alone exceeds the ceiling: evicting it would make the late '
+    + 'frames of a running action deliver NOTHING, in silence');
+  assert.equal(evict(e, 100, 100, 10), 0, 'and it is never pushed out on a second pass either');
+});
+
+test('BYTES: the DURABLE class is never touched by byte pressure, and its values never count', () => {
+  const e = createState();
+  poser(e, 'doc-seen-s', { seen: ['y'.repeat(50000)] });
+  poser(e, 'plan-s--a', { segments: ['p'] });
+  poser(e, 'plan-s--b', { segments: ['q'] });
+  assert.equal(e.ephemeralBytes, weightOf({ segments: ['p'] }) + weightOf({ segments: ['q'] }),
+    'a 50 KB durable record must weigh NOTHING in the ephemeral total');
+  evict(e, 100, 100, 1);
+  assert.ok(clefs(e).includes('doc-seen-s'), 'byte pressure on plans can never evict an agent\'s memory');
+});
+
+test('BYTES: the running total equals the held bytes after EVERY kind of mutation', () => {
+  const e = createState();
+  poser(e, 'plan-a--1', { s: ['é'.repeat(10)] }); // accents: UTF-8 bytes, never characters
+  assert.equal(e.ephemeralBytes, heldBytes(e), 'after a first write');
+  assert.equal(weightOf({ s: ['é'] }), Buffer.byteLength('{"s":["é"]}', 'utf8'),
+    'the unit is the UTF-8 BYTE (an accent is two), never a character');
+  poser(e, 'plan-a--1', { s: ['short'] });
+  assert.equal(e.ephemeralBytes, heldBytes(e), 'after an OVERWRITE (the old weight is withdrawn)');
+  poser(e, 'plan-a--2', { s: ['z'.repeat(300)] });
+  touch(e, 'plan-a--1');
+  assert.equal(e.ephemeralBytes, heldBytes(e), 'after a TOUCH (moving a key changes no weight)');
+  evict(e, 100, 1, MAX_EPHEMERAL_BYTES);
+  assert.equal(e.ephemeralBytes, heldBytes(e), 'after a KEY eviction');
+  poser(e, 'plan-b--1', { s: ['w'] });
+  purge(e, 'plan-a');
+  assert.equal(e.ephemeralBytes, heldBytes(e), 'after a PURGE');
+  assert.deepEqual(clefs(e), ['plan-b--1']);
+  assert.equal(e.weights.size, 1, 'no weight survives the key it belonged to');
+});
+
+test('BYTES: with no byte ceiling given, the DECLARED default bites', () => {
+  assert.equal(MAX_EPHEMERAL_BYTES, 16 * 1024 * 1024, 'the sizing written in the module: 16 MiB');
+  const e = createState();
+  const big = { s: ['k'.repeat(3.5 * 1024 * 1024)] }; // 3.5 MiB: five = 17.5, four = 14
+  for (let i = 0; i < 5; i += 1) poser(e, `plan-d--${i}`, big);
+  assert.equal(evict(e, 100, 100), 1,
+    'five 3.5 MiB plans exceed 16 MiB, four do not: without a real fallback the byte ceiling is OFF');
+  assert.ok(e.ephemeralBytes <= MAX_EPHEMERAL_BYTES);
 });
 
 // ═══════════════════════════════════════════════════════════════════════

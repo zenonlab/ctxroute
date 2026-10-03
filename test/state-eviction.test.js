@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { sweep } from '../src/state-eviction.js';
-import { DURABLE_PREFIXES, EPHEMERAL_PREFIX } from '../src/state-eviction-pure.js';
+import { durablePrefixes, EPHEMERAL_PREFIX } from '../src/state-eviction-pure.js';
+import { stateStores } from '../src/memory-store-pure.js';
 
 // ── THUNKS (never a const evaluated at module load) ───────────────────────────
 const OLD_MS = () => 10 * 60 * 1000; // 10 min > the 5 min bound (30 s deadline × 10)
@@ -82,10 +83,12 @@ test('THE CLASS LIST IS CONFRONTED WITH THE RESET, never copied and left to rot'
   // 🛑 `ctxroute-reset.js` sweeps the SAME five prefixes on a compaction order. Two hand-written
   //    enumerations of one truth diverge in silence: the day a sixth store is added, the reset
   //    empties it and the eviction lets it grow for ever. This cell reads the reset's own literal.
+  // ✅ 23/09/2026: both sides now DERIVE from `memory-store-pure.stateStores()`. What is left
+  //    to check: the reset really iterates that registry, and every store it sweeps has an
+  //    eviction class (durable or the ephemeral prefix) — an unclassified one grows for ever.
   const src = fs.readFileSync(new URL('../src/hooks/ctxroute-reset.js', import.meta.url), 'utf8');
-  const m = /for \(const prefix of \[([^\]]+)\]\)/.exec(src);
-  expect(m).not.toBe(null);
-  const declared = [];
-  for (const raw of m[1].split(',')) declared.push(raw.trim().replace(/^'|'$/g, ''));
-  expect(declared.sort()).toEqual([...DURABLE_PREFIXES, EPHEMERAL_PREFIX].sort());
+  expect(/for \(const \{ prefix \} of stateStores\(\)/.test(src)).toBe(true);
+  const declared = stateStores().map((s) => s.prefix);
+  expect(declared.length).toBeGreaterThanOrEqual(5);
+  expect(declared.sort()).toEqual([...durablePrefixes(), EPHEMERAL_PREFIX].sort());
 });

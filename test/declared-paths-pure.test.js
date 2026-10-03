@@ -570,41 +570,115 @@ test('nothing declared resolves the historical address, byte for byte', () => {
   // ⚠️ A default that moved would send the daemon and the wiring somewhere
   //    else on upgrade, with nothing red — zero default change is the acceptance
   //    criterion, not a preference. Written out, never read back from the module.
-  assert.deepEqual(endpoint(), { host: '127.0.0.1', port: 8787 });
-  assert.deepEqual(endpoint({ declared: null }), { host: '127.0.0.1', port: 8787 });
-  assert.deepEqual(endpoint({ declared: {} }), { host: '127.0.0.1', port: 8787 });
-  assert.deepEqual(endpoint({ envPort: '' }), { host: '127.0.0.1', port: 8787 },
+  // 🔑 `listeners` VAUT 4 ICI, ET CE N'EST PAS UNE REGRESSION DE LA PROMESSE.
+  //    « L'adresse historique, byte pour byte » a toujours porte sur l'HOTE et le
+  //    PORT — les deux sont inchanges. `listeners` est un champ qui N'EXISTAIT PAS,
+  //    passe a 4 par DECISION DE L'OPERATEUR le 19/09/2026 (le raisonnement est sur
+  //    `listenersOf`) : un adopteur dont la voie refuse des connexions n'est pas servi
+  //    par un defaut qui l'oblige a decouvrir et regler une cle a la main.
+  // ⚠️ La cellule qui declare `{ listeners: 1 }` explicitement attend TOUJOURS 1, et
+  //    c'est elle qui prouve que le comportement d'origine reste atteignable.
+  const HISTORICAL = { host: '127.0.0.1', port: 8787, listeners: 4 };
+  assert.deepEqual(endpoint(), HISTORICAL);
+  assert.deepEqual(endpoint({ declared: null }), HISTORICAL);
+  assert.deepEqual(endpoint({ declared: {} }), HISTORICAL);
+  assert.deepEqual(endpoint({ envPort: '' }), HISTORICAL,
     'An EMPTY variable is an ABSENT variable: a shell exporting CTXROUTE_HTTP_PORT= set nothing.');
   // The exported defaults are the SAME fact, and a consumer reads them.
   assert.equal(declared.DEFAULT_HTTP_HOST, '127.0.0.1');
   assert.equal(declared.DEFAULT_HTTP_PORT, 8787);
+  // 🛑 THE ACCEPTANCE CRITERION IS THE DERIVED LIST, NOT THE FIELD — and on
+  //    2026-09-19 THAT LIST DELIBERATELY STOPPED BEING ONE ADDRESS.
+  // 🔴 THIS CELL USED TO ASSERT A SINGLE ENDPOINT, with the reason "a default that
+  //    opened a second socket would bind a port nobody declared". That reason was
+  //    RIGHT for exactly as long as the N-socket path was broken: until that day,
+  //    every extra socket built its own sequencer table, so four sockets delivered
+  //    half a document four times and the other half never. `shared-sequencer-gate`
+  //    closed that, and the OPERATOR then decided the default: an adopter whose
+  //    lane already refuses connections is not served by a safe-for-us default
+  //    that makes them hand-configure a key they have never heard of.
+  // ⚠️ WHAT THIS LIST NOW OBLIGES, and it is the whole risk of the change: the
+  //    wiring POSTs to EVERY entry, and under socket activation the supervisor
+  //    must hand the daemon exactly this many sockets or it REFUSES to start.
+  //    The `.socket` unit and the launchd plist are therefore part of this
+  //    contract, not decoration — see `service-units-gate`.
+  assert.deepEqual(declared.listenEndpoints(endpoint()), [
+    { host: '127.0.0.1', port: 8787 },
+    { host: '127.0.0.1', port: 8788 },
+    { host: '127.0.0.1', port: 8789 },
+    { host: '127.0.0.1', port: 8790 },
+  ]);
+  // ⚠️ AND THE HISTORICAL SHAPE STAYS REACHABLE IN ONE WORD: whoever wants the
+  //    pre-2026-09-19 behaviour writes `listeners: 1` and gets it, byte for byte.
+  assert.deepEqual(declared.listenEndpoints(endpoint({ declared: { listeners: 1 } })),
+    [{ host: '127.0.0.1', port: 8787 }]);
 });
 
 test('a declared address is HONOURED — both halves, and each one alone', () => {
   // ⚠️ "Accepted and inert" is this repository's oldest defect class: a key the
   //    schema takes and the engine ignores.
   assert.deepEqual(endpoint({ declared: { host: 'declared.invalid', port: 41999 } }),
-    { host: 'declared.invalid', port: 41999 });
+    { host: 'declared.invalid', port: 41999, listeners: 4 });
   // 🛑 EACH HALF IS OPTIONAL ON ITS OWN, and this is what proves the halves are
-  //    not cross-wired: declaring one must leave the OTHER historical.
+  //    not cross-wired: declaring one must leave the OTHERS historical.
   assert.deepEqual(endpoint({ declared: { host: 'declared.invalid' } }),
-    { host: 'declared.invalid', port: 8787 });
+    { host: 'declared.invalid', port: 8787, listeners: 4 });
   assert.deepEqual(endpoint({ declared: { port: 41999 } }),
-    { host: '127.0.0.1', port: 41999 });
-  assert.deepEqual(endpoint({ declared: { host: null, port: null } }),
-    { host: '127.0.0.1', port: 8787 });
+    { host: '127.0.0.1', port: 41999, listeners: 4 });
+  assert.deepEqual(endpoint({ declared: { listeners: 4 } }),
+    { host: '127.0.0.1', port: 8787, listeners: 4 });
+  assert.deepEqual(endpoint({ declared: { host: null, port: null, listeners: null } }),
+    { host: '127.0.0.1', port: 8787, listeners: 4 });
+});
+
+test('`listeners` is HONOURED, REFUSED BY NAME, and derives the ports upward', () => {
+  // ⚠️ "Accepted and inert" again: a count the schema takes and the engine ignores
+  //    would leave an operator believing in a capacity they do not have, on a lane
+  //    whose failure is a refused connection carrying no error of ours.
+  assert.deepEqual(
+    declared.listenEndpoints({ host: '10.0.0.1', port: 9000, listeners: 3 }),
+    [{ host: '10.0.0.1', port: 9000 },
+      { host: '10.0.0.1', port: 9001 },
+      { host: '10.0.0.1', port: 9002 }],
+  );
+  // An endpoint with no count at all is ONE socket — the historical shape.
+  assert.deepEqual(declared.listenEndpoints({ host: '10.0.0.1', port: 9000 }),
+    [{ host: '10.0.0.1', port: 9000 }]);
+  // 🛑 A NAMED REFUSAL, never a silent clamp: the message must say the KEY.
+  for (const bad of [0, -1, 1.5, '4', true, {}, declared.MAX_LISTENERS + 1]) {
+    assert.throws(() => endpoint({ declared: { listeners: bad } }),
+      /http\.listeners/, `listeners: ${JSON.stringify(bad)} must be refused BY NAME`);
+  }
+  // 🛑 AND THE REFUSAL SAYS THE ADMISSIBLE RANGE, not merely "invalid": an operator
+  //    reading it must know what to write instead, without opening our source.
+  assert.throws(() => endpoint({ declared: { listeners: 0 } }),
+    new RegExp(`integer in 1\\.\\.${declared.MAX_LISTENERS}`),
+    'the refusal must state the range the operator may use');
+
+  // 🛑 THE TWO BOUNDS ARE ACCEPTED, and testing them is not zeal: without the exact
+  //    edges, `< 1` and `<= 1` (or `> MAX` and `>= MAX`) are indistinguishable, so
+  //    the guard could silently refuse a legitimate value for ever.
+  assert.equal(endpoint({ declared: { listeners: 1 } }).listeners, 1,
+    'ONE listener is the historical shape and must never be refused');
+  assert.equal(endpoint({ declared: { listeners: declared.MAX_LISTENERS } }).listeners,
+    declared.MAX_LISTENERS, 'the ceiling itself is admissible — it is a bound, not a wall');
 });
 
 test('the environment variable BEATS the declared port, and touches the host NOT AT ALL', () => {
   // 🛑 IT MUST KEEP WINNING: the systemd unit declares it, the Windows installer
   //    reads it back, and every suite that forks a daemon on a free port sets it.
   assert.deepEqual(endpoint({ envPort: '41999', declared: { host: 'declared.invalid', port: 8787 } }),
-    { host: 'declared.invalid', port: 41999 });
+    { host: 'declared.invalid', port: 41999, listeners: 4 });
   // ⚠️ ANTI-VACUITY: the config reader is really CONSULTED even when the
   //    variable wins — the host has no environment escape, so the config is the
   //    only place it can come from and skipping that read would silence it.
   assert.deepEqual(endpoint({ envPort: '41999', declared: { host: 'declared.invalid' } }),
-    { host: 'declared.invalid', port: 41999 });
+    { host: 'declared.invalid', port: 41999 , listeners: 4 });
+  // 🛑 AND THE VARIABLE MOVES THE PORT ALONE — it must not silence the declared
+  //    COUNT either, or a supervisor setting a port would quietly collapse a
+  //    fleet's capacity back to one socket.
+  assert.deepEqual(endpoint({ envPort: '41999', declared: { listeners: 3 } }),
+    { host: '127.0.0.1', port: 41999, listeners: 3 });
 });
 
 test('an unusable half is a NAMED REFUSAL naming the key and the value, never a quiet fallback', () => {
@@ -671,4 +745,130 @@ test('the endpoint refusal, asserted WHOLE and HARDCODED (a refusal detail is co
   } catch (e) {
     assert.equal(e.message, expected);
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// AN ADDRESS THAT PUBLISHES THE DAEMON IS REFUSED — 2026-09-02
+// ═══════════════════════════════════════════════════════════════════════
+// 🛑 THE DAEMON HAS NO AUTHENTICATION. `/emit`, `/purge` and `/turn` answer
+//    whoever can open a socket, and they carry the fleet's private knowledge.
+//    An address beyond THIS MACHINE is therefore a DISCLOSURE, and the refusal
+//    exists so it cannot be declared — never so it can be found later.
+// ⚠️ THE DOMAIN IS DELIBERATELY NARROW, and that is the design: what is refused
+//    is what is PROVABLY exposing on ANY machine (a wildcard bind, a globally
+//    routable literal). Whether a PRIVATE address is reachable depends on
+//    ROUTING, which no pure function can see — that half is the doctor's.
+
+test('a WILDCARD bind is refused: it publishes the daemon on every interface', () => {
+  // Written out by hand, never read back from the module: an expectation that
+  // quotes the code under test is mutated with it and stops seeing the mutant.
+  for (const host of ['0.0.0.0', '::', '::0', '0:0:0:0:0:0:0:0']) {
+    assert.throws(() => endpoint({ declared: { host } }), /REFUSED/,
+      `${host} binds every interface, so the fleet's knowledge answers the whole network.`);
+  }
+});
+
+test('a GLOBALLY ROUTABLE literal is refused, IPv4 and IPv6 alike', () => {
+  // 203.0.113.x is the documentation range (RFC 5737) — this repository is
+  // public and may never carry a real address.
+  for (const host of ['203.0.113.7', '8.8.8.8', '172.15.0.1', '172.32.0.1']) {
+    assert.throws(() => endpoint({ declared: { host } }), /REFUSED/,
+      `${host} is routable from outside this machine.`);
+  }
+  // 2001:db8::/32 is the documentation prefix (RFC 3849).
+  for (const host of ['2001:db8::1', '2606:4700::1111']) {
+    assert.throws(() => endpoint({ declared: { host } }), /REFUSED/,
+      `${host} is a globally routable IPv6 address.`);
+  }
+});
+
+test('the refusal SAYS what a usable address is — the detail is contract', () => {
+  let message = '';
+  try { endpoint({ declared: { host: '0.0.0.0' } }); } catch (e) { message = String(e.message); }
+  assert.match(message, /http\.host/, 'It must name the key the operator typed.');
+  assert.match(message, /NO authentication/,
+    'It must say WHY, or the reader lowers the bar believing it arbitrary.');
+  assert.match(message, /Loopback, private \(RFC 1918\) and link-local addresses are accepted\./,
+    'It must say what IS accepted: a refusal that only forbids leaves the operator stuck.');
+});
+
+test('EVERY address that stays on this machine is ACCEPTED — no false refusal', () => {
+  // 🔑 THIS CELL IS THE ANTI-VACUITY HALF. A refusal that also refused healthy
+  //    addresses would be discovered the day the daemon cannot start, i.e. when
+  //    the whole fleet has already lost its injection.
+  const accepted = [
+    '127.0.0.1',      // the published default
+    '127.0.0.53',     // loopback is a whole /8
+    '::1',            // IPv6 loopback
+    '10.87.87.1',     // the dedicated adapter that leaves 127/8 on Windows
+    '10.0.0.1', '172.16.0.1', '172.31.255.255', '192.168.1.10',  // RFC 1918 bounds
+    '169.254.29.100', // link-local
+    'fe80::1', 'fd00::1', 'fc00::1',                             // IPv6 local scopes
+    'localhost',      // a NAME is the kernel's business, never ours
+    '999.1.1.1',      // not an IPv4 literal at all ⇒ the kernel refuses it, not us
+  ];
+  for (const host of accepted) {
+    assert.equal(endpoint({ declared: { host } }).host, host,
+      `${host} never leaves this machine, so refusing it would be a false refusal.`);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// EVERY BOUNDARY OF THE TWO PREDICATES, AND THE REFUSALS WORD FOR WORD (2026-10-01)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔴 `declared-paths-pure.js` stood at 93.8 % against a floor of 100: 24 mutants
+//    survived, every one of them a boundary no fixture touched (an octet at 255
+//    or 256 in each position, a public address sharing ONE octet with a private
+//    range, the fe9/fea/feb halves of fe80::/10, the wording of the refusal).
+
+const EXPOSURE = 'It must stay reachable from THIS MACHINE ONLY: a wildcard bind and a globally routable '
+  + 'address both publish a daemon that has NO authentication, so `/emit`, `/purge` and '
+  + '`/turn` — and with them the whole fleet\'s private knowledge — would answer anyone who '
+  + 'can open a socket. Loopback, private (RFC 1918) and link-local addresses are accepted.';
+const refusalFor = (host, cause) => `ctxroute REFUSED: "http.host" does not declare a usable listening address — received `
+  + `${JSON.stringify(host)}. ${cause} ${EXPOSURE} Nothing is resolved at all: the daemon BINDS this `
+  + 'address and the harness wiring POSTs to it, so guessing here would wire the fleet where '
+  + 'nobody listens — a refused connection is instant and SILENT on that lane, which has NO '
+  + 'fallback. Fix "http.host", or remove it to keep the default address.';
+const messageOf = (host) => { try { endpoint({ declared: { host } }); return null; } catch (e) { return e.message; } };
+
+test('each WILDCARD form is refused AS A WILDCARD, word for word', () => {
+  for (const host of ['0.0.0.0', '::', '::0', '0:0:0:0:0:0:0:0']) {
+    assert.equal(messageOf(host),
+      refusalFor(host, 'It is a WILDCARD: it listens on EVERY interface of this machine.'),
+      `${host} must be named a WILDCARD — told "routable", the operator looks for the wrong mistake`);
+  }
+});
+
+test('a public literal is refused AS ROUTABLE, word for word', () => {
+  assert.equal(messageOf('203.0.113.7'),
+    refusalFor('203.0.113.7', 'It is GLOBALLY ROUTABLE: it is reachable from beyond this machine.'));
+});
+
+test('an octet at 255 is still an IPv4 literal (public), at 256 it is not one (the kernel judges)', () => {
+  for (const host of ['255.1.1.1', '8.255.1.1', '8.1.255.1', '8.1.1.255']) {
+    assert.notEqual(messageOf(host), null, `${host} is a valid, public IPv4 literal: it must be refused`);
+  }
+  for (const host of ['256.1.1.1', '8.256.1.1', '8.1.256.1', '8.1.1.256']) {
+    assert.equal(messageOf(host), null, `${host} is not an IPv4 literal: refusing it here would be a false refusal`);
+  }
+});
+
+test('a PUBLIC address sharing ONE octet with a private range is still public', () => {
+  // Each private test is an AND of two octets: one matching half is never enough.
+  for (const host of ['8.20.0.1', '8.168.0.1', '192.1.0.1', '8.254.0.1', '169.1.0.1']) {
+    assert.notEqual(messageOf(host), null, `${host} is globally routable and must be refused`);
+  }
+});
+
+test('the WHOLE fe80::/10 is link-local — fe8, fe9, fea and feb alike', () => {
+  for (const host of ['fe80::1', 'fe90::1', 'fea0::1', 'feb0::1']) {
+    assert.equal(messageOf(host), null, `${host} is link-local: refusing it would be a false refusal`);
+  }
+});
+
+test('the judgement ignores CASE — a disguise must not walk through', () => {
+  assert.throws(() => endpoint({ declared: { host: '2001:DB8::1' } }), /REFUSED/);
+  assert.equal(endpoint({ declared: { host: 'FE80::1' } }).host, 'FE80::1',
+    'The value is judged lowercased, and RETURNED exactly as declared.');
 });

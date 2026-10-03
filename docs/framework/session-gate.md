@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"session-inject.js","scope":["ctxroute"]},{"pattern":"session-inject.test.js","scope":["ctxroute"]},{"pattern":"sources-session.test.js","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # session-inject.js / sources/session.js — SESSION gate (LIVE 2026-07-17)
 

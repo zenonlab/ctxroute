@@ -40,6 +40,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fork } from 'node:child_process';
 import { createRequire } from 'node:module';
+// ⚠️ The port comes from the ONE shared allocator (below the ephemeral range) — see test/support/free-port.js.
+// No `listeners` is declared, so the daemon binds the DEFAULT count from its port.
+import { freePort } from './support/free-port.js';
+import { DEFAULT_LISTENERS } from '../src/declared-paths-pure.js';
 
 const require_ = createRequire(import.meta.url);
 const { createServer } = require_('../src/hooks/http-server.js');
@@ -225,16 +229,6 @@ const LANE_RENDEZVOUS = (a) => typeof a === 'string' && a.length > 0;
 
 const vivants = new Set();
 
-/** A port nobody is using — MEASURED by binding it, never guessed. */
-function portLibre() {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.listen(0, '127.0.0.1', () => {
-      const p = /** @type {any} */ (s.address()).port;
-      s.close(() => resolve(p));
-    });
-  });
-}
 
 /** Forks the REAL shell. Nothing is awaited here — every fact below is an event. */
 function lancer(itemName, port, extra) {
@@ -323,7 +317,7 @@ afterEach(async () => {
 //    POLICY on the error, never a specific code.
 test('A REFUSED RENDEZVOUS DEGRADES ONE LANE: the port still ANSWERS, and the loss is said LOUDLY',
   async () => {
-    const port = await portLibre();
+    const port = await freePort({ span: DEFAULT_LISTENERS });
     const impossible = path.join(TMP, 'aucun-dossier', 'rendezvous.sock');
     const tracked = lancer('voie-degradee', port, { CTXROUTE_TEST_ENDPOINT: impossible });
 
@@ -369,7 +363,7 @@ test('A REFUSED RENDEZVOUS DEGRADES ONE LANE: the port still ANSWERS, and the lo
 //    forked, otherwise the cell would measure an ordinary bind.
 test('EADDRINUSE ON THE RENDEZVOUS KILLS: the kernel refuses a SECOND instance and the shell obeys',
   async () => {
-    const port = await portLibre();
+    const port = await freePort({ span: DEFAULT_LISTENERS });
     // 🔴 MEASURED ON macOS CI, 2026-09-01, AFTER THREE RUNS THAT SAID NOTHING:
     //    the cause was in this cell, never in the shell it accuses. The OCCUPANT
     //    bound into a `state/` that had never been created, and macOS answers
@@ -454,7 +448,7 @@ test('EADDRINUSE ON THE RENDEZVOUS KILLS: the kernel refuses a SECOND instance a
 //    above is the whole proof, and it is stated rather than simulated.
 test('A TREE WITH NO `state/`: the directory is created BEFORE the bind, and the client lane answers',
   async () => {
-    const port = await portLibre();
+    const port = await freePort({ span: DEFAULT_LISTENERS });
     const itemName = 'arbre-neuf';
     const state = path.join(TMP, itemName, 'state');
     assert.equal(fs.existsSync(state), false,

@@ -2,7 +2,7 @@
 match: [stryker.conf.json, .dependency-cruiser.json, .jscpd.json]
 scope: [ctxroute]
 mode: smart
-threshold: 6
+threshold: 30
 rank: 370
 ---
 # stryker.conf.json / .dependency-cruiser.json / .jscpd.json — invariants

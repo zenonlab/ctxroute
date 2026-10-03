@@ -92,13 +92,54 @@ function rulesOfDecl(data, doc, sourceDefaults) {
  */
 function rulesFromCorpus(docs, sourceDefaults) {
   if (!Array.isArray(docs)) return [];
-  const groups = [];
-  for (const d of docs) {
+  // 🔑 PARSE ONCE, HERE, AND HAND THE RESULT ON — the ONLY road from raw text to
+  //    rules stays this function, so every caller that has no parsed corpus
+  //    (lint, collisions, explain, the reach instrument) is unchanged BY
+  //    CONSTRUCTION, byte for byte.
+  return rulesFromParsed(docs.map((d) => (
     // ⚠️ NO check on d.text: parse() is TOTAL (non-string → data {} → validate
     //    red → skip). Nor a `hasFrontmatter` guard: same reason. Redundant guards
     //    = equivalent mutants — we avoid them by construction, we never tolerate them.
+    // 🛑 AND THE `typeof d.doc` CHECK IS **NOT** REPEATED HERE, ON PURPOSE. Only
+    //    `!d` is tested, because only `null`/`undefined` would THROW on `d.doc`;
+    //    a non-string id is caught by `rulesFromParsed`, which owns that rule and
+    //    must own it anyway for its direct callers. Testing it twice made the
+    //    second copy an EQUIVALENT MUTANT — measured 2026-09-18, one survivor,
+    //    and this file's own comment two lines up already forbade it.
+    !d ? null : { doc: d.doc, data: parse(d.text).data }
+  )), sourceDefaults);
+}
+
+/**
+ * The SAME ordering, from a corpus whose frontmatter is ALREADY parsed.
+ *
+ * 🔴 IT EXISTS BECAUSE THE CORPUS WAS PARSED TWICE PER COLLECTION — MEASURED
+ *    2026-09-18 ON THE LIVE DAEMON, 795 documents, 2.37 M characters.
+ *    `fileAdapter.collect` called `rulesFromCorpus` (3.30 ms: parse + validate of
+ *    every document) and then, on the very next line, looped over the SAME texts
+ *    calling `parse` + `validate` again (2.67 ms) to fill `acc.decls`/`acc.bodies`.
+ *    **5.98 ms of parsing per collection, of which 2.67 ms was strictly
+ *    duplicated work** — 24 % of a healthy 11 ms request, paid on every tool call
+ *    of every agent. Found by profiling the LIVE daemon with V8's own profiler,
+ *    never the kernel: `parse` 16.86 % of samples, `validate` 2.78 %,
+ *    `parseScalar` 2.58 %, `parseList` 2.03 %.
+ * 🔑 WHY IT MATTERS BEYOND A FEW MILLISECONDS: this daemon is SINGLE-THREADED, so
+ *    a cost paid per request IS the ceiling on how many agents one instance can
+ *    serve. Removing duplicated work on this path is scaling work, not polish.
+ * 🛑 A `null` ENTRY IS SKIPPED, NEVER READ — that is how the caller says "this
+ *    document has no usable id", and it keeps that guard in ONE place instead of
+ *    two that can disagree.
+ *
+ * @param {Array<{doc: string, data: Record<string, any>}|null>} parsed already-parsed docs
+ * @param {{scope?: Array, exclude?: Array, keys?: any}} [sourceDefaults]
+ * @returns {Array<{pattern, doc, scope?, exclude?, keys?}>} same contract as above
+ */
+function rulesFromParsed(parsed, sourceDefaults) {
+  if (!Array.isArray(parsed)) return [];
+  const groups = [];
+  for (const d of parsed) {
     if (!d || typeof d.doc !== 'string') continue;
-    const { data } = parse(d.text);
+    const data = d.data;
     if (validate(data).length > 0) continue; // invalid = inert HERE, RED at the lint.
     const rules = rulesOfDecl(data, d.doc, sourceDefaults);
     // ⚠️ NO `rules.length === 0` guard: an empty group emits nothing at the flatten —
@@ -134,4 +175,4 @@ function rulesFromCorpus(docs, sourceDefaults) {
   });
 }
 
-module.exports = { rulesFromCorpus, rulesOfDecl };
+module.exports = { rulesFromCorpus, rulesFromParsed, rulesOfDecl };

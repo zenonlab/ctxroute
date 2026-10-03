@@ -26,9 +26,11 @@
 
 'use strict';
 
-const { run, denyOutput, noticeOutput } = require('../pretool-core');
+const { run, denyOutput, noticeOutput, afterOutput } = require('../pretool-core');
+const { AFTER_ANSWER } = require('../harness-profile');
 const { readStdinJson } = require('../stdin-json');
 const lib = require('../lib-pure');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 
 // ⚠️ `declaredBudget` lives in lib-pure.js (PURE, mutated 100 %) and not here: the
 //    TWO Codex emitters need it, and a clone of an argument parser is
@@ -59,12 +61,14 @@ function output(decision, fullDoc, systemMessage) {
   return out;
 }
 
-function emit(decision, fullDoc, systemMessage) {
+function emit(decision, fullDoc, systemMessage, dialect = output) {
   // ⚠️ THE I/O, AND NOTHING ELSE (layer rule): the shell prints and exits, the
   //    dialect above decides the SHAPE. Merging them again is what made the
   //    format untestable without spawning a process.
-  console.log(JSON.stringify(output(decision, fullDoc, systemMessage)));
-  process.exit(0);
+  // 🛑 PRINT, THEN LEAVE ONCE STDOUT HAS DRAINED — never `console.log` then
+  //    `process.exit`: on a POSIX pipe that pair cut every answer above 64 KB,
+  //    and Codex answers routinely exceed it (measured 2026-10-01).
+  printThenExit(JSON.stringify(dialect(decision, fullDoc, systemMessage)));
 }
 
 module.exports = { output };
@@ -83,8 +87,14 @@ if (require.main === module) {
       // ⚠️ THE OUTPUT BELONGS TO THE SHELL (06/08/2026). `run` RETURNS when
       //    there is nothing to emit — it no longer kills the process (layer leak,
       //    same family as ⑩). When it emits, `emit` exits before this line.
-      run(data, emit, { budget: lib.declaredBudget(process.argv) });
-      process.exit(0);
+      // AFTER THE TOOL ANSWERED (2026-09-23): same shell, the answer read through the profile, the
+      // after-dialect shared with Claude Code. Codex runs ONE declaration, so no invocation id.
+      const after = lib.afterAnswer(data, AFTER_ANSWER.codex);
+      const say = after ? (d, f, m) => emit(d, f, m, afterOutput) : emit;
+      run(data, say, { budget: lib.declaredBudget(process.argv), after });
+      // ⚠️ Nothing printed ⇒ leaves NOW (fail-open, unchanged); a print in
+      //    flight ⇒ its own drain exits. A bare `process.exit` here would cut it.
+      exitUnlessPrinting();
     },
     () => process.exit(0)
   );

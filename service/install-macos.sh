@@ -31,7 +31,28 @@ set -eu
 ACTION="${1:-install}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
-LABEL="com.ctxroute.http"
+
+# ⚠️ TWO REAL MODES, DEFAULT UNCHANGED (2026-09-17) — `socket` is byte-for-byte
+#    the install this script always did; picking it explicitly changes NOTHING.
+#    `eager` is the DELIBERATE ALTERNATIVE documented in
+#    `com.ctxroute.http.eager.plist`'s own header and `service/README.md`
+#    ("Bounding the accept queue"): full `LISTEN_BACKLOG` control, in exchange
+#    for losing the silent-window protection socket activation buys. Read
+#    BOTH plists' headers before ever setting this to `eager` on a real Mac.
+CTXROUTE_MACOS_MODE="${CTXROUTE_MACOS_MODE:-socket}"
+case "$CTXROUTE_MACOS_MODE" in
+  socket|eager) ;;
+  *)
+    echo "unknown CTXROUTE_MACOS_MODE \`$CTXROUTE_MACOS_MODE\` — expected \`socket\` or \`eager\`" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$CTXROUTE_MACOS_MODE" = "eager" ]; then
+  LABEL="com.ctxroute.http.eager"
+else
+  LABEL="com.ctxroute.http"
+fi
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 # ⚠️ THE COMPILED SHIM LIVES OUTSIDE THE CLONE, ON PURPOSE. A build artifact in
@@ -85,47 +106,78 @@ NODE=$(command -v node) || {
   exit 1
 }
 
-# ⚠️ NO COMPILER = THIS MACHINE CANNOT HOST THE MEASUREMENT, which is a
-#    PRECONDITION and not a verdict about the plist. `cc` ships with the Xcode
-#    Command Line Tools (`xcode-select --install`); the shim links nothing but
-#    libSystem, so nothing else is needed.
-command -v cc >/dev/null 2>&1 || {
-  echo "PRECONDITION NOT MET: no \`cc\` on this Mac." >&2
-  echo "  The launchd socket hand-over goes through \`launch_activate_socket\`, a C" >&2
-  echo "  function, so a small shim must be compiled. Install the Command Line" >&2
-  echo "  Tools (\`xcode-select --install\`) and run this again. This says NOTHING" >&2
-  echo "  about the plist — nothing has been judged." >&2
-  exit "$EX_PRECONDITION"
-}
+mkdir -p "$HOME/Library/LaunchAgents"
 
-[ -f "$SHIM_SRC" ] || {
-  echo "the shim source \`$SHIM_SRC\` does not exist. Refusing to install an agent" >&2
-  echo "whose first ProgramArguments entry would point at nothing." >&2
-  exit 1
-}
+if [ "$CTXROUTE_MACOS_MODE" = "eager" ]; then
+  # ⚠️ NO SHIM, NO COMPILER, NOTHING TO BUILD — the whole reason `cc` and the
+  #    shim exist is `launch_activate_socket`, and this mode never calls it:
+  #    node binds its OWN port directly, exactly like Windows. Requiring a
+  #    compiler here would be a precondition for a capability this mode does
+  #    not use.
+  sed -e "s|<string>[^<]*node</string>|<string>$NODE</string>|" \
+      -e "s|<string>[^<]*http-daemon\.js</string>|<string>$REPO/src/hooks/http-daemon.js</string>|" \
+      "$HERE/com.ctxroute.http.eager.plist" > "$PLIST"
+else
+  # ⚠️ NO COMPILER = THIS MACHINE CANNOT HOST THE MEASUREMENT, which is a
+  #    PRECONDITION and not a verdict about the plist. `cc` ships with the Xcode
+  #    Command Line Tools (`xcode-select --install`); the shim links nothing but
+  #    libSystem, so nothing else is needed.
+  command -v cc >/dev/null 2>&1 || {
+    echo "PRECONDITION NOT MET: no \`cc\` on this Mac." >&2
+    echo "  The launchd socket hand-over goes through \`launch_activate_socket\`, a C" >&2
+    echo "  function, so a small shim must be compiled. Install the Command Line" >&2
+    echo "  Tools (\`xcode-select --install\`) and run this again. This says NOTHING" >&2
+    echo "  about the plist — nothing has been judged." >&2
+    exit "$EX_PRECONDITION"
+  }
 
-mkdir -p "$SHIM_DIR" "$HOME/Library/LaunchAgents"
+  [ -f "$SHIM_SRC" ] || {
+    echo "the shim source \`$SHIM_SRC\` does not exist. Refusing to install an agent" >&2
+    echo "whose first ProgramArguments entry would point at nothing." >&2
+    exit 1
+  }
 
-# ⚠️ A COMPILE FAILURE IS A DEFECT, NOT A MISSING PRECONDITION: the compiler is
-#    present (checked above) and refused OUR code. `set -e` makes it fatal, and
-#    the compiler's own diagnostics are the message — never swallow them.
-cc -Wall -Wextra -O2 -o "$SHIM_BIN" "$SHIM_SRC"
+  mkdir -p "$SHIM_DIR"
 
-# ⚠️ SUBSTITUTED BY SHAPE, NEVER BY THE PLACEHOLDER'S CURRENT TEXT: the three
-#    ProgramArguments entries are recognised as "the one ending in
-#    launchd-socket-shim", "the one ending in node" and "the one ending in
-#    http-server.js". Matching the literal that sits there today would silently
-#    stop substituting the day the plist is edited — and a plist that still
-#    points at `/CHANGE_ME` fails in a way nobody reads.
-# ⚠️ Nothing is written into the tracked file: this repository is PUBLIC and no
-#    real user path may ever enter it.
-# ⚠️ `|` is the delimiter because every substitution carries a filesystem path.
-#    A clone path containing a literal `|` or `&` would still break this — a real
-#    limitation of `sed`, stated rather than pretended away.
-sed -e "s|<string>[^<]*launchd-socket-shim</string>|<string>$SHIM_BIN</string>|" \
-    -e "s|<string>[^<]*node</string>|<string>$NODE</string>|" \
-    -e "s|<string>[^<]*http-daemon\.js</string>|<string>$REPO/src/hooks/http-daemon.js</string>|" \
-    "$HERE/com.ctxroute.http.plist" > "$PLIST"
+  # ⚠️ A COMPILE FAILURE IS A DEFECT, NOT A MISSING PRECONDITION: the compiler is
+  #    present (checked above) and refused OUR code. `set -e` makes it fatal, and
+  #    the compiler's own diagnostics are the message — never swallow them.
+  cc -Wall -Wextra -O2 -o "$SHIM_BIN" "$SHIM_SRC"
+
+  # ⚠️ SUBSTITUTED BY SHAPE, NEVER BY THE PLACEHOLDER'S CURRENT TEXT: the three
+  #    ProgramArguments entries are recognised as "the one ending in
+  #    launchd-socket-shim", "the one ending in node" and "the one ending in
+  #    http-server.js". Matching the literal that sits there today would silently
+  #    stop substituting the day the plist is edited — and a plist that still
+  #    points at `/CHANGE_ME` fails in a way nobody reads.
+  # ⚠️ Nothing is written into the tracked file: this repository is PUBLIC and no
+  #    real user path may ever enter it.
+  # ⚠️ `|` is the delimiter because every substitution carries a filesystem path.
+  #    A clone path containing a literal `|` or `&` would still break this — a real
+  #    limitation of `sed`, stated rather than pretended away.
+  sed -e "s|<string>[^<]*launchd-socket-shim</string>|<string>$SHIM_BIN</string>|" \
+      -e "s|<string>[^<]*node</string>|<string>$NODE</string>|" \
+      -e "s|<string>[^<]*http-daemon\.js</string>|<string>$REPO/src/hooks/http-daemon.js</string>|" \
+      "$HERE/com.ctxroute.http.plist" > "$PLIST"
+
+  # 🛑 THE SOCKET COUNT COMES FROM THE CONFIGURATION, NEVER FROM THIS FILE (2026-09-19).
+  #    launchd binds under socket activation, so the number of listeners lived in the
+  #    plist AND in `http.listeners` — and the daemon REFUSES TO START when the two
+  #    disagree. The installed plist is therefore RENDERED from the configuration; the
+  #    shipped one is only its default output (proven byte-for-byte by
+  #    `test/render-units-pure.test.js`).
+  # ⚠️ ONLY IN THE ACTIVATED BRANCH: the eager plist declares no `Sockets` at all, and
+  #    rendering it would be a NAMED REFUSAL on a file that is right as it is.
+  # ⚠️ AND THE SHIM MUST FORWARD ALL OF THEM — `launchd-socket-shim.c` publishes
+  #    `LISTEN_FDS` = the count launchd returned. Declaring N here while it forwarded
+  #    one would hand the daemon 1 and it would refuse.
+  node "$HERE/render-units.js" --plist "$PLIST" || {
+    echo "ctxroute: could not render the listening sockets into the installed plist." >&2
+    echo "  Its listener count may disagree with \`http.listeners\`, and the daemon" >&2
+    echo "  refuses to start on that mismatch. Nothing was bootstrapped." >&2
+    exit 2
+  }
+fi
 
 # ⚠️ ANTI-VACUITY ON THE SUBSTITUTION ITSELF. A `sed` that matched nothing exits
 #    0 and leaves the placeholders in place — an install that looks perfect and
@@ -159,36 +211,56 @@ if ! launchctl bootstrap "$DOMAIN" "$PLIST"; then
   exit 1
 fi
 
-# ⚠️ THE PORT IS DERIVED FROM THE PLIST WE JUST INSTALLED — since socket
-#    activation, `Sockets`/`Listeners`/`SockServiceName` is where the address
-#    lives on macOS, exactly as `ListenStream=` is on Linux, so reading it back
-#    is reading the authority. 🛑 It was `EnvironmentVariables`/`CTXROUTE_HTTP_PORT`
-#    until the socket moved in, and that key was REMOVED rather than left as a
-#    second copy: two places for one number diverge in silence.
-#    An empty read is a REFUSAL, never a default: verifying a guessed port would
-#    prove something about a daemon nobody asked for.
-# 🔴 MATCH THE KEY TAG, NEVER THE BARE WORD — AND NEVER ASSUME THE NEXT LINE.
-#    The previous form searched for `SockServiceName` anywhere and took the line
-#    RIGHT AFTER it. The word also appears in this plist's own COMMENT, ~13 lines
-#    earlier, so awk matched a MENTION and printed a sentence of prose as the port:
-#    the URL became malformed, nothing ever reached the socket, launchd never
-#    activated the job, and the CI read it as "the daemon never answered".
-#    MEASURED on the macOS runner 2026-08-23 — the shim was never at fault.
-# ⚠️ A parser that matches a MENTION is the class this repository refuses
-#    everywhere else (that is why its gates use AST and not regex). Here: anchor on
-#    the real `<key>` element, then scan FORWARD to the first `<string>` — blank
-#    lines, comments and reformatting cannot move the answer any more.
-PORT=$(awk '/<key>SockServiceName<\/key>/{f=1; next} f && /<string>/{gsub(/.*<string>|<\/string>.*/, ""); print; exit}' "$PLIST")
-[ -n "$PORT" ] || {
-  echo "no SockServiceName value in the installed plist — the port moved out of" >&2
-  echo "the Sockets/Listeners dictionary. Refusing to guess." >&2
-  exit 1
-}
+if [ "$CTXROUTE_MACOS_MODE" = "eager" ]; then
+  # ⚠️ NO Sockets/Listeners DICTIONARY IN THIS PLIST — this mode binds directly,
+  #    so the port is read from the SAME single resolution point every other
+  #    lane uses (`paths.httpEndpoint()`), never a second copy here. A failure
+  #    to resolve it is a NAMED REFUSAL, never a guessed default — same rule as
+  #    the socket-activated branch below.
+  PORT=$(cd "$REPO" && "$NODE" -e "process.stdout.write(String(require('./src/paths.js').httpEndpoint().port))") || {
+    echo "could not resolve the port via paths.js's httpEndpoint() — refusing to" >&2
+    echo "guess. Read the error above." >&2
+    exit 1
+  }
+  [ -n "$PORT" ] || {
+    echo "httpEndpoint() returned an empty port. Refusing to guess." >&2
+    exit 1
+  }
+  # ⚠️ THE JOB IS ALREADY RUNNING HERE, UNLIKE THE SOCKET-ACTIVATED BRANCH:
+  #    RunAtLoad started it at `bootstrap` time above, on demand is not this
+  #    mode's model. `verify-responds.sh` still is the real proof it answers.
+else
+  # ⚠️ THE PORT IS DERIVED FROM THE PLIST WE JUST INSTALLED — since socket
+  #    activation, `Sockets`/`Listeners`/`SockServiceName` is where the address
+  #    lives on macOS, exactly as `ListenStream=` is on Linux, so reading it back
+  #    is reading the authority. 🛑 It was `EnvironmentVariables`/`CTXROUTE_HTTP_PORT`
+  #    until the socket moved in, and that key was REMOVED rather than left as a
+  #    second copy: two places for one number diverge in silence.
+  #    An empty read is a REFUSAL, never a default: verifying a guessed port would
+  #    prove something about a daemon nobody asked for.
+  # 🔴 MATCH THE KEY TAG, NEVER THE BARE WORD — AND NEVER ASSUME THE NEXT LINE.
+  #    The previous form searched for `SockServiceName` anywhere and took the line
+  #    RIGHT AFTER it. The word also appears in this plist's own COMMENT, ~13 lines
+  #    earlier, so awk matched a MENTION and printed a sentence of prose as the port:
+  #    the URL became malformed, nothing ever reached the socket, launchd never
+  #    activated the job, and the CI read it as "the daemon never answered".
+  #    MEASURED on the macOS runner 2026-08-23 — the shim was never at fault.
+  # ⚠️ A parser that matches a MENTION is the class this repository refuses
+  #    everywhere else (that is why its gates use AST and not regex). Here: anchor on
+  #    the real `<key>` element, then scan FORWARD to the first `<string>` — blank
+  #    lines, comments and reformatting cannot move the answer any more.
+  PORT=$(awk '/<key>SockServiceName<\/key>/{f=1; next} f && /<string>/{gsub(/.*<string>|<\/string>.*/, ""); print; exit}' "$PLIST")
+  [ -n "$PORT" ] || {
+    echo "no SockServiceName value in the installed plist — the port moved out of" >&2
+    echo "the Sockets/Listeners dictionary. Refusing to guess." >&2
+    exit 1
+  }
+  # ⚠️ NOTHING IS RUNNING AT THIS POINT, AND THAT IS THE DESIGN, not a failure to
+  #    report. The job is on demand: launchd holds the socket and the FIRST
+  #    CONNECTION starts the instance. `verify-responds.sh` is that first
+  #    connection.
+fi
 
-# ⚠️ NOTHING IS RUNNING AT THIS POINT, AND THAT IS THE DESIGN, not a failure to
-#    report. The job is on demand: launchd holds the socket and the FIRST
-#    CONNECTION starts the instance. `verify-responds.sh` is that first
-#    connection.
 launchctl print "$DOMAIN/$LABEL" || true
 echo "ctxroute-port=$PORT"
 echo "ctxroute-launchd-target=$DOMAIN/$LABEL"

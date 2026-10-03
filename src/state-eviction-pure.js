@@ -50,7 +50,17 @@ const EPHEMERAL_PREFIX = memory.EPHEMERAL_PREFIX;
 //    loss we cannot undo). The list is confronted with the sweep of
 //    `ctxroute-reset.js` by a cell — a copied enumeration nobody re-derives is
 //    this repo's oldest way of shipping a stale rule.
-const DURABLE_PREFIXES = ['doc-seen-', 'ctxroute-seen-', 'turn-count-', 'remainder-'];
+// ✅ DERIVED (23/09/2026) from `memory-store-pure.stateStores()` — the ONE declaration of a
+//    per-scope store, shared with the lock classes and the PreCompact sweep. Still a CLOSED
+//    list in effect (fail-closed stays true): a prefix nobody declared there is never
+//    deleted here, only reported `unclassified`.
+// ⚠️ A FUNCTION, never a module-level constant: derived at LOAD, its filter ran outside every
+//    test and Stryker reported the mutant as a static survivor it never really tried.
+function durablePrefixes() {
+  // One traversal per statement: a chained `.filter().map()` reads as a nested traversal.
+  const durable = memory.stateStores().filter((s) => s.durable);
+  return durable.map((s) => s.prefix);
+}
 
 // ⚠️ CEILINGS TAKEN FROM THE RAM STORE, and the arithmetic is ITS arithmetic
 //    (re-checkable in `memory-store-pure.js`): 3 durable keys per agent ⇒ 4096
@@ -112,11 +122,13 @@ function classify(name) {
   //    exactly that shape; asserted on a `.txt` alone, the fall-through returns
   //    `null` too and the mutant is indistinguishable.
   if (!name.endsWith('.json')) return null;
-  if (name.startsWith(EPHEMERAL_PREFIX)) return 'ephemeral';
-  for (const prefix of DURABLE_PREFIXES) {
-    if (name.startsWith(prefix)) return 'durable';
-  }
-  return null;
+  // ✅ 23/09/2026: the CLASS is read from the store registry itself — one lookup, and the
+  //    store's declared `durable` flag decides. It used to be two lists (the ephemeral
+  //    prefix first, then a loop over the durable ones), which made the durable list's own
+  //    filter unobservable: `plan-` was always answered before the loop could see it.
+  const store = memory.stateStores().find((s) => name.startsWith(s.prefix));
+  if (!store) return null;
+  return store.durable ? 'durable' : 'ephemeral';
 }
 
 /**
@@ -244,7 +256,7 @@ module.exports = {
   ageBound,
   byAgeThenName,
   EPHEMERAL_PREFIX,
-  DURABLE_PREFIXES,
+  durablePrefixes,
   DEADLINE_MULTIPLE,
   MAX_DURABLE,
   MAX_EPHEMERAL,

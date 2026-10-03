@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"commit-msg-leak.js","scope":["ctxroute"]},{"pattern":"commit-msg-leak.test.js","scope":["ctxroute"]}]
 mode: smart
-threshold: 20
+threshold: 25
 ---
 # commit-msg-leak.js — the published MESSAGE is scanned too (2026-08-27)
 
@@ -35,3 +35,10 @@ its own `forbiddenPatterns` call and checks `lv.unavailable` alongside `lv.viola
 ⚠️ **`types/zenon-lab-personal-data-guard.d.ts`** is the ambient module declaration that makes
 `tsc` pass on a clean clone: real package present ⇒ its own types win; absent ⇒ TypeScript falls
 back to this file. Kept in sync with the SLICE this repo actually calls, never the package's full API.
+🔴 **`verdict(message, motifs, guard)` — THE THIRD ARGUMENT IS A SEAM, NEVER A SECOND MATCHER
+(2026-10-02).** The cells that use the real package SKIP wherever it is absent, i.e. on every clean
+clone and CI runner, so the CI's mutation report read 14 `NoCoverage` mutants on this module for a
+month while the maintainer's machine read 100 %. `guard` defaults to the loaded package and the hook
+never passes it: production is unchanged. 🛑 **SI you add logic around the scan, you MUST cover it with
+an injected guard** (the `SEAM:` cells), or it is measured on ONE machine only. An explicit `null` is
+the ABSENT state, exactly as a missing package.

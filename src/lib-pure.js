@@ -191,6 +191,34 @@ function joinSystemMessage(base, addition) {
   return b + ' · ' + a;
 }
 
+// ── THE MOMENT OF THE ACTION, READ FROM THE HARNESS'S OWN WORDS (2026-09-23) ──
+// ⚠️ `dialect` is the harness's entry in `harness-profile.AFTER_ANSWER` — this module names no
+//    harness field (the profile gate refuses a profile word as a literal here). The answer is
+//    handed over RAW: what it means is `response-pure.js`'s business, never the shell's.
+// ⚠️ TOTAL: a missing payload or dialect is "before the answer", never a throw — a throw here
+//    would silence every doc of every action, the one failure a hook may never cause.
+/**
+ * @param {*} data the harness payload, verbatim
+ * @param {{eventField: string, event: string, responseField: string}} [dialect]
+ * @returns {{response: *}|undefined} the answer once the tool has run, `undefined` before
+ */
+function afterAnswer(data, dialect) {
+  if (!data || !dialect || data[dialect.eventField] !== dialect.event) return undefined;
+  return { response: data[dialect.responseField] };
+}
+
+// 🛑 THE TWO MOMENTS OF ONE ACTION SHARE THE HARNESS'S CALL ID, AND MUST NOT SHARE A PLAN.
+//    The plan, the frame sequencer and the collection memo are all keyed by invocation: reusing
+//    the id after the answer would REPLAY the plan decided before the action — nothing new
+//    delivered, nothing red. The suffix makes the second moment a second invocation.
+// ⚠️ An EMPTY id stays empty: "no invocation" must keep meaning "no fragmentation", never become
+//    a fabricated id that would memoise across unrelated actions.
+// ⚠️ The suffix is written INSIDE the function, never as a module-level constant: a load-time
+//    literal is a STATIC mutant the perTest runner never re-evaluates.
+function momentInvocation(invocationId, after) {
+  return after && invocationId ? invocationId + '-after' : invocationId;
+}
+
 // Is the server covered by the framework according to filterMode/filterList?
 // ⚠️ "whitelist" and "blacklist" are symmetrical: whitelist = the list of the ONLY
 // allowed ones, blacklist = the list of the ONLY excluded ones. "none"/unknown value = everything covered
@@ -432,6 +460,8 @@ function refusalNotice(code, state) {
 }
 
 module.exports = {
+  afterAnswer,
+  momentInvocation,
   REFUSAL_CODES,
   REFUSAL_NOTICE,
   refusalNotice,

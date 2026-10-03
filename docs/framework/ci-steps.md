@@ -1,6 +1,7 @@
 ---
 match: ci-steps-pure
-mode: dumb
+mode: smart
+threshold: 30
 ---
 
 # ci-steps-pure.js / tools/ci.mjs — the CI is ONE local command (CLAUDE.md §Tests&CI, 2026-08-29)

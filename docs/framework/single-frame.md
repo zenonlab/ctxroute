@@ -1,6 +1,7 @@
 ---
 match: [emission-duplicate.test.js, capacity-alarm.test.js]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # BANDWIDTH OF ONE ACTION — why N frames, and why NOT a single one
 🛑 **JUDGMENT REVERSED IN 24 H, REWRITTEN (07/08/2026).** This doc advocated a SINGLE gate declaration. **It was wrong**, and the return to 12 is done. Reason for the reversal: the requirement was never display order, but that **the context be COMPLETE before the next tool call**. At 1 frame the capacity drops to ~7,661 c ⇒ a 53,830 c skill spreads over 8 actions ⇒ **the agent acts 7 times with partial knowledge**. Disorder is reassembled (`k/N`); knowledge absent at the moment of acting is not.

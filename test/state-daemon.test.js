@@ -38,6 +38,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { endpoint } = require('../src/kernel-endpoint.js');
 const { occupied } = require('../src/kernel-bind.js');
+const { FILE_NAME: JOURNAL_FILE } = require('../src/lifecycle-log.js');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxroute-daemon-'));
 const DOCS = path.join(TMP, 'docs');
@@ -189,7 +190,11 @@ test('16 frame processes, ONE `once` document: delivered exactly once, with no l
 
       // 🛑 THE OTHER HALF OF THE PROOF, AND IT IS THE POINT OF THE REFACTOR:
       //    nothing was coordinated through the disk. Not "few files": none.
-      const files = fs.readdirSync(STATE);
+      // ⚠️ THE LIFECYCLE JOURNAL IS NOT A CHANNEL, and it is excluded BY ITS OWN NAME (imported,
+      //    never re-spelled), its rotation `.1` included. Red 1 run in 2 on the macOS runner
+      //    (2026-09-23): under load the daemon journals a stall, which is observability written
+      //    for a human, never state another process reads. Every OTHER file stays forbidden.
+      const files = fs.readdirSync(STATE).filter((f) => !f.startsWith(JOURNAL_FILE));
       assert.deepEqual(files, [],
         `the daemon wrote ${files.length} file(s) in the state directory (${files.join(', ')}). `
         + 'A living daemon coordinates through the kernel; the disk is only ever a save, never a channel.');

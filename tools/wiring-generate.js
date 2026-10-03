@@ -57,10 +57,17 @@ const { dialect, render, serialize, spliceObstacle } = require('../src/wiring-di
 
 const ROOT = path.resolve(__dirname, '..');
 
-/** Loud refusal: a diagnostic that fails quietly is indistinguishable from one that passes. */
+/**
+ * Loud refusal: a diagnostic that fails quietly is indistinguishable from one that passes.
+ * 🛑 IT THROWS, IT NO LONGER KILLS (2026-10-01): `process.exit` cut the refusal on
+ *    a POSIX pipe. The ONE entry point below prints it and leaves with exit 2 once
+ *    stderr drained. Every caller still stops dead at the call, exactly as before —
+ *    NEVER wrap a `refuse()` in a `try` whose `catch` swallows it.
+ * @param {string} message
+ * @returns {never}
+ */
 function refuse(message) {
-  process.stderr.write(`wiring-generate: ${message}\n`);
-  process.exit(2);
+  throw new Error(message);
 }
 
 function flag(name) {
@@ -223,9 +230,13 @@ function main() {
   //    it here is the very class this repository names: a component addressed
   //    by a guessed path instead of by the authority that KNOWS.
   let frames = null;
+  // The moment AFTER the tool answered has its own bandwidth (2026-09-23). Read raw and judged by
+  // `plan()`, which refuses it by name ONLY if a consumer is framed on it.
+  let afterFrames;
   try {
     const cfg = JSON.parse(fs.readFileSync(paths.configPath(), 'utf8'));
     if (Number.isInteger(cfg.frames) && cfg.frames >= 1) frames = cfg.frames;
+    afterFrames = cfg.afterFrames;
   } catch { /* refused just below, with its reason */ }
   if (frames === null) refuse('`frames` is not declared in ctxroute-config.json — the bandwidth of one action has no default here: a guessed frame count silently changes what a gesture can deliver');
 
@@ -246,6 +257,14 @@ function main() {
   // ⚠️ A config that DECLARES nonsense refuses here, loudly, exactly as it does
   //    in the daemon: this tool is a generator, never a hook, so it screams.
   const { host, port } = paths.httpEndpoint();
+  // ⚠️ EVERY listening point, from the SAME owner the daemon binds with. The
+  //    spread across them is the whole reason the extra sockets are worth
+  //    opening: their accept queues are separate, so a wiring that posted every
+  //    frame to the first port would leave the others idle — capacity nobody
+  //    reaches, which reads as a margin and is not one.
+  // 🛑 NEVER expand this list here from `host`/`port`: that is one truth in two
+  //    places, on a lane whose divergence loses every frame of every action.
+  const endpoints = paths.httpListenEndpoints();
 
   // ── THE GATE'S ROUTE, READ WHERE THE DAEMON SERVES IT ──────────
   // 🛑 `src/protocol-routes-pure.js` AND NOTHING ELSE. The daemon dispatches
@@ -261,8 +280,10 @@ function main() {
   const declarations = plan(manifest, {
     root,
     frames,
+    afterFrames,
     host,
     port,
+    endpoints,
     routePath,
     laneFlag,
     stateConsumers: deriveStateConsumers(ROOT),
@@ -328,7 +349,12 @@ function main() {
 }
 
 if (require.main === module) {
-  try { main(); } catch (e) { refuse(e.message); }
+  try {
+    main();
+  } catch (e) {
+    process.stderr.write(`wiring-generate: ${e && e.message}\n`);
+    require('../src/stdout-exit').exitAfterFlush(2);
+  }
 }
 
 module.exports = { deriveStateConsumers };

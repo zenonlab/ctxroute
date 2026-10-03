@@ -1,7 +1,7 @@
 ---
 rules: [{"pattern":"sources/","scope":["ctxroute"],"rank":536},{"pattern":"frontmatter.js","scope":["ctxroute"],"rank":537},{"pattern":"frontmatter.property.test.js","scope":["ctxroute"],"rank":538},{"pattern":"sources-file.property.test.js","scope":["ctxroute"],"rank":539},{"pattern":"file-differential.test.js","scope":["ctxroute"],"rank":540},{"pattern":"sources-file.test.js","scope":["ctxroute"],"rank":551},{"pattern":"sources-mcp.test.js","scope":["ctxroute"]},{"pattern":"sources-tool.test.js","scope":["ctxroute"]},{"pattern":"mcp-differential.test.js","scope":["ctxroute"]},{"pattern":"frontmatter.test.js","scope":["ctxroute"],"rank":552}]
 mode: smart
-threshold: 20
+threshold: 168
 rank: 536
 ---
 # sources/*.js + frontmatter.js — unified engine (✅ LIVE, merge COMPLETED 2026-07-17)

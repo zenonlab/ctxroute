@@ -197,7 +197,7 @@ function collectDocs() {
   if (!rules.length) {
     console.error(`🚨 lint-corpus: NO rule loaded from the frontmatters of ${DOCS}`);
     console.error('   The lint can prove NOTHING in this state (hollow harness). Check CTXROUTE_FLEET_HOOKS_DIR.');
-    process.exit(2);
+    return null; // the caller sets exit code 2 — never `process.exit` (see below)
   }
 
   const rulesPerDoc = new Map();
@@ -218,8 +218,16 @@ function collectDocs() {
   const onDiskSet = new Set(onDisk);
   const ghostDocs = [...rulesPerDoc.keys()].filter((d) => !onDiskSet.has(d));
 
-  const config = readJSON(path.join(__dirname, '..', 'ctxroute-config.json')) || {};
-  const docsMcpDir = path.join(__dirname, '..', 'docs', 'mcp');
+  // 🛑 BOTH ADDRESSES COME FROM `paths.js`, NEVER REBUILT HERE (2026-10-01). This
+  //    line read `ctxroute-config.json` at the repo root, a file REMOVED on
+  //    2026-08-24 when the configuration moved to the OS-conventional address —
+  //    so the lint ran on an EMPTY config for five weeks: `filterList` (the
+  //    declaration "this server is deliberately without a doc") and `lint.level`
+  //    were never read, and it warned about servers the operator had excluded.
+  //    Same for the MCP doc folder, which the config may declare elsewhere.
+  const paths = require('../src/paths');
+  const config = readJSON(paths.configPath()) || {};
+  const docsMcpDir = paths.docsDir();
   let documentedServers = [];
   try {
     documentedServers = fs
@@ -246,24 +254,38 @@ function collectDocs() {
 }
 
 // ── Gate ─────────────────────────────────────────────────────────────
-const QUIET = process.argv.includes('--quiet');
-const iLevel = process.argv.indexOf('--level');
-const { state, level, stats } = collectDocs();
-const findings = applyFilter(analyze(state), iLevel !== -1 ? process.argv[iLevel + 1] : level);
-const errors = findings.filter((c) => c.level === 'error').length;
+// 🛑 THE EXIT CODE IS SET, NEVER FORCED (2026-10-01): `process.exit` cut the
+//    finding list on a POSIX pipe (CI log, `| tail`) — half a report reads as a
+//    shorter one. This shell holds no handle, so it ends NATURALLY once its
+//    streams drained, with the code set below (Node's documented alternative).
+function lint() {
+  const QUIET = process.argv.includes('--quiet');
+  const iLevel = process.argv.indexOf('--level');
+  const collected = collectDocs();
+  if (!collected) {
+    process.exitCode = 2;
+    return;
+  }
+  const { state, level, stats } = collected;
+  const findings = applyFilter(analyze(state), iLevel !== -1 ? process.argv[iLevel + 1] : level);
+  const errors = findings.filter((c) => c.level === 'error').length;
 
-if (!QUIET) {
-  console.log(`fleet lint — ${stats.docs} docs, ${stats.rules} rules, ${state.mcpServers.length} MCP servers\n`);
-}
-for (const c of findings) {
-  const line = `  ${c.level === 'error' ? '✗' : '⚠'} [${c.code}] ${c.target}\n      ${c.message}`;
-  if (c.level === 'error') console.error(line);
-  else if (!QUIET) console.log(line);
+  if (!QUIET) {
+    console.log(`fleet lint — ${stats.docs} docs, ${stats.rules} rules, ${state.mcpServers.length} MCP servers\n`);
+  }
+  for (const c of findings) {
+    const line = `  ${c.level === 'error' ? '✗' : '⚠'} [${c.code}] ${c.target}\n      ${c.message}`;
+    if (c.level === 'error') console.error(line);
+    else if (!QUIET) console.log(line);
+  }
+
+  if (shouldScream(findings)) {
+    // ⚠️ DELIBERATELY LOUD: the silence IS the bug we are hunting.
+    console.error(`\n🚨 ${errors} DEAD doc(s) — they will NEVER be injected, and nobody would see it.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (!QUIET) console.log(findings.length ? `\n${findings.length} warning(s), 0 error` : '\n✅ healthy fleet');
 }
 
-if (shouldScream(findings)) {
-  // ⚠️ DELIBERATELY LOUD: the silence IS the bug we are hunting.
-  console.error(`\n🚨 ${errors} DEAD doc(s) — they will NEVER be injected, and nobody would see it.`);
-  process.exit(1);
-}
-if (!QUIET) console.log(findings.length ? `\n${findings.length} warning(s), 0 error` : '\n✅ healthy fleet');
+lint();

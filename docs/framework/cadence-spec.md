@@ -1,7 +1,7 @@
 ---
 match: [cadence-spec.js, cadence-differential.test.js]
 mode: smart
-threshold: 30
+threshold: 35
 ---
 
 # cadence-spec.js + cadence-differential.test.js — THE OTHER HALF, NOW JUDGED (19/08/2026)
@@ -15,4 +15,4 @@ threshold: 30
 ⚠️ The 4 cascade asymmetries live in the model as DATA (`FRAMEWORK`, `GLOBAL_KEY`), never as a buried `if`: an asymmetry nobody can enumerate is an asymmetry nobody can audit.
 ✅ **PART ⓪ — THE "OPERATOR OUTSIDE THE JUDGES" CLASS IS NOW CLOSED BY A MACHINE (19/08/2026).** The exhaustive domain must EXERCISE every word of the vocabulary, **DERIVED from `RULE_KEYS`/`KNOWN`** and **PROBED ON THE REAL GENERATOR** (never a grep of this file's text: a name in a comment would satisfy a grep). A word added tomorrow lands in the table BY ITSELF and stays RED until it is exercised — or declared out of scope WITH ITS REASON, plus an INVERSE check that reddens when a justification becomes false.
 🔴 **WHY IT EXISTS**: until today, **only PROSE** required it (the skill: "shipping an operator includes its judges"). The rule existed — and `keys` shipped outside the judges anyway, with a schema, a validator, 959 green tests and 100 % mutation. **Prose does not hold; a machine does.** Seen red by real sabotage on both halves (it names `keys`, it names `enforce`).
-🔴 **AND THAT RULE EXISTED ON 2026-08-23 AND STOPPED NOTHING — IT IS A MACHINE NOW.** This file had copied the SHAPE of `gate.js`: both wrote `{ seen: true, sinceLastCall: entry.sinceLastCall + 1 }`, the engine dropped `denied` and the model dropped the same flag, so the 11,346 cases stayed GREEN on a production bug for weeks. `test/model-twin-gate.test.js` now REFUSES any run of 12+ identical tokens shared with a module this file judges, on pairs it DERIVES. ⚠️ The baseline is not empty: 23 tokens are still shared with `gate.js` and 21 with `frontmatter.js` — declared, ratcheted, exit condition written (`model-twin-gate.md`).
+🔴 **AND THAT RULE EXISTED ON 2026-08-23 AND STOPPED NOTHING — IT IS A MACHINE NOW.** This file had copied the SHAPE of `gate.js`: both wrote `{ seen: true, sinceLastCall: entry.sinceLastCall + 1 }`, the engine dropped `denied` and the model dropped the same flag, so the 11,346 cases stayed GREEN on a production bug for weeks. `test/model-twin-gate.test.js` now REFUSES any run of 12+ identical tokens shared with a module this file judges, on pairs it DERIVES. ✅ **ZERO shared run since 2026-09-23** — `decide` rewritten with the model's own names and a partition, the category model rewritten from the intention; a foreign gesture dropping `denied` is seen RED. A new twin is held at zero: rewrite it, never declare it.

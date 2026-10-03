@@ -41,11 +41,12 @@
 // ⚠️ Common body EXTRACTED into pretool-core.js (19/07/2026, Codex port):
 //    this shell only keeps the Claude Code dialect — stdin + emit.
 //    Any orchestration change is made IN pretool-core.js, never here.
-const { run, denyOutput, noticeOutput } = require('../pretool-core');
-const { parseFrameArgs } = require('../lib-pure');
+const { run, denyOutput, noticeOutput, afterOutput } = require('../pretool-core');
+const { parseFrameArgs, afterAnswer, momentInvocation } = require('../lib-pure');
 // ⚠️ THE HARNESS'S OWN NUMBER, READ AS DATA — never a literal in a shell.
-const { HOOK_OUTPUT_BUDGET } = require('../harness-profile');
+const { HOOK_OUTPUT_BUDGET, AFTER_ANSWER } = require('../harness-profile');
 const { readStdinJson } = require('../stdin-json');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 // ⚠️ THE CLIENT LANE, OPT-IN BY ARGUMENT (2026-08-21). With `--client` in the
 //    wiring this shell ASKS the daemon that owns the state instead of opening the
 //    store itself; without it, NOTHING changes — same call, same code path, same
@@ -103,15 +104,20 @@ function output(decision, fullDoc, systemMessage) {
 //    callers, never two copies. `emitJson` takes the FINISHED output object,
 //    which is what the daemon hands back (it ran the same core through the same
 //    dialect, so re-deriving anything from it would be a second formatting of
-//    one decision). `emit` keeps the historical shape for the spawn lane. Both
+//    one decision). `emitWith` keeps the historical shape for the spawn lane. Both
 //    print and exit, because the lifecycle belongs to the shell.
+// 🛑 PRINT, THEN LEAVE ONCE STDOUT HAS DRAINED — never `console.log` then
+//    `process.exit`: on a POSIX pipe that pair cut every answer above 64 KB
+//    (measured 2026-10-01). Today's per-process budget stays under it, but that
+//    budget is a third party's number and the shell must not depend on it.
 function emitJson(json) {
-  console.log(JSON.stringify(json));
-  process.exit(0);
+  printThenExit(JSON.stringify(json));
 }
 
-function emit(decision, fullDoc, systemMessage) {
-  emitJson(output(decision, fullDoc, systemMessage));
+// ⚠️ The spawn lane prints through the dialect of ITS moment (before: `output`, after the answer:
+//    `afterOutput`) — one emitter, parameterised, never a second copy per moment.
+function emitWith(dialect) {
+  return (decision, fullDoc, systemMessage) => emitJson(dialect(decision, fullDoc, systemMessage));
 }
 
 module.exports = { output };
@@ -148,10 +154,17 @@ if (require.main === module) {
       //    (8,000 — the conservative FLOOR, chosen when the harness truncated at
       //    ~10,000). That floor stopped matching the harness on 2026-08-31, so
       //    leaving it would keep chopping a payload the pipe carries whole.
+      // 🔑 BEFORE OR AFTER THE TOOL RAN (2026-09-23): the SAME shell serves both events, and the
+      //    harness's own words say which — read through the profile, never a literal here. After
+      //    the answer the moment gets its OWN invocation (see `lib.momentInvocation`) and its own
+      //    dialect (`afterOutput`, no decision field: the action is already over).
+      const after = afterAnswer(data, AFTER_ANSWER.claudeCode);
+      const dialect = after ? afterOutput : output;
       const options = {
         ...parseFrameArgs(process.argv),
         budget: HOOK_OUTPUT_BUDGET.claudeCode,
-        invocationId: typeof data.tool_use_id === 'string' ? data.tool_use_id : '',
+        invocationId: momentInvocation(typeof data.tool_use_id === 'string' ? data.tool_use_id : '', after),
+        after,
       };
       // 🛑 ONE LINE PER HARNESS, NEVER A SECOND SHELL. The only difference
       //    between the two lanes is WHO OWNS THE STATE, and this repository
@@ -160,16 +173,18 @@ if (require.main === module) {
       //    a need appeared, which is precisely what §0bis forbids.
       // 🛑 AND WE MUST NOT `process.exit(0)` BEHIND IT. Asking the daemon is a
       //    socket round trip, so the answer arrives on a LATER TICK, while
-      //    `pretool-core.run` answers synchronously. `emitJson` exits when there
-      //    is something to say; otherwise the loop empties by itself.
+      //    `pretool-core.run` answers synchronously. `emitJson` exits once its
+      //    print has drained; otherwise the loop empties by itself.
       const lane = client.clientLane(process.argv);
       if (lane) {
-        client.run(data, { output, emit: emitJson },
+        client.run(data, { output: dialect, emit: emitJson },
           { ...options, socketPath: lane.socketPath });
         return;
       }
-      run(data, emit, options);
-      process.exit(0);
+      run(data, emitWith(dialect), options);
+      // ⚠️ Nothing printed ⇒ leaves NOW (fail-open, unchanged); a print in
+      //    flight ⇒ its own drain exits. A bare `process.exit` here would cut it.
+      exitUnlessPrinting();
     },
     () => process.exit(0)
   );

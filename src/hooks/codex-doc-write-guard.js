@@ -25,6 +25,7 @@ require('../deadline').arm();
 const { run } = require('../guard-core');
 const { extractFilePaths } = require('../sources/file');
 const { readStdinJson } = require('../stdin-json');
+const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 
 readStdinJson(
   (data) => {
@@ -32,9 +33,11 @@ readStdinJson(
     //    core RETURNS a verdict (`null` = nothing to report). The JSON is composed
     //    by the core (`blockOutput`) because the `decision: block` dialect is
     //    MEASURED identical on both harnesses — but it is EMITTED here.
+    // 🛑 Printed through `stdout-exit`: a print then a bare `process.exit` is
+    //    cut on a POSIX pipe beyond 64 KB (2026-10-01).
     const verdict = run(extractFilePaths(data.tool_name || '', data.tool_input || {}));
-    if (verdict) console.log(JSON.stringify(verdict));
-    process.exit(0);
+    if (verdict) printThenExit(JSON.stringify(verdict));
+    exitUnlessPrinting();
   },
   () => process.exit(0)
 );

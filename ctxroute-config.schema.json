@@ -41,6 +41,36 @@
           "type": "boolean",
           "description": "REFUSE the action instead of informing (05/08/2026). ⚠️ Only meaningful for a category whose docs are ALL in `mode: once` — the engine honors `enforce` only on an EFFECTIVE `once` mode (anti-loop guarantee in gate.js), otherwise it informs. Setting `enforce` on a whole category is DISCOURAGED: every first action of a session would be refused, and a system people endure ends up unplugged. Reserved for irreversible actions, doc by doc. An entry can opt out with `enforce: false`."
         },
+        "category": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Restrict every doc of THIS category to sessions carrying a matching declared category (a behavior key, NOT a trigger — same family as `enforce`). Absent = no restriction, unchanged since before this key existed (parity). NO global stage, same reasoning as `enforce`: a global `category` would restrict the first gesture of every session on every doc of the fleet."
+        },
+        "response": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "scope": {
+              "$ref": "#/definitions/cadence/properties/scope"
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          },
+          "description": "Narrow the doc to the moment AFTER the tool answered, and to the answers its `scope`/`exclude` accept (23/09/2026). Written on ONE line as inline JSON, e.g. {\"scope\": [\"posted\"]}. It reads every text of the answer at any depth (a JSON text is read as the structure it encodes, key names never match) with the SAME semantics as the gesture's filters: `scope` = OR (flat) or AND of ORs (grouped), `exclude` = none of these may appear. A word of the LANGUAGE, never a parameter name: it is not reached through `keys`, so a tool parameter called `response` can never collide with it. Absent = decided BEFORE the action, exactly as before this key existed (parity). NO global stage: a global value would move every doc of the fleet after the action. Incompatible with `enforce: true`: an action that already ran cannot be refused, and an answer is content no one controls."
+        },
         "filterMode": {
           "enum": [
             "none",
@@ -216,6 +246,48 @@
           "minimum": 1,
           "maximum": 65535,
           "description": "The port the daemon BINDS and the wiring POSTs to. Default 8787, in the IANA dynamic range. ⚠️ `CTXROUTE_HTTP_PORT` STILL WINS over this half - unlike the `CTXROUTE_*_DIR` variables it is NOT test-reserved (service/ctxroute-http.service declares it, install-windows.ps1 reads it back), and both consumers resolve through the same single point, so the escape cannot move one of them alone."
+        },
+        "listeners": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "HOW MANY LISTENING SOCKETS THE DAEMON OPENS, starting at `port` and counting UP (2026-09-18). Default 1 - nobody pays for a problem they do not have. ⚠️ IT BUYS A WAITING ROOM, NEVER SERVICE SPEED: the accept queue is capped PER SOCKET (measured on Windows: `min(backlog,200) + 32` = 232, strictly linear at 1/2/4 sockets => 232/464/928), while the daemon stays single-threaded, so N listeners let more callers WAIT, they do not make it answer faster. Raise it when the daemon reports its peak approaching the ceiling; the other wall is a different lever (worker threads). 🛑 RAISING THE BACKLOG IS NOT AN ALTERNATIVE AND IS ALREADY MEASURED DEAD: 511, 65535 and -65535 (the literal expansion of SOMAXCONN_HINT) ALL yield a depth of 232 from this runtime, stable over 12+ runs, while the SAME call from .NET yields 700-1500 queued - Winsock honours the hint, our runtime loses it. ⚠️ N DISTINCT PORTS ON EVERY PLATFORM, deliberately: SO_REUSEPORT (Node's `reusePort`) would give one port with kernel load balancing, but it exists only on Linux/DragonFly/FreeBSD/Solaris/AIX and RAISES AN ERROR elsewhere - portable correctness first, per-OS optimisation second. ⚠️ Under SOCKET ACTIVATION the OS owns the sockets and the daemon IGNORES this key, exactly like `host` and `port`."
+        },
+        "workers": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            },
+            {
+              "type": "string",
+              "enum": [
+                "auto"
+              ]
+            }
+          ],
+          "description": "✅ WIRED 2026-09-20 - N server THREADS, each binding its OWN listening sockets and doing all the expensive work of its own requests (the nginx/HAProxy shape), with ONE owner thread holding the store and the three invocation tables and answering O(1) questions synchronously. Proven byte-identical to the single-threaded daemon by `test/thread-pool-differential.test.js`, which is the acceptance criterion - the facade, never the speed. 🛑 REFUSED WITH SOCKET ACTIVATION: serving an inherited descriptor from a worker thread is UNMEASURED on every kernel here, and an unmeasured transport is not something this daemon starts. HOW MANY THREADS SERVE THOSE SOCKETS (2026-09-19). Default 0 - NO pool at all, i.e. exactly today's behaviour byte for byte; a capability that arrives switched on changes production for people who never asked for it, which is why nginx ships `worker_processes 1` too. ⚠️ IT BUYS PARALLELISM, WHERE `listeners` BUYS A WAITING ROOM - and conflating the two is a measured mistake: a socket caps its accept queue at 232 on Windows (strictly linear, 1/2/4 -> 232/464/928) while the daemon answers on ONE loop, so sockets let more callers WAIT and threads make it ANSWER faster. Production today is four sockets on ONE thread. 🛑 THE ONE CONSTRAINT IS `workers <= listeners`: a thread with no socket has nothing to accept and would cost a V8 isolate and its heap for nothing. It is a NAMED REFUSAL, never a clamp - clamping starts a pool of a size nobody declared. 📐 `auto` follows nginx's published convention (`worker_processes number | auto`) because an adopter already knows that word, and resolves to HALF the cores capped at 8: this daemon shares its machine with the harness, the MCP servers and the agents it serves, so taking every core starves the very clients it answers. 🛑 THREADS ARE NOT THE CURE FOR `ECONNREFUSED` - those come from a slow CLIENT, established on 200 stalls where 100% of the elapsed time is the wait for the request body. Decisions and refusals live in `src/worker-pool-pure.js`; the architecture and what each remaining step must prove are in the backlog under \"LA DIRECTION EXACTE DU MULTI-COEURS\".",
+          "examples": [
+            0,
+            "auto",
+            4
+          ]
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on-demand",
+            "login"
+          ],
+          "description": "WHEN THE DAEMON RUNS (2026-09-29). Default `auto`. `on-demand`: the daemon runs only while a harness uses it - a session asks the OS supervisor to start it (Windows: Task Scheduler runs the task, a no-op when it already runs; Linux/macOS: the socket-activated unit starts it at the first connection) and it LEAVES with exit 0 once `idleSeconds` pass with no request. `login`: it stays up from login and never leaves on idle - the server shape. `auto` resolves on what a restart depends on: Linux and macOS => `on-demand` (the OS holds the socket, so an idle exit costs nothing: the next connection starts a fresh daemon); every Windows edition => `login` (nothing holds the socket, and third-party \"do not disturb\" modes can pause Task Scheduler - measured 2026-09-30 - so a daemon that left on idle might not come back). `on-demand` on Windows is an explicit opt-in. The resolved mode and its reason ride the daemon's `start` journal line. 🛑 The stop is by INACTIVITY, never by counting sessions: a crashed session never says goodbye, so a count lies for ever. 🛑 An unknown value is a NAMED REFUSAL at start, never a quiet `auto`. Decided in `src/lifecycle-pure.js`."
+        },
+        "idleSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400,
+          "description": "HOW LONG AN ON-DEMAND DAEMON WAITS WITH NO REQUEST BEFORE LEAVING, in seconds (2026-09-29). Default 1800 (thirty minutes): a coffee break must not cost a cold start - and a cold start is never a loss, since every harness prompt asks the supervisor again. The window closes on EQUALITY of a shared activity counter bumped by every request of every thread, so the daemon leaves between ONE and TWO windows after its last request. Ignored in `login` mode. Out of range or not an integer => a NAMED REFUSAL at start."
         }
       },
       "description": "THE ADDRESS THE DAEMON BINDS AND THE WIRING POSTS TO — ONE fact, ONE key, ONE place (2026-08-25). Default 127.0.0.1:8787. OPTIONAL: with the key (or either half) ABSENT the address stays 127.0.0.1:8787, byte for byte the historical behaviour. ⚠️ IT USED TO BE FOUR PLACES, TWO PER FIELD: `HOST` and `DEFAULT_PORT` constants in src/hooks/http-server.js (what the daemon binds) facing `transport.host` and `transport.port` in wiring.json (what the harness POSTs to). Each pair agreed by luck and nothing compared them — the same class as the 2026-08-22 split brain, where one truth held in nineteen hand-edited copies failed in silence. A wiring pointing where nobody listens gets ECONNREFUSED instantly, and the http lane has NO fallback: every frame of every action would be lost, with no error and no badge. 🛑 IT IS ONE GROUPED KEY AND NOT TWO SIBLINGS (`httpHost` beside `httpPort`): a listening address is ONE fact, and two settings for one fact is the same disease one level up, in the vocabulary. Both consumers read it WHOLE, in one call (`paths.httpEndpoint()`). 🛑 An invalid value is a NAMED REFUSAL naming the key and the value, never a quiet fallback: an operator who declared an address asked for that address. ⚠️ Under SOCKET ACTIVATION the OS owns the listening socket and the daemon IGNORES this key: the address is then the unit's (`ListenStream=`, `SockNodeName`/`SockServiceName`), and this key still tells the WIRING where to knock.",
@@ -233,6 +305,11 @@
       "examples": [
         12
       ]
+    },
+    "afterFrames": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "NUMBER OF FRAMES declared for the moment AFTER a tool answered (23/09/2026) — the bandwidth of the docs that wait for an answer (`response`). Declared APART from `frames` and meant to stay SMALL, because the harness POSTs its WHOLE payload to every declaration, answer included: 32 frames would ship a 100 KB answer 32 times per tool call. What does not fit is never lost — it goes to the emission queue and leaves with the next action. Like `frames` it DRIVES NOTHING AT RUNTIME: it is the source of truth `tools/wiring-generate.js` writes from and `doctor.js --settings` confronts with the wiring. ABSENT OR 0 = THE MOMENT IS OFF (the default since 2026-09-23): the generator writes no declaration for it and the doctor requires none. Any other value that is not an integer >= 1 is a named refusal, so a typo never reads as off."
     },
     "filterMode": {
       "enum": [
@@ -491,28 +568,28 @@
             "description": "TOOL DIMENSION (㊴, 12/08/2026) — EXACT tool name (===, never a substring) + wildcard \"*\". SAME word, SAME meaning as the docs' frontmatter `tool:`: no vocabulary created, we extend the usage to a source that lacked it. This is what finally lets a skill react to an ACTION (with `scope`, which sees ALL params) and not only to a PLACE. A skill could NOT react to a parameter's CONTENT: real measured cost = a client email drafted without its folder."
           },
           "mode": {
-            "enum": [
-              "dumb",
-              "once",
-              "smart"
-            ],
+            "$ref": "#/definitions/cadence/properties/mode",
             "description": "Cadence (default once). Skills = a NEW source with no legacy parity → once/smart FREE from day one (unlike file docs, held at dumb until the Codex port)."
           },
           "threshold": {
-            "type": "integer",
-            "minimum": 1,
+            "$ref": "#/definitions/cadence/properties/threshold",
             "description": "The N of smart mode for this skill."
           },
           "driftUnit": {
-            "enum": [
-              "tool",
-              "turn"
-            ],
+            "$ref": "#/definitions/cadence/properties/driftUnit",
             "description": "Unit of the smart counter for THIS skill: tool (tool calls) or turn (conversation turns). Last word of the cascade."
           },
           "enforce": {
-            "type": "boolean",
+            "$ref": "#/definitions/cadence/properties/enforce",
             "description": "REFUSE the action instead of informing (05/08/2026) — SAME word, SAME meaning as the docs' frontmatter (anti-synonym law). ⚠️ Only effective with an EFFECTIVE `once` mode (skills' framework default): gate.js NEVER honors `enforce` on `dumb`/`smart`, otherwise the blocked agent retries and gets re-blocked ENDLESSLY. An explicit `false` CANCELS the `defaults.skill` inheritance."
+          },
+          "category": {
+            "$ref": "#/definitions/cadence/properties/category",
+            "description": "Restrict this SKILL to sessions carrying a matching declared category — SAME word, SAME meaning as the docs' frontmatter `category` (anti-synonym law). Absent = every session sees it (unchanged, generalist skill)."
+          },
+          "response": {
+            "$ref": "#/definitions/cadence/properties/response",
+            "description": "Deliver this SKILL only AFTER the tool answered, and only on answers its `scope`/`exclude` accept — SAME word, SAME meaning as the docs' frontmatter `response` (anti-synonym law). Absent = decided before the action (unchanged)."
           },
           "note": {
             "type": [

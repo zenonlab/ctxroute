@@ -1,0 +1,20 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a write to a standard stream. NO POLICY HERE.
+# ═══════════════════════════════════════════════════════════════════════
+# Paired with `process-exit.yml`: a file carrying BOTH is the defect class of
+# 2026-10-01 (`process.exit` cuts stdout AND stderr at one pipe buffer on POSIX).
+# The policy — perimeter, declared exemptions, anti-vacuity — lives in
+# `test/stdout-exit-gate.test.js`. No `files:`/`ignores:` here, ever.
+# ⚠️ AST, NEVER REGEX: the files quote the defect in their own comments.
+id: stream-write
+language: JavaScript
+severity: error
+message: >-
+  A WRITE TO A STANDARD STREAM. In a file that also calls `process.exit`, the
+  exit cuts it at 64 KB on a POSIX pipe — leave through `exitAfterFlush`
+  (`src/stdout-exit.js`) or set `process.exitCode` and return.
+rule:
+  any:
+    - pattern: console.$M($$$)
+    - pattern: process.stdout.write($$$)
+    - pattern: process.stderr.write($$$)

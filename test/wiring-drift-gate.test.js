@@ -120,8 +120,22 @@ function settingsPath() {
 //    there would let a machine lose its declared bandwidth in silence — the gate
 //    disarming itself on the one case it exists for. Absent file = nothing to
 //    compare (skip, visibly). Present file = we measure, whatever it says.
-const configPath = process.env.CTXROUTE_CONFIG_PATH
-  || path.join(REPO, 'ctxroute-config.json');
+// 🔴 THE ADDRESS IS ASKED OF ITS OWNER, NEVER REBUILT — AND THIS GATE SLEPT FOR
+//    26 DAYS BECAUSE IT WAS (measured 2026-09-19). It re-assembled
+//    `REPO/ctxroute-config.json` by hand; the configuration MOVED to the OS
+//    conventional address on 2026-08-24 and the repo-local file was REMOVED, not
+//    kept as a fallback. So `hasConfig` was false on EVERY machine, ELEVEN of the
+//    thirteen cells skipped, and the suite stayed GREEN — the one class this
+//    repository names as its worst: a green gate that sees nothing. What it let
+//    through is exactly what it exists to catch: the live wiring sent all 32
+//    frames to ONE port while the generator spreads them over four, so the extra
+//    listening sockets were capacity nobody ever reached.
+// 🛑 `paths.configPath()` already applies the whole precedence (the reserved env
+//    var first, then the launch argument, then the conventional file IF it
+//    exists, then the repo-local one), so a clean clone still resolves to a path
+//    that does not exist and the skip below still fires, VISIBLY, for the reason
+//    it was written for. Never re-spell an address a module owns.
+const configPath = paths.configPath();
 // ⚠️ TWO GUARDS, BECAUSE THE CELLS NEED DIFFERENT THINGS. `wired` covers the
 //    cells that COMPARE the live wiring; `hasConfig` covers those that only RUN the
 //    generator — they never read settings.json, but every one of them derives the
@@ -458,10 +472,18 @@ test.skipIf(!hasConfig)('GATE: every gate declaration carries the bound declared
   // typed here, which would only ever prove that two copies agree.
   assert.ok(frames.length >= 2,
     `${frames.length} gate declaration(s) found in the generated wiring. Below two there is nothing to compare, and "all of them carry the bound" is true of the empty set.`);
-  const announced = frameCoordinates(frames[0]);
-  assert.ok(announced, 'A gate declaration carries no readable total: its own coordinates cannot be read, so the count below would be judged against nothing.');
-  assert.strictEqual(frames.length, announced.total,
-    `${frames.length} gate declaration(s) generated for a wiring that announces ${announced.total} frames. One of the two is wrong, and a frame that never leaves takes its content with it, in silence.`);
+  // 🔑 COUNTED PER MOMENT (2026-09-23): the gate is wired BEFORE the action (`frames`) and AFTER the
+  //    tool answered (`afterFrames`), each moment with its OWN total. Counted together they read
+  //    as "34 declarations for 32 announced" on a correct wiring — the same miscount the doctor
+  //    was taught out of the same day.
+  const moments = new Map();
+  for (const d of frames) moments.set(d.event, (moments.get(d.event) || []).concat([d]));
+  for (const [event, group] of moments) {
+    const announced = frameCoordinates(group[0]);
+    assert.ok(announced, `A ${event} gate declaration carries no readable total: its own coordinates cannot be read, so the count below would be judged against nothing.`);
+    assert.strictEqual(group.length, announced.total,
+      `${group.length} ${event} gate declaration(s) generated for a moment that announces ${announced.total} frames. One of the two is wrong, and a frame that never leaves takes its content with it, in silence.`);
+  }
 
   const missing = framesMissingBound(declarations, bound);
   assert.deepStrictEqual(missing.map(label), [],

@@ -1,7 +1,7 @@
 ---
 match: [State.tla, state-runs.json, state-spec-gate.test.js, store-resolve.js, memory-store-pure.js]
 mode: smart
-threshold: 40
+threshold: 42
 ---
 # specs/tla/State.tla — TLA+ spec of the DURABILITY frontier (2026-08-23)
 

@@ -16,9 +16,34 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: [
+      // ⚠️ The OS units renderer (2026-09-19): deterministic, hermetic, and the
+      //    ONLY suite covering `service/render-units-pure.js`. Absent here its
+      //    mutants sit at NoCoverage while the module looks mutated — and that
+      //    module DECIDES what a supervisor binds, so an unmeasured mutant there
+      //    is a listening address nobody proved.
+      // ⚠️ The category store (Phase 1 of `category`, 2026-09-22): deterministic,
+      //    hermetic, and the ONLY suite covering `src/category-store-pure.js`.
+      //    Absent here its mutants sit at NoCoverage while the module looks mutated.
+      'test/category-store-pure.test.js',
+      // ⚠️ The answer reader of `response` (2026-09-23): the ONLY unit suite covering
+      //    `src/response-pure.js` (the cadence differential covers it through `gate.js`).
+      'test/response-pure.test.js',
+      // ⚠️ The mutation scope (2026-09-23): the ONLY suite covering
+      //    `src/mutation-scope-pure.js`, which decides what CI watches and what the purity rule refuses.
+      'test/mutation-scope-pure.test.js',
+      'test/render-units-pure.test.js',
+      // ⚠️ The invocation snapshot (2026-09-19): deterministic, hermetic, and the
+      //    ONLY suite covering `src/invocation-snapshot-pure.js`. Absent here its
+      //    mutants sit at NoCoverage while the module looks mutated - and that module
+      //    decides what a restarted daemon adopts back into its arrival counters.
+      'test/invocation-snapshot-pure.test.js',
       'test/harness-conformance.test.js',
     'test/differential-normalize.test.js',
     'test/corpus-cache.test.js',
+      // ⚠️ The badge label (2026-09-13): deterministic, hermetic, and the ONLY
+      //    suite covering `src/badge-label-pure.js`. Absent here its mutants sit
+      //    at NoCoverage while the module looks mutated.
+      'test/badge-label.test.js',
       'test/deps-criticality-pure.test.js',
       'test/lib-pure.test.js',
       'test/canary.test.js',
@@ -53,6 +78,11 @@ export default defineConfig({
       'test/frame-sequencer-pure.test.js',
       'test/delivery-notice-pure.test.js',
       'test/freshness-scope.test.js',
+      'test/collect-scope.test.js',
+      'test/split-scope.test.js',
+      'test/worker-pool-pure.test.js',
+      'test/lifecycle-pure.test.js',
+      'test/state-owner-thread.test.js',
       'test/carryover-pure.test.js',
       'test/sources-file.test.js',
       // âš ï¸ `keys` operator (19/08/2026): DETERMINISTIC suite covering sources/file.js.
@@ -166,6 +196,8 @@ export default defineConfig({
       //    list, the ceiling and the closed event vocabulary would be mutated and
       //    measured by NOTHING: a bounded writer proven by nobody.
       'test/lifecycle-log-pure.test.js',
+      'test/backlog-ceiling-pure.test.js',
+      'test/http2-preface-gate.test.js',
       // âš ï¸ The DETERMINISTIC half of the model-twin gate. `model-twin-gate.test.js` itself spawns
       //    `git`, so it never enters this runner: only the PURE detector and verdict are mutated,
       //    and this is the suite that kills their mutants. Absent from this list,
@@ -181,6 +213,12 @@ export default defineConfig({
       //    `CTXROUTE_STATE_DIR` â€” would be measured by NOTHING, and every
       //    self-isolating suite would start writing into the REAL state.
       'test/declared-paths-pure.test.js',
+      // ⚠️ The DECISION half of `tools/deploy.js` (2026-09-03): refuse/nothing/copy. Its shell
+      //    spawns `git`/`npm`/`node`, so it never enters this runner; only the PURE plan is
+      //    mutated, and this is the suite that kills its mutants. Absent from this list,
+      //    `deploy-pure.js` would be mutated and measured by NOTHING — a reconciliation tool
+      //    that silently ships the wrong plan, believed covered.
+      'test/deploy-pure.test.js',
     ],
     exclude: ['**/node_modules/**'],
     // âš ï¸ A BOUND, not a wait (the repo's testTimeout doctrine): the exhaustive

@@ -33,7 +33,7 @@ const lib = require('../lib-pure');
 //    vocabulary (a 2nd local list = a duplicate that drifts silently).
 //    `toolList` = READING of the `tool:` declaration (string OR list), same parser
 //    as the docs: that is what makes the parity EXACT and not "similar".
-const { MODES, DRIFT_UNITS, toolList } = require('../frontmatter');
+const { MODES, toolList, poseSettings } = require('../frontmatter');
 
 // docId prefix RESERVED to this source (inter-source uniqueness, registry contract).
 const DOC_PREFIX = 'skill/';
@@ -69,29 +69,15 @@ function skillRules(config) {
     const match = Array.isArray(entry.match) ? entry.match : [];
     for (const pattern of match) {
       if (typeof pattern !== 'string') continue;
-      const rule = { pattern, doc: DOC_PREFIX + name };
-      // ⚠️ scope/exclude propagated ONLY if they are provided (a key
-      //    :undefined would change the shape for no reason — matchingDocs ignores
-      //    absence). COMPLETE PARITY with file docs: the reused matcher
-      //    already handles scope+exclude, so we expose BOTH (no withheld capability).
-      const filters = inheritFilters(entry, sourceDefaults);
-      if (filters.scope) rule.scope = filters.scope;
-      if (filters.exclude) rule.exclude = filters.exclude;
-      // 🔴 `keys` WAS MISSING HERE — SHIPPED 19/08, INERT ON 8 SKILLS OUT OF 8 (fixed the
-      //    same day). The other three dimensions (`rules`, `servers`, `tool`) hand the
-      //    WHOLE entry to `file.shouldSkip`, so they honoured it; this one REBUILDS a
-      //    rule field by field, so it only carries what is listed right here. Any
-      //    operator absent from this list is born INERT — accepted by the schema,
-      //    ignored by the engine — which is class ㊴, and `match` is the form the entire
-      //    fleet uses. ⇒ sealed by `operator-consumption-gate.test.js`, which PROBES
-      //    every operator on every dimension instead of trusting this list.
-      // ⚠️ ASSIGNED UNCONDITIONALLY, and that is the POINT: `keyDecision` is TOTAL (a
-      //    string, a null, an absent key all yield "no decision", hence no narrowing).
-      //    A shape guard here decided NOTHING — Stryker proved it, surviving as an
-      //    EQUIVALENT mutant. Same doctrine as the sibling lines above: matchingDocs is
-      //    the sole validation authority, a second guard is a mutant we cannot kill.
-      rule.keys = filters.keys;
-      rules.push(rule);
+      // 🔴 THIS USED TO REBUILD THE RULE FIELD BY FIELD — and `keys`, missing from that
+      //    list, shipped INERT on 8 skills out of 8 (19/08/2026): any operator absent from
+      //    a hand list is accepted by the schema and ignored by the engine (class ㊴).
+      // ✅ 23/09/2026: the rule now carries WHATEVER `inheritFilters` resolves — the one
+      //    place that knows each filter's inheritance (scope/exclude chosen, keys composed).
+      //    Same shape as before, byte for byte: `keys` always present, `scope`/`exclude`
+      //    only when set. A filter added there reaches this dimension with no edit here;
+      //    `operator-consumption-gate.test.js` still PROBES every operator on every dimension.
+      rules.push({ pattern, doc: DOC_PREFIX + name, ...inheritFilters(entry, sourceDefaults) });
     }
   }
   return rules;
@@ -210,19 +196,12 @@ function matchingSkills(config, payload) {
 //
 // ⚠️ `defaults` is no longer a parameter: removing it is INTENTIONAL, not an oversight.
 //    Keeping it "just in case" would reopen exactly the double resolution above.
-const validThreshold = (n) => (Number.isInteger(n) && n >= 1 ? n : null);
+// ✅ THE KEY-BY-KEY COPY IS GONE (23/09/2026) — `frontmatter.poseSettings`, driven by the
+//    setting registry, is the ONE body shared with `sources/mcp.js`. Same contract as before:
+//    a valid key is POSED raw, an absent or invalid one is OMITTED, `false` passes (it is how
+//    a skill OPTS OUT of a `defaults.skill.enforce`).
 function declFor(entry) {
-  const e = entry || {};
-  const decl = {};
-  if (MODES.includes(e.mode)) decl.mode = e.mode;
-  if (validThreshold(e.threshold) != null) decl.threshold = e.threshold;
-  if (DRIFT_UNITS.includes(e.driftUnit)) decl.driftUnit = e.driftUnit;
-  // ⚠️ `enforce` (05/08/2026): SUPPLIED, never resolved — like the others. The
-  //    boolean is taken AS IS, `false` included: it is what allows a
-  //    skill to OPT OUT of a `defaults.skill.enforce`. Filtering it as
-  //    an "empty" value would make opting out impossible.
-  if (typeof e.enforce === 'boolean') decl.enforce = e.enforce;
-  return decl;
+  return poseSettings(entry);
 }
 
 // docId 'skill/{name}' -> name of the skill. EXACT inverse of skillRules (same prefix).

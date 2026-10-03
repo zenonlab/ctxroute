@@ -34,7 +34,7 @@
 'use strict';
 
 const lib = require('../lib-pure');
-const { MODES, DRIFT_UNITS } = require('../frontmatter');
+const { poseSettings } = require('../frontmatter');
 
 /**
  * Candidate MCP docs for this call. [] if non-MCP tool or filtered server.
@@ -79,23 +79,14 @@ function matchingDocs(config, { toolName, toolInput }) {
 // 🛑 EVERY decision key MUST be copied here — `declfor-gate.test.js` derives it
 //    from `gate.js` and turns red if a single one is missing. Do not rely on
 //    memory: review let `enforce` slip through for 24 h.
+// ✅ THE KEY-BY-KEY COPY IS GONE (23/09/2026): `enforce` was lost here for 24 h because
+//    this body NAMED each key, and anything not named was dropped SILENTLY. The loop now
+//    lives ONCE in `frontmatter.poseSettings`, driven by the setting registry — a setting
+//    added there is posed here with no edit. `false` still passes (it is a valid boolean),
+//    which is what lets a doc OPT OUT of a `defaults.mcp.enforce`. `servers` still carries
+//    NO cadence (sealed by config-gate, decision of 17/07/2026).
 function declFor(fm) {
-  const data = fm || {};
-  const decl = {};
-  if (MODES.includes(data.mode)) decl.mode = data.mode;
-  if (Number.isInteger(data.threshold) && data.threshold >= 1) decl.threshold = data.threshold;
-  // ⚠️ `driftUnit`: the author proposes (frontmatter), otherwise ABSENT — the global
-  //    fallback (`defaultDriftUnit`) then framework ('tool') lives in gate.js
-  //    (driftUnitForDoc), the UNIQUE cascade point. No per-server: `servers`
-  //    carries NO cadence (sealed by config-gate, decision of 17/07/2026).
-  if (DRIFT_UNITS.includes(data.driftUnit)) decl.driftUnit = data.driftUnit;
-  // ⚠️ `enforce` — WAS MISSING HERE for 24 h (05→06/08/2026). This `declFor`
-  //    COPIES key by key: anything not named is lost SILENTLY.
-  // ⚠️ Taken AS IS, `false` INCLUDED: it is what allows a doc to
-  //    OPT OUT of a `defaults.mcp.enforce`. Filtering it as an "empty"
-  //    value would make opting out impossible (same reason as skill.js).
-  if (typeof data.enforce === 'boolean') decl.enforce = data.enforce;
-  return decl;
+  return poseSettings(fm);
 }
 
 module.exports = { matchingDocs, declFor };

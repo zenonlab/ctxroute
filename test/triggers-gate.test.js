@@ -25,7 +25,7 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { validate, TRIGGERS, KNOWN } from '../src/frontmatter.js';
+import { validate, TRIGGERS, knownKeys } from '../src/frontmatter.js';
 import { rulesFromCorpus } from '../src/loader.js';
 import fileSource from '../src/sources/file.js';
 import toolSource from '../src/sources/tool.js';
@@ -110,7 +110,7 @@ test('NEGATIVE-CHECK: the gate DETECTS a non-consumed trigger', () => {
 test('NEGATIVE-CHECK: a KNOWN key is NEVER enough to trigger', () => {
   // `scope` is known and legitimate, but ALONE it triggers nothing:
   // distinguishing it from a trigger is the whole point of §A.
-  assert.ok(KNOWN.includes('scope') && !TRIGGERS.includes('scope'));
+  assert.ok(knownKeys().includes('scope') && !TRIGGERS.includes('scope'));
   assert.ok(validate({ scope: ['x'] }).length > 0,
     'a doc with only `scope` would be mute: it MUST be red');
 });

@@ -1,6 +1,7 @@
 ---
 rules: [{"pattern":"mutation-floor-gate","scope":["ctxroute"]},{"pattern":"stryker.conf.json","scope":["ctxroute"]}]
-mode: dumb
+mode: smart
+threshold: 30
 ---
 # mutation-floor-gate — a report that does not cover everything proves NOTHING
 

@@ -45,6 +45,9 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fork, execFileSync } from 'node:child_process';
+// 🛑 THE DEFAULTED SOCKET COUNT COMES FROM ITS OWNER. A literal here would be the
+//    two-places-for-one-number divergence this gate was written to forbid.
+import { DEFAULT_LISTENERS } from '../src/declared-paths-pure.js';
 
 // 🛑 THE PRODUCTION ENTRY POINT, WHICH IS THE BOOTSTRAP — never `http-server.js`
 //    (it refuses to run as a main module by name, because nothing would have
@@ -94,17 +97,11 @@ net.Server.prototype.listen = function (...args) {
 /**
  * A port nobody is using — MEASURED by binding it, never guessed, and measured
  * ON THE HOST THAT WILL BE DECLARED: a port free on one loopback family proves
- * nothing about the other.
+ * nothing about the other. From the ONE shared allocator (test/support/free-port.js).
  */
-function freePort() {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.listen(0, DECLARED_HOST, () => {
-      const p = /** @type {any} */ (s.address()).port;
-      s.close(() => resolve(p));
-    });
-  });
-}
+import * as sharedPort from './support/free-port.js';
+// ⚠️ No `listeners` is declared here, so the daemon binds the DEFAULT count from its port.
+const freePort = () => sharedPort.freePort({ host: DECLARED_HOST, span: DEFAULT_LISTENERS });
 
 /**
  * Writes a configuration DECLARING one address, in its own directory.
@@ -117,7 +114,7 @@ function freePort() {
 function configDeclaring(name, host, port) {
   const file = path.join(TMP, `${name}.json`);
   fs.writeFileSync(file, JSON.stringify({
-    enabled: true, showNotification: false, frames: 2, http: { host, port },
+    enabled: true, showNotification: false, frames: 2, afterFrames: 1, http: { host, port },
   }));
   return file;
 }
@@ -176,15 +173,27 @@ const TCP = (m) => Boolean(m) && Boolean(m.listening) && typeof m.listening === 
  * the arguments `listen` received for the host. Never a delay.
  */
 function endpointListenedOn(tracked) {
+  // 🔴 IT RESOLVED ON THE FIRST TCP `listen` IT SAW, and that stopped being an
+  //    ANSWER the day the daemon opened more than one socket: the four binds race,
+  //    so this returned `base + 1` against a configuration declaring `base` and
+  //    accused the daemon of carrying a constant it does not carry (measured
+  //    2026-09-19). ⇒ it now waits for the whole DECLARED block and returns its
+  //    LOWEST port — the one the configuration names and the one every other
+  //    address is derived from. ⚠️ Waiting for a COUNT, never for a delay: the
+  //    count is a fact the configuration states, a delay would be a guess.
   const seen = (m) => ({ host: Array.isArray(m.asked) ? m.asked[1] : undefined, port: m.listening.port });
-  const already = tracked.listeners.find(TCP);
-  if (already !== undefined) return Promise.resolve(seen(already));
+  const lowest = (ms) => ms.map(seen).sort((a, b) => a.port - b.port)[0];
+  const already = tracked.listeners.filter(TCP);
+  if (already.length >= DEFAULT_LISTENERS) return Promise.resolve(lowest(already));
   return new Promise((resolve, reject) => {
+    const bound = [...already];
     const finish = () => { tracked.child.off('message', onMessage); tracked.child.off('exit', died); };
     const onMessage = (m) => {
       if (!TCP(m)) return;
+      bound.push(m);
+      if (bound.length < DEFAULT_LISTENERS) return;
       finish();
-      resolve(seen(m));
+      resolve(lowest(bound));
     };
     const died = (code) => {
       finish();
@@ -215,10 +224,37 @@ function endpointWiredBy(name, configPath) {
   // ⚠️ ANTI-VACUITY: no URL at all would return `undefined`, which compares equal
   //    to an unread listener. A wiring with nothing to point anywhere is not a
   //    wiring that agrees.
-  assert.strictEqual(endpoints.size, 1,
-    `the generated wiring names ${endpoints.size} distinct endpoints (${[...endpoints].join(', ')}). Below one there is nothing to compare, and above one the frames of a single action knock at different doors.`);
-  const [host, port] = [...endpoints][0].split('|');
-  return { host, port: Number(port) };
+  assert.ok(endpoints.size >= 1,
+    'the generated wiring names NO endpoint at all: there is nothing to compare, so this cell would certify whatever it found.');
+
+  // 🔴 IT DEMANDED EXACTLY ONE ENDPOINT UNTIL 2026-09-19, and that reading became
+  //    FALSE BY DESIGN the day `http.listeners` shipped. Its message read "above
+  //    one the frames of a single action knock at different doors" — they now DO,
+  //    deliberately: the accept queue is capped PER SOCKET, so the frames are
+  //    spread round-robin over the sockets the configuration declares, and every
+  //    door belongs to the SAME daemon. 🛑 The INTENT is kept whole and made
+  //    STRICTER rather than relaxed: it forbade disagreement, so it now requires
+  //    that EVERY endpoint be one the configuration declares — one host, and the
+  //    exact contiguous block of ports — instead of forbidding the spread itself.
+  //    Loosening it to "any endpoint will do" would have been an amputation.
+  // ⚠️ THE EXPECTED COUNT IS IMPORTED FROM ITS OWNER, never retyped: a `4` written
+  //    here would be a second place holding one number, which is the divergence
+  //    this very gate exists to make impossible.
+  const hosts = new Set([...endpoints].map((e) => e.split('|')[0]));
+  assert.strictEqual(hosts.size, 1,
+    `the generated wiring names ${hosts.size} distinct HOSTS (${[...hosts].join(', ')}): the frames of one action would knock at different machines, which no configuration can declare.`);
+  // ⚠️ THE SPREAD REACHES `min(frames, listeners)` DOORS, NEVER ALWAYS ALL OF THEM
+  //    — round-robin over N sockets with F frames touches the first `min(F, N)`.
+  //    Demanding the whole block was measured WRONG on the first run (2 ports
+  //    wired against 4 declared) and it is written here so nobody re-derives it.
+  //    What is INVARIANT, and what actually loses frames when it breaks: no port
+  //    outside the declared block, and the block anchored on the declared port.
+  const ports = [...endpoints].map((e) => Number(e.split('|')[1])).sort((a, b) => a - b);
+  const block = Array.from({ length: DEFAULT_LISTENERS }, (_, i) => ports[0] + i);
+  const outside = ports.filter((p) => !block.includes(p));
+  assert.deepStrictEqual(outside, [],
+    `the generated wiring points at ${JSON.stringify(outside)}, outside the ${DEFAULT_LISTENERS} contiguous ports ${JSON.stringify(block)} the configuration declares. A frame pointed outside that block knocks where nothing listens, and the loss is silent.`);
+  return { host: [...hosts][0], port: ports[0] };
 }
 
 // ── ① THE TWO CONSUMERS READ ONE DECLARATION ─────────────────────────

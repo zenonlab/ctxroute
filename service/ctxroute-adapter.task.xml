@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  =====================================================================
+  ctxroute-adapter - reconcile the dedicated loopback adapter at BOOT.
+  =====================================================================
+
+  WHY A SECOND TASK AND NOT AN ACTION OF THE DAEMON'S TASK.
+    PRIVILEGE SEPARATION. Creating a network adapter needs elevation; serving
+    hook frames does not. The daemon therefore stays an ordinary user process
+    and this task - which runs as SYSTEM - does ONE thing and exits. Merging
+    them would give the long-lived process privileges it never needs, for the
+    lifetime of the session.
+
+  WHY BOOT AND NOT LOGON.
+    The daemon's task is triggered at LOGON. This one must have finished
+    BEFORE it, or the daemon would try to bind an address that does not exist
+    yet. Boot precedes every logon, which is what orders the two without any
+    coordination between them.
+
+  WHY SYSTEM AND NOT "the administrator".
+    S-1-5-18 is always available, needs no stored password, and never raises a
+    UAC prompt. That is what makes elevation a ONE-TIME cost, paid when the
+    task is registered - never again at every boot.
+
+  WHAT IT IS NOT.
+    Not a watchdog, not a heartbeat, not a health check. It converges towards a
+    declared state and exits; if the state is already correct it changes
+    nothing and says so. Re-running it is always safe.
+
+  DECLARED LIMIT, written rather than hidden: this runs at BOOT ONLY. An
+  adapter removed while the machine is up is NOT repaired until the next boot.
+  It is DETECTED at the next session start by the doctor's wiring check, which
+  names the dead address and the command that repairs it. Continuous
+  reconciliation was refused on purpose: a privileged task waking on a timer,
+  for ever, to fix something that has never yet happened, is a cost with no
+  measurement behind it.
+
+  (No long option is ever spelled inside these comments: XML forbids a double
+  hyphen anywhere in a comment, and a real parser rejects the whole file. That
+  is what happened here on the very first run of the installer, and what the
+  service units gate catches by reading every unit in this directory.)
+
+  ExecutionTimeLimit is BOUNDED here, unlike the daemon's task (PT0S, "run
+  indefinitely"): this action is a short convergence, and a reconciler that
+  hangs must be stopped rather than held open.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Reconciles the dedicated loopback adapter that the ctxroute HTTP lane binds, so the declared listening address exists before the daemon starts.</Description>
+    <URI>\ctxroute-adapter</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <BootTrigger>
+      <Enabled>true</Enabled>
+    </BootTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>CHANGE_ME_COMMAND</Command>
+      <Arguments>CHANGE_ME_ARGUMENTS</Arguments>
+    </Exec>
+  </Actions>
+</Task>

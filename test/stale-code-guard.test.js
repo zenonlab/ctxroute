@@ -76,17 +76,9 @@ beforeAll(() => {
 });
 afterAll(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
-/** A port nobody holds — asked of the kernel, never guessed. */
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.on('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-}
+// ⚠️ The port comes from the ONE shared allocator (below the ephemeral range) — see test/support/free-port.js.
+import { freePort } from './support/free-port.js';
+import { DEFAULT_LISTENERS } from '../src/declared-paths-pure.js';
 
 function stateDirFor(name) {
   const dir = path.join(TMP, 'state-' + name);
@@ -101,7 +93,7 @@ function stateDirFor(name) {
  *    address since 2026-08-24, so leaving it unset would read the real one.
  */
 async function startDaemon(name, entry, root, options) {
-  const port = await freePort();
+  const port = await freePort({ span: DEFAULT_LISTENERS });
   const stateDir = stateDirFor(name);
   const child = spawn(process.execPath, [path.join(root, 'src', 'hooks', entry)], {
     env: {
@@ -128,12 +120,26 @@ async function startDaemon(name, entry, root, options) {
   //    refusing every request — probing it would kill it through the wrong path.
   if (!options || options.serve !== false) {
     for (;;) {
-      if (dead) throw new Error(`the daemon died before serving: ${JSON.stringify(dead)}\n${stderr}`);
+      if (dead) throw new Error(`the daemon died before serving: ${JSON.stringify(dead)}\n${diagnosis(stateDir)}\n${stderr}`);
       try { await ask(port, '{}'); break; } catch { /* not listening yet */ }
       await settle();
     }
   }
   return { port, stateDir, child, ended, stderr: () => stderr };
+}
+
+/**
+ * What an unexpected death was, in the daemon's OWN words.
+ * 🔴 23/09/2026: ⑥bis read `code 1` where 90 was asserted, and nothing said why — it was
+ *    the kernel refusing a port a neighbour had taken (`bind-refused lane=port`), a
+ *    collision of the test harness, not a verdict on the guard. The port now comes from a
+ *    band no outgoing connection can be given (`test/support/free-port.js`); should any
+ *    collision come back, it NAMES itself here instead of reading as a regression.
+ */
+function diagnosis(stateDir) {
+  const text = journal(stateDir);
+  const collided = /event=bind-refused[^\n]*lane=port/.test(text);
+  return (collided ? 'PORT COLLISION (the kernel refused the port — a harness race, not the guard):\n' : 'daemon journal:\n') + text;
 }
 
 /**
@@ -202,7 +208,7 @@ test('① the verified set is DERIVED from the load hook, and it is NOT empty', 
 // ═══════════════════════════════════════════════════════════════════════
 // ② THE OUTAGE ITSELF — only the ACCESS TIME moved
 // ═══════════════════════════════════════════════════════════════════════
-test('② ONLY THE ACCESS TIME CHANGED ⇒ the daemon does NOT die, and says so', async () => {
+test('② ONLY THE ACCESS TIME CHANGED ⇒ the daemon does NOT die, and says so', async (ctx) => {
   const root = makeCopy('atime');
   const d = await startDaemon('atime', 'http-daemon.js', root);
   const before = fs.statSync(victimOf(root));
@@ -217,13 +223,41 @@ test('② ONLY THE ACCESS TIME CHANGED ⇒ the daemon does NOT die, and says so'
   assert.ok(fs.readFileSync(victimOf(root)).equals(content),
     'the fixture must not change a single byte, or it proves nothing');
 
-  const line = await waitForEvent(d.stateDir, 'code-unchanged');
+  // 🔑 THE HALF THAT IS DECIDABLE ON EVERY MACHINE, ASSERTED FIRST AND
+  //    UNCONDITIONALLY: whatever the kernel does or does not say, a daemon that
+  //    died on a metadata-only touch IS the 2026-08-24 outage. Asserting this
+  //    before the wait is what keeps the cell measuring when the notification
+  //    never comes — the skip below then costs the journal line, never the proof.
+  assert.strictEqual(d.child.exitCode, null, 'the daemon died on a metadata-only event — that IS the outage');
+  assert.strictEqual(typeof await ask(d.port, PAYLOAD), 'string', 'it must still be SERVING, not merely alive');
+
+  // 🔴 THIS HALF NEEDS THE KERNEL TO SPEAK, AND NOT EVERY MACHINE DOES — the twin
+  //    cell ⑥bis learned that on CI on 2026-08-31 (all three runners delivered no
+  //    metadata notification at all) and was bounded THAT DAY. This one carries
+  //    the SAME dependency and was left unbounded: it waited its full minute and
+  //    reported a regression that does not exist, which is exactly the red a full
+  //    suite has been showing since. 🛑 An asymmetry between two cells testing one
+  //    fact is the defect, never the number of seconds.
+  // 🛑 THE BOUND IS A NON-DECISION, NEVER A WIDER LIMIT: waiting longer cannot
+  //    make an absent notification arrive, and stretching a timeout until a red
+  //    turns green is how a cell stops measuring.
+  const NOTIFICATION_WINDOW_MS = 20000;
+  const line = await Promise.race([
+    waitForEvent(d.stateDir, 'code-unchanged'),
+    new Promise((resolve) => { setTimeout(() => resolve(null), NOTIFICATION_WINDOW_MS).unref(); }),
+  ]);
+  if (line === null) {
+    d.child.kill();
+    await d.ended;
+    ctx.skip(`UNMEASURED: this kernel delivered no metadata notification within ${NOTIFICATION_WINDOW_MS} ms, `
+      + 'so the daemon had nothing to ignore — it stayed ALIVE and SERVING throughout, which is asserted above. '
+      + 'The comparison itself is NOT in question (cell ③ proves it reddens on a real change).');
+    return;
+  }
   // ⚠️ THE NOISE MUST STAY OBSERVABLE. A guard nobody can see deciding is a
   //    guard nobody can trust — and this is the case that used to be 258 deaths.
   assert.match(line, /event=code-unchanged/);
   assert.match(line, /checked=\d+/);
-  assert.strictEqual(d.child.exitCode, null, 'the daemon died on a metadata-only event — that IS the outage');
-  assert.strictEqual(typeof await ask(d.port, PAYLOAD), 'string', 'it must still be SERVING, not merely alive');
   console.log(`[stale-code] notification ignored: ${line.trim()}`);
   d.child.kill();
   await d.ended;
@@ -425,5 +459,6 @@ test('⑥bis SEEN RED: a comparison that always answers "stale" reproduces the 2
     return;
   }
   assert.strictEqual(end.code, 90,
-    'a metadata-only event did NOT kill the paranoid daemon — cell ② is therefore not measuring the comparison either');
+    'a metadata-only event did NOT kill the paranoid daemon — cell ② is therefore not measuring the comparison either\n'
+    + diagnosis(d.stateDir));
 }, 60000);

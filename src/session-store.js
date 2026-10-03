@@ -56,19 +56,70 @@ function storeFile(prefix, sessionId) {
  *    counter-proof in the suite; the retry may cross an absence, it may never
  *    invent a presence.
  *
+ * 🔴 AND THE COUNT OF IMMEDIATE RETRIES WAS THE WRONG BOUND — REPRODUCED LOCALLY
+ *    2026-10-02, after two months as "unreproducible". A 10 s race (instead of the
+ *    suite's 1.5 s) read `{}` 28 times out of 83,245 on Windows, EVERY ONE after
+ *    exactly 20 consecutive `ENOENT`, i.e. this loop running out. Measured with no
+ *    bound: the window lasts 8-17 ms (105 immediate reads) — the WRITER losing the
+ *    processor between the two halves of a replacing rename, one scheduler quantum.
+ *    No count of immediate reads covers a quantum on every machine, and waiting
+ *    longer would charge that wait to every read of a state that truly does not
+ *    exist yet.
+ * ✅ SO THE QUESTION IS ASKED OF WHAT KNOWS: is a write of THIS key in flight? Its
+ *    temporary sibling (`<name>.<pid>.<rand>.tmp`, `saveState` below) exists from
+ *    before the rename until it completes — MEASURED present in 3 windows out of 3.
+ *    No sibling ⇒ the absence is a FACT and `{}` is TRUE, answered at once. A sibling
+ *    ⇒ the read is retried; on Windows listing the directory itself waits for the
+ *    rename to finish (10-17 ms measured), so the next read lands after it.
+ * ⚠️ BOUNDED STILL, by the same `RENAME_RETRIES`: a writer killed between its tmp and
+ *    its rename leaves a sibling behind, and a reader of that key then pays the bound
+ *    and answers `{}` exactly as before, until the PreCompact sweep removes the tmp.
+ *
  * @param {(chemin: string) => string} lire injected reader (the real one is `fs`)
  * @param {string} filePath
+ * @param {(chemin: string) => boolean} [writeInFlight] whether a write of `filePath`
+ *   is under way (the real one lists the directory); injected by the suite
  */
-function readThrough(lire, filePath) {
+function readThrough(lire, filePath, writeInFlight = writeInFlightOnDisk) {
   for (let i = 0; i < RENAME_RETRIES; i += 1) {
     try {
       return JSON.parse(lire(filePath));
     } catch (err) {
-      if (err && /** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') continue;
-      return {};
+      if (!err || /** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') return {};
+      if (!writeInFlight(filePath)) return {};
     }
   }
   return {};
+}
+
+/**
+ * Does a temporary sibling of `filePath` exist, i.e. is a `saveState` of that key
+ * between its write and its rename? Fail-open to "no": an unreadable directory
+ * cannot hold a write in flight we could wait for.
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function writeInFlightOnDisk(filePath) {
+  let names;
+  try { names = fs.readdirSync(path.dirname(filePath)); } catch { return false; }
+  return names.some((n) => isTmpOf(filePath, n));
+}
+
+// 🛑 THE TEMPORARY NAME HAS TWO READERS AND ONE AUTHOR, AND THEY LIVE SIDE BY SIDE ON
+//    PURPOSE. `saveState` writes `tmpFileFor(dest)`; `writeInFlightOnDisk` recognises it
+//    with `isTmpOf`. If the two drift apart, the reader stops seeing writes in flight and
+//    the 2026-10-02 re-delivery comes back with no cell red but the one that pairs them
+//    (`session-store.test.js`, "the tmp saveState writes is the tmp the reader recognises").
+//    ⚠️ The shape (`<dest>.<pid>.<rand>.tmp`) also carries the store's PREFIX, which is
+//    what lets the PreCompact sweep and the age eviction find an orphan: keep both.
+/** @param {string} dest @returns {string} a unique temporary sibling of `dest` */
+function tmpFileFor(dest) {
+  return `${dest}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+}
+
+/** @param {string} dest @param {string} name a directory entry @returns {boolean} */
+function isTmpOf(dest, name) {
+  return name.startsWith(path.basename(dest) + '.') && name.endsWith('.tmp');
 }
 
 function loadState(prefix, sessionId) {
@@ -88,7 +139,7 @@ function loadState(prefix, sessionId) {
 //    `ctxroute-reset.js` sweeps it like the rest — never an orphan leftover.
 function saveState(prefix, sessionId, state) {
   const dest = storeFile(prefix, sessionId);
-  const tmp = `${dest}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  const tmp = tmpFileFor(dest);
   try {
     fs.mkdirSync(paths.stateDir(), { recursive: true });
     fs.writeFileSync(tmp, JSON.stringify(state));
@@ -153,4 +204,4 @@ function purgeByPrefix(keyPrefix, listing) {
   return n;
 }
 
-module.exports = { storeFile, loadState, saveState, readThrough, purgeByPrefix };
+module.exports = { storeFile, loadState, saveState, readThrough, purgeByPrefix, tmpFileFor, isTmpOf };

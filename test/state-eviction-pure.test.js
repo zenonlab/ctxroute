@@ -20,7 +20,21 @@ import {
   byAgeThenName,
   MAX_EPHEMERAL,
   MAX_DURABLE,
+  durablePrefixes,
 } from '../src/state-eviction-pure.js';
+
+// ⚠️ HARD-CODED (never derived from the module): the durable class is the set eviction may
+//    NEVER age out. `plan-` must not be in it — an ephemeral key counted as durable would sit
+//    in the 4096-slot class and evict an agent's real memory first.
+test('durablePrefixes: the durable class, and the ephemeral prefix is NOT in it', () => {
+  expect(durablePrefixes()).toEqual(['doc-seen-', 'ctxroute-seen-', 'turn-count-', 'remainder-', 'category-']);
+});
+test('classify: each store prefix gets ITS declared class, a stranger gets none', () => {
+  expect(classify('plan-s--inv-1.json')).toBe('ephemeral');
+  expect(classify('category-s.json')).toBe('durable');
+  expect(classify('turn-count-s.json')).toBe('durable');
+  expect(classify('canary.json')).toBe(null);
+});
 
 // ── THUNKS ───────────────────────────────────────────────────────────────────
 const NOW = () => 1_000_000_000;
