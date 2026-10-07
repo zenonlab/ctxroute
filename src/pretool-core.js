@@ -74,6 +74,10 @@ const { docLockDir } = require('./store-resolve');
 //    single place that calls `st.loadState`/`saveState`, exactly like it
 //    already does for `STORE_PREFIX`/`PLAN_PREFIX`/`TURN_PREFIX`.
 const categoryStore = require('./category-store-pure');
+// ⚠️ WHO IS ACTING (2026-10-07): the derived identity + the meaning of a declaration.
+const categoryPure = require('./category-pure');
+// ⚠️ The journal writer: a failure this module survives is SAID there (fail-open).
+const log = require('./log');
 
 // Per-session state, prefix 'doc-seen-' (dedup by DOC) — cf session-store.js.
 const STORE_PREFIX = 'doc-seen-';
@@ -211,6 +215,22 @@ function run(data, emit, options) {
     //    invocation, and the two moments of one action share the harness's call id — reusing it
     //    would replay the BEFORE plan after the answer and deliver nothing, in silence.
     const after = options && options.after && typeof options.after === 'object' ? options.after : undefined;
+    // 🔑 WHO IS ACTING IS READ THROUGH THE SHELL'S PROFILE (2026-10-07), like the moment above:
+    //    `harness-profile.IDENTITY.<harness>` says where this harness writes an agent's id and
+    //    type. This core names no field. Absent ⇒ no identity derived ⇒ the declared categories
+    //    alone, exactly the 22/09 behaviour.
+    const identity = options && options.identity && typeof options.identity === 'object' ? options.identity : undefined;
+    // ⚠️ THE CONTEXT'S CATEGORIES, ONE READING FOR BOTH CALL SITES (the locked path and the
+    //    lock-less fallback): the DECLARED ones — a sub-agent with none of its own inherits the
+    //    MASTER's (`parentScopeId`, one level, measured) — plus the identity DERIVED from this
+    //    very payload, never stored, never inherited (`category-pure.contextFacts`).
+    const contextFactsFrom = (st) => {
+      let declared = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, sessionId));
+      if (declared.length === 0 && parentScopeId) {
+        declared = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, parentScopeId));
+      }
+      return categoryPure.contextFacts(declared, data, identity);
+    };
     // ⚠️ CARRIED BY THE PAYLOAD too: the moment is a fact of the gesture this core decides on, and
     //    `explain.js` must build the same fields (`explain-payload-parity`) — the collection ignores it.
     const payload = { toolName, toolInput, cwd: data.cwd, after };
@@ -369,16 +389,9 @@ function run(data, emit, options) {
         return { segments: cache.segments, decision: cache.decision, frames: split(cache.segments), filteredOut: cache.filteredOut || [], categoryOut: cache.categoryOut || [] };
       }
       const state = st.loadState(STORE_PREFIX, sessionId);
-      // ⚠️ READ ONLY (Phase 1): this session's declared categories, exactly like
-      //    every other per-scope state above — never resolved, never defaulted
-      //    beyond what `categoriesOf` already does on an absent/malformed state.
-      //    A sub-agent with NO category of its own inherits the MASTER's
-      //    (`parentScopeId`, cf its declaration above) — one level, measured.
-      let sessionCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, sessionId));
-      if (sessionCategories.length === 0 && parentScopeId) {
-        sessionCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, parentScopeId));
-      }
-      const r = gate.decide(config, decls, matched, state, turnCount, acc.owner, toolName, sessionCategories, after);
+      // ⚠️ READ ONLY: the declared categories are never written from this file (cf
+      //    `CATEGORY_PREFIX`); the derived identity is never stored at all.
+      const r = gate.decide(config, decls, matched, state, turnCount, acc.owner, toolName, contextFactsFrom(st), after);
 
       // ── EMISSION: queue first, fresh next, remainder persisted ──
       // ⚠️ THIS WHOLE MECHANISM LIVES IN `emission-core.js` (RFC 6455 order,
@@ -477,11 +490,7 @@ function run(data, emit, options) {
       //    WRITES — reading never needed it and has no side effect.
       //    We read, we decide, we write NOTHING. Detail: `gate.md`.
       const knownState = st.loadState(STORE_PREFIX, sessionId);
-      let knownCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, sessionId));
-      if (knownCategories.length === 0 && parentScopeId) {
-        knownCategories = categoryStore.categoriesOf(st.loadState(CATEGORY_PREFIX, parentScopeId));
-      }
-      const r = gate.decide(config, decls, matched, knownState, turnCount, acc.owner, toolName, knownCategories, after);
+      const r = gate.decide(config, decls, matched, knownState, turnCount, acc.owner, toolName, contextFactsFrom(st), after);
       // 🔴 `injectLockless`, NOT `inject` — fix of 2026-08-20, proved sufficient by the TLA+
       //    spec (`TransportCandidateFix.cfg`) BEFORE being written here.
       //    Without the lock we may DELIVER but never WRITE. A `once` document delivered and
@@ -671,8 +680,10 @@ function run(data, emit, options) {
     //    there, so it must not be read as a comment on what is.
     const suffix = badge === '' ? '' : badge + budget.chunkSuffix(plan.emitted) + alarm + filter + categoryBadge;
     emit(res.decision, fullDoc, lib.joinSystemMessage(suffix, avis));
-  } catch {
-    // fail-open: we ANSWER "nothing to inject", we do not kill the process.
+  } catch (err) {
+    // fail-open: we ANSWER "nothing to inject", we do not kill the process —
+    // and the journal says why the agent got nothing.
+    log.hookError('pretool-core', err);
   }
 }
 

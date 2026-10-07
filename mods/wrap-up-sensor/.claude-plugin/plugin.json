@@ -1,0 +1,5 @@
+{
+  "name": "ctxroute-wrap-up-sensor",
+  "version": "0.1.0",
+  "description": "ctxroute wrapUp (experimental): tells ctxroute how full the context window is after each turn"
+}

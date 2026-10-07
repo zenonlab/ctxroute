@@ -177,10 +177,25 @@ if (config) {
   const schema = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'ctxroute-config.schema.json'), 'utf8'));
 
   const sources = ADAPTERS.map((a) => a.id).sort();
+  // 2026-10-07: the SESSION corpus is the 5th stage owner — not an adapter (no gesture to
+  //    match), but a corpus whose `category` cascades. Its name comes from its own source.
+  const { SOURCE_ID: SESSION } = req('../src/sources/session.js');
   const declaredKeys = Object.keys(schema.properties.defaults.properties).sort();
   ok(`defaults gate: registry not empty (${sources.join(',')})`, sources.length >= 1);
-  ok(`defaults gate: keys = exactly the registry sources (${declaredKeys.join(',')})`,
-    JSON.stringify(declaredKeys) === JSON.stringify(sources));
+  ok(`defaults gate: keys = exactly the registry sources + the session corpus (${declaredKeys.join(',')})`,
+    JSON.stringify(declaredKeys) === JSON.stringify(sources.concat(SESSION).sort()));
+  // `defaults.session` admits EXACTLY the settings whose registry says they mean something
+  // when a context starts — derived, so a setting gaining `atStart: true` opens its key here.
+  const { settingRegistry } = req('../src/frontmatter.js');
+  const registry = settingRegistry();
+  const atStart = Object.keys(registry).filter((k) => registry[k].atStart === true);
+  atStart.sort();
+  const sessionKeys = Object.keys(schema.properties.defaults.properties[SESSION].properties);
+  sessionKeys.sort();
+  const sessionShape = schema.properties.defaults.properties[SESSION];
+  ok(`defaults gate: ${SESSION} admits exactly the settings meaningful at start (${atStart.join(',')})`,
+    JSON.stringify(sessionKeys) === JSON.stringify(atStart)
+    && sessionShape.additionalProperties === false && atStart.length >= 1);
 
   // The schema refuses any key outside the registry (otherwise the derivation
   // above would be cosmetic: an unknown key would still get through).
@@ -202,9 +217,12 @@ if (config) {
   //    schema, enriched with the exact key that caused the 04/08 mistake.
   //    ⚠️ NEVER on the real file: other suites read it IN PARALLEL (38 tests
   //    fell on 04/08 for a sabotage on a live file).
-  const verdict = (declaredKeysAgain) => JSON.stringify([...declaredKeysAgain].sort()) === JSON.stringify(sources);
-  ok('defaults gate: NEGATIVE-CHECK — a key outside the registry (session) makes it GO RED',
-    verdict([...declaredKeys, 'session']) === false);
+  // 🔄 2026-10-07: the 04/08 mistake WAS `session` — a key accepted and inert. It became a real
+  //    stage the day `category` reached the session corpus, so the phantom key is now a made-up one.
+  const expected = sources.concat(SESSION).sort();
+  const verdict = (declaredKeysAgain) => JSON.stringify([...declaredKeysAgain].sort()) === JSON.stringify(expected);
+  ok('defaults gate: NEGATIVE-CHECK — a key outside the registry (a phantom source) makes it GO RED',
+    verdict([...declaredKeys, 'phantom']) === false);
   ok('defaults gate: NEGATIVE-CHECK — a source REMOVED from the schema makes it GO RED',
     verdict(declaredKeys.slice(1)) === false);
   ok('defaults gate: the same verdict is GREEN on the real keys (otherwise the check proves nothing)',

@@ -97,9 +97,12 @@ function laneHttp(payload, frame, frames) {
       let text = '';
       res.on('data', (c) => { text += c; });
       res.on('end', () => {
-        process.env.CTXROUTE_FILEDOCS_DIR = previous.docs;
-        process.env.CTXROUTE_STATE_DIR = previous.state;
-        process.env.CTXROUTE_CONFIG_PATH = previous.config;
+        // ⚠️ `delete` when the saved value is absent: assigning `undefined`
+        //    writes the STRING "undefined", a relative directory in the cwd.
+        for (const [k, v] of [['CTXROUTE_FILEDOCS_DIR', previous.docs], ['CTXROUTE_STATE_DIR', previous.state], ['CTXROUTE_CONFIG_PATH', previous.config]]) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
+        }
         try { resolve(JSON.parse(text)); } catch (e) { reject(e); }
       });
     });

@@ -33,6 +33,9 @@ const emission = require('../emission-core');
 const lib = require('../lib-pure');
 const paths = require('../paths');
 const { readStdinJson } = require('../stdin-json');
+// ⚠️ THE JOURNAL WRITER: a failure this hook survives is SAID there, and the
+//    hook still leaves as it would have (fail-open, nothing to the agent).
+const log = require('../log');
 
 // ⚠️ THIS SHELL IS COMMON TO BOTH HARNESSES — there is NO dialect left to
 //    declare (07/08/2026, Codex port). It used to carry
@@ -160,10 +163,13 @@ function run(data) {
 if (require.main === module) {
   readStdinJson(
     (data) => {
-      try { run(data); } catch { /* fail-open: we leave the previous verdict */ }
+      try { run(data); } catch (err) { log.hookError('canary-check', err); /* fail-open: we leave the previous verdict */ }
       process.exit(0);
     },
-    () => process.exit(0)
+    (err) => {
+      log.hookError('canary-check', err);
+      process.exit(0);
+    }
   );
 }
 

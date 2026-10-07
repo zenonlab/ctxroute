@@ -154,7 +154,16 @@ describe("the walk that finds the manifests", () => {
     //    blocking production to prove a point about a test is the "never share a
     //    window between observation and intervention" rule, broken again.
     const { docLockDir } = await import("../src/store-resolve.js");
-    const address = docLockDir("walk-probe-session");
+    // ⚠️ THE DEFAULT ADDRESS is the question, so the per-file test isolation
+    //    (`isolate-state.setup.mjs`) is lifted for this one reading, then restored.
+    const isolated = process.env.CTXROUTE_STATE_DIR;
+    delete process.env.CTXROUTE_STATE_DIR;
+    let address;
+    try {
+      address = docLockDir("walk-probe-session");
+    } finally {
+      if (isolated !== undefined) process.env.CTXROUTE_STATE_DIR = isolated;
+    }
     expect(
       path.relative(ROOT, address).replace(/\\/g, "/").startsWith("state/"),
       `the lock address is ${address} — if locks no longer live under state/, this guard now excludes the WRONG folder and the walk is unprotected`,

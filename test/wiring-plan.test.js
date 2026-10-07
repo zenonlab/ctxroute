@@ -571,7 +571,7 @@ test('every missing machine fact is a NAMED refusal — a guessed one wires the 
 test('every harness event the manifest accepts is spelled out, and each one wires', () => {
   const events = [
     'SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit',
-    'PreCompact', 'SessionEnd', 'Stop', 'SubagentStop',
+    'PreCompact', 'SessionEnd', 'Stop', 'SubagentStart', 'SubagentStop',
   ];
   const out = plan(manifest({
     consumers: events.map((event, i) => ({ module: `tools/e${i + 1}.js`, event, timeout: 1 })),
@@ -735,7 +735,7 @@ test('a placeholder is a PAIR of braces — a single one is an ordinary argument
 test('every declared event is REACHABLE — the whitelist is a contract, not decoration', () => {
   for (const event of [
     'SessionStart', 'PreToolUse', 'PostToolUse',
-    'UserPromptSubmit', 'PreCompact', 'SessionEnd', 'Stop', 'SubagentStop',
+    'UserPromptSubmit', 'PreCompact', 'SessionEnd', 'Stop', 'SubagentStart', 'SubagentStop',
   ]) {
     const out = plan(manifest({
       consumers: [{ module: 'src/hooks/probe.js', event, matcher: null, timeout: 4 }],
@@ -931,4 +931,53 @@ test('SEEN RED: with NO endpoints declared, every frame keeps the historical add
     'http://127.0.0.1:8787/pretool?frame=2&frames=3',
     'http://127.0.0.1:8787/pretool?frame=3&frames=3',
   ], 'no declared list ⇒ the single historical address, on every frame');
+});
+
+// ── AN OPTIONAL CAPABILITY IS WIRED ONLY WHEN SWITCHED ON (`optIn`, 2026-10-04) ──
+//    Inputs copied from the real manifest's `wrap-up-stop.js` consumer (`wiring.json`).
+const withOptIn = (optIn) => manifest({
+  consumers: [
+    { module: 'src/hooks/ctxroute-reset.js', event: 'PreCompact', matcher: null, timeout: 5 },
+    { module: 'src/hooks/wrap-up-stop.js', event: 'Stop', matcher: null, timeout: 600, optIn },
+  ],
+});
+
+test('OPT-IN OFF: the consumer produces NO declaration, the rest byte-identical to a manifest without it', () => {
+  const without = plan(manifest({ consumers: [{ module: 'src/hooks/ctxroute-reset.js', event: 'PreCompact', matcher: null, timeout: 5 }] }), machine());
+  assert.deepStrictEqual(plan(withOptIn('wrapUp'), machine({ optIns: { wrapUp: false } })), without);
+});
+
+test('OPT-IN ON: exactly one declaration, its own bound, the spawn lane form', () => {
+  const out = plan(withOptIn('wrapUp'), machine({ optIns: { wrapUp: true } }));
+  assert.deepStrictEqual(out.filter((d) => d.event === 'Stop'), [{
+    event: 'Stop', matcher: null, type: 'command',
+    command: 'node C:/fixture/ctxroute/src/hooks/wrap-up-stop.js', timeout: 600,
+  }]);
+});
+
+test('OPT-IN: only `true` switches it on — a truthy non-boolean never does', () => {
+  // One call per value, never a loop around a traversal (quadratic gate).
+  const wired = (v) => plan(withOptIn('wrapUp'), machine({ optIns: { wrapUp: v } })).some((d) => d.event === 'Stop');
+  assert.strictEqual(wired(1), false);
+  assert.strictEqual(wired('yes'), false);
+  assert.strictEqual(wired({}), false);
+  assert.strictEqual(wired(null), false);
+  assert.strictEqual(wired(undefined), false);
+});
+
+test('OPT-IN: an UNKNOWN or non-string name is a NAMED refusal, never a silent "off"', () => {
+  assert.throws(() => plan(withOptIn('wrap-up'), machine({ optIns: { wrapUp: true } })),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` "wrap-up" — known options: wrapUp' });
+  assert.throws(() => plan(withOptIn('wrapUp'), machine()),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` "wrapUp" — known options: (none)' });
+  assert.throws(() => plan(withOptIn(1), machine({ optIns: { wrapUp: true } })),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` 1 — known options: wrapUp' });
+  assert.throws(() => plan(withOptIn('toString'), machine({ optIns: { wrapUp: true } })),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` "toString" — known options: wrapUp' });
+  // A name is a STRING: a number that coerces to an existing key is still refused.
+  assert.throws(() => plan(withOptIn(1), machine({ optIns: { 1: true } })),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` 1 — known options: 1' });
+  // Several known options are listed, comma-separated.
+  assert.throws(() => plan(withOptIn('nope'), machine({ optIns: { alpha: false, wrapUp: true } })),
+    { message: 'wiring manifest: `src/hooks/wrap-up-stop.js`: unknown `optIn` "nope" — known options: alpha, wrapUp' });
 });

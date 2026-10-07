@@ -104,6 +104,19 @@ function stateStores() {
     // `category`'s per-scope role state (22/09/2026): written in the SAME gesture as
     // `doc-seen-`, hence the SAME lock — a separate one would let the two race.
     { prefix: 'category-', lock: 'doc', durable: true },
+    // `wrapUp`'s per-scope record (2026-10-04): the last context observation, the
+    // nudges spent and whether this context is settled. Written once per human turn
+    // (the sensor) and once per end of turn (the judge) — the TURN rhythm, hence the
+    // turn lock: the injection lock is taken on every action and would queue frames
+    // behind a judge for nothing. Purged at compaction like every store: a new
+    // context re-arms the option.
+    { prefix: 'wrap-up-', lock: 'turn', durable: true },
+    // `wrapUp`'s record of the files a SESSION wrote (2026-10-04), so a judge
+    // judges this session's work and not every agent's in the same repository.
+    // Keyed by the SESSION (sub-agents' writes included: their work is the
+    // session's), written after each file write, read at the end of turn — the
+    // turn lock, never the injection's. Purged at compaction like the rest.
+    { prefix: 'touched-', lock: 'turn', durable: true },
   ];
 }
 

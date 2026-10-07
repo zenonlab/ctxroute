@@ -95,7 +95,9 @@ function conformance(payload) {
     { capability: 'transcript_path', present: typeof p.transcript_path === 'string' && p.transcript_path !== '',
       degradation: 'the canary (dead-man switch) answers `undecidable` — the framework works but its death would be silent' },
     { capability: 'agent_id', present: typeof p.agent_id === 'string' && p.agent_id !== '',
-      degradation: 'the sub-agents share the master\'s injection state (a `once` consumed by the master deprives the sub-agent)' },
+      degradation: 'the sub-agents share the master\'s injection state (a `once` consumed by the master deprives the sub-agent), and no `role:` category is derived (a doc restricted to the main agent or to sub-agents reaches nobody)' },
+    { capability: 'agent_type', present: typeof p.agent_type === 'string' && p.agent_type !== '',
+      degradation: 'no `type:` category is derived for a sub-agent (a doc restricted to one agent type reaches nobody, a `-type:` exclusion excludes everyone — fail-closed, never a leak)' },
   ];
   const degradations = optional.filter((o) => !o.present);
   const verdict = required.some((r) => !r.present)
@@ -109,4 +111,44 @@ function conformance(payload) {
   };
 }
 
-module.exports = { conformance, candidateKeys, looksLikePath };
+/**
+ * NUMERIC FIELDS THAT LOOK LIKE A CONTEXT MEASUREMENT, anywhere in a hook payload — the
+ * DIAGNOSTIC that sees the day a harness starts sending its context fill to hooks (option
+ * `wrapUp`, 2026-10-04). Codex's hook inputs carry no token count today; the day one appears,
+ * `doctor --harness` NAMES it here, and wiring a sensor for that harness becomes a data edit.
+ * 🛑 A DIAGNOSTIC SUGGESTS, IT NEVER WIRES: a name-shaped guess is admissible here precisely
+ *    because nothing acts on it — the adopter reads it and decides (same rule as `candidateKeys`).
+ * @param {any} payload
+ * @returns {string[]} dotted paths, sorted
+ */
+function contextCandidateKeys(payload) {
+  const out = new Set();
+  const visit = (v, at, depth) => {
+    if (typeof v === 'number') {
+      if (Number.isFinite(v) && /token|context|window/i.test(at)) out.add(at);
+    } else if (Object(v) === v && !Array.isArray(v) && depth < 20) {
+      for (const [k, x] of Object.entries(v)) visit(x, at === '' ? k : `${at}.${k}`, depth + 1);
+    }
+  };
+  visit(payload, '', 0);
+  return [...out].sort();
+}
+
+/**
+ * Which harness can run the `wrapUp` option, and why not — read from the profile's DATA.
+ * A sensor is DECLARED as an object (`{ kind, event }`); anything else — the
+ * profile's `ABSENT` marker included, which is a string — means no sensor. One
+ * test, no comparison to the marker: that comparison was redundant, hence an
+ * equivalent mutant by construction.
+ * @param {Object<string, {sensor: *}>} wrapUpProfile  `harness-profile.WRAP_UP`
+ * @returns {{harness: string, supported: boolean, sensor: string}[]}
+ */
+function wrapUpSupport(wrapUpProfile) {
+  return Object.keys(wrapUpProfile).map((harness) => {
+    const sensor = wrapUpProfile[harness].sensor;
+    const supported = Object(sensor) === sensor;
+    return { harness, supported, sensor: supported ? `${sensor.kind} (${sensor.event})` : 'none' };
+  });
+}
+
+module.exports = { conformance, candidateKeys, looksLikePath, contextCandidateKeys, wrapUpSupport };

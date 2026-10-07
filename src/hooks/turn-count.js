@@ -54,6 +54,9 @@ const { routes: protocolRoutes } = require('../protocol-routes-pure');
 const { readStdinJson } = require('../stdin-json');
 const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 const paths = require('../paths');
+// ⚠️ THE JOURNAL WRITER: a failure this hook survives is SAID there, and the
+//    hook still leaves as it would have (fail-open, nothing to the agent).
+const log = require('../log');
 
 const STORE_PREFIX = 'turn-count-';
 
@@ -122,7 +125,8 @@ function sayTheRefusal(error, sessionId, config) {
       avis = d.message;
       store.saveState(STORE_PREFIX, sessionId, { ...state, refused: true });
     }, { fallback: null }); // lock unavailable = nothing said this turn (fail-open)
-  } catch {
+  } catch (err) {
+    log.hookError('turn-count', err);
     return; // fail-open: a witness never costs a turn
   }
   // 🛑 Through `stdout-exit`, like every hook that speaks: the caller's exit
@@ -159,7 +163,7 @@ readStdinJson(
       //    something this file can guarantee.
       // ⚠️ Fail-open twice over (the module swallows its own errors, and this
       //    catch is the second wall): disk housekeeping never costs a turn.
-      try { require('../state-eviction').sweep(); } catch { /* fail-open */ }
+      try { require('../state-eviction').sweep(); } catch (err) { log.hookError('turn-count', err); /* fail-open */ }
 
       // ⚠️ SCOPE PER AGENT — same composite key as the gateway (lib.scopeId,
       // SINGLE SOURCE): a turn counter shared between master and sub-agents
@@ -199,10 +203,13 @@ readStdinJson(
       withLock(lockDir, () => {
         turnCore.bump(store, STORE_PREFIX, sessionId);
       }, { fallback: null }); // lock unavailable = turn not counted (fail-open)
-    } catch {
-      /* fail-open */
+    } catch (err) {
+      log.hookError('turn-count', err); /* fail-open */
     }
     process.exit(0);
   },
-  () => process.exit(0)
+  (err) => {
+    log.hookError('turn-count', err);
+    process.exit(0);
+  }
 );

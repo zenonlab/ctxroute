@@ -12,6 +12,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // 🛑 Every test file gets a state directory of its own unless it sets one:
+    //    failures provoked on purpose must never reach the operator's journals.
+    setupFiles: ["./test/isolate-state.setup.mjs"],
     include: [
       'test/deadline-load.test.js',   // 24 simultaneous spawns, ~60 s
       'test/hooks-fleet-gate.test.js',   // reads the REAL ~/.claude/hooks fleet (read-only)

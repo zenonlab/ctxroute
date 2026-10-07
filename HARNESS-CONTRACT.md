@@ -21,9 +21,31 @@ satisfy, and how to **prove** conformity on your machine instead of trusting us.
 | `session_id` | once/smart cadence is per-process instead of per-session (more re-injections, never a loss) |
 | `cwd` | skill perimeter "by current directory" is mute (`npm test` run inside a project won't trigger its skill) |
 | `transcript_path` | the canary (dead-man switch) answers `indecidable` — the framework works, but its death would be silent |
-| `agent_id` | sub-agents share the master's injection state (a `once` consumed by the master starves the sub-agent) |
+| `agent_id` | sub-agents share the master's injection state (a `once` consumed by the master starves the sub-agent), and no `role:` category is derived — a doc restricted to the main agent or to sub-agents reaches nobody |
+| `agent_type` | no `type:` category is derived for a sub-agent — a doc restricted to one agent type reaches nobody, a `-type:` exclusion excludes everyone (fail-closed, never a leak) |
+| Sub-agent start event | sub-agents do not receive `docs/session/` (their per-gesture channels are unaffected) |
 | Deny support (`permissionDecision`) | `enforce: true` degrades to inform-only — a guardrail, never a security boundary anyway |
 | Session-start event | `docs/session/` knowledge is not delivered at session start (per-gesture channels unaffected) |
+| Context sensor (how full the context window is, BEFORE the harness compacts it) | the experimental `wrapUp` option is ABSENT on that harness (everything else unaffected) |
+| End-of-turn refusal (an event whose output can refuse to let the agent stop, with a reason the model reads) | the experimental `wrapUp` option is ABSENT on that harness |
+
+### The `wrapUp` option needs BOTH of the last two
+
+`wrapUp` (experimental) forces an agent to write its session knowledge — injectable docs, memory,
+regression tests — before its context window is compacted, judged by the adopter's own judges. Its
+core reads ONE normalised observation (`{ tokens, window, percent }`) and knows no harness: a
+harness plugs a SENSOR that produces it and a FORCING dialect that speaks its end-of-turn output,
+both declared as data in `harness-profile.js` (`WRAP_UP`).
+
+| Harness | Sensor | End-of-turn refusal | `wrapUp` |
+|---|---|---|---|
+| Claude Code (≥ 2.1.287) | a mod on `session.measure` (`mods/wrap-up-sensor`) | `Stop` → `decision: "block"` + `reason` | supported |
+| Codex | none: no hook input carries a token count (read 2026-10-04) | `Stop` → `decision: "block"` exists | not supported |
+
+It never relies on blocking a compaction: on Claude Code a blocked compaction "stops processing and
+asks you what to do" — a human in the loop. `node tools/doctor.js --harness <payload.json>` lists
+the support per harness and NAMES any numeric field of a real payload that looks like a context
+measurement: the day a harness starts sending one, that line shows it.
 
 ## Prove it on YOUR machine (never on our word)
 

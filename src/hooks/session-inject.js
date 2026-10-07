@@ -55,9 +55,16 @@ const fs = require('fs');
 //    the SAME name, so a second spelling built here would be a second lock.
 const lib = require('../lib-pure');
 const { readCorpus } = require('../corpus');
-const { sessionDocs } = require('../sources/session');
+const { sessionDocs, SOURCE_ID } = require('../sources/session');
+// WHO is starting: the harness identity profiles, the derived facts, and the ONE verdict.
+const { IDENTITY } = require('../harness-profile');
+const categoryPure = require('../category-pure');
+const gate = require('../gate');
 const { readStdinJson } = require('../stdin-json');
 const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
+// ⚠️ THE JOURNAL WRITER: a failure this hook survives is SAID there, and the
+//    hook still leaves as it would have (fail-open, nothing to the agent).
+const log = require('../log');
 const paths = require('../paths');
 // ⚠️ EMISSION LAYER MANDATORY — no emitter composes its output
 //    itself. Sealed by `emission-core-gate.test.js`: every file that
@@ -92,7 +99,17 @@ readStdinJson(
       // Same global switch as the PreToolUse gate (enabled: false cuts EVERYTHING).
       if (!lib.isFrameworkEnabled(config)) process.exit(0);
 
-      const docs = sessionDocs(readCorpus(paths.sessionDocsDir(), 'session/'));
+      // 🔑 WHO IS STARTING (2026-10-07): the main agent (SessionStart) or a sub-agent
+      //    (SubagentStart, same shell). The identity is DERIVED from this payload through
+      //    the profile of the harness the WIRING names (`--harness`), never guessed; the
+      //    declared categories are empty by construction — no policy has spoken yet when a
+      //    context starts (`validateSession` refuses a declared name for that reason).
+      // ⚠️ The verdict per doc is gate.js's, through the SAME cascade as every corpus
+      //    (entry > `defaults.session`), never re-judged here.
+      const identity = lib.declaredHarness(process.argv, IDENTITY);
+      const facts = categoryPure.contextFacts([], data, identity);
+      const admits = (decl) => !gate.categoryExcluded(config, decl, SOURCE_ID, facts);
+      const docs = sessionDocs(readCorpus(paths.sessionDocsDir(), 'session/'), admits);
       if (docs.length === 0) process.exit(0);
 
       // [source: …] per doc — same vocabulary as the PreToolUse gate.
@@ -129,7 +146,10 @@ readStdinJson(
         if (!plan || plan.text === '') process.exit(0);
         printThenExit(JSON.stringify({
           hookSpecificOutput: {
-            hookEventName: 'SessionStart',
+            // ⚠️ THE EVENT WE ANSWER IS THE EVENT WE RECEIVED (2026-10-07): this shell serves
+            //    SessionStart AND SubagentStart, and a harness ignores an answer filed under
+            //    another event's name. Echoed, never chosen; absent ⇒ the historical name.
+            hookEventName: typeof data.hook_event_name === 'string' && data.hook_event_name !== '' ? data.hook_event_name : 'SessionStart',
             additionalContext: plan.text,
           },
         }));
@@ -187,11 +207,15 @@ readStdinJson(
         { fallback: null }
       );
       emit(res ? res.plan : emission.split(fresh, budgetMax, 1)[0]);
-    } catch {
+    } catch (err) {
       // fail-open (missing docs/session folder included) — but never on top of
-      // a print already in flight, which would cut it.
+      // a print already in flight, which would cut it. Said in the journal.
+      log.hookError('session-inject', err);
       exitUnlessPrinting();
     }
   },
-  () => process.exit(0)
+  (err) => {
+    log.hookError('session-inject', err);
+    process.exit(0);
+  }
 );

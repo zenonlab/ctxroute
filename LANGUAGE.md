@@ -75,6 +75,17 @@ tool call then pays extra POSTs to the daemon (~20-30 ms) and prints extra statu
 daemon finished sending can still be lost to a reset connection (the harness never acknowledges receipt).
 On a `command`-lane harness (Codex) none of that applies. Turn it on only for a real `response` doc.
 
+**WHO is acting — `category`.** `match`/`scope`/`exclude` say WHAT the gesture contains and never see
+who performs it; `category` is the one word for WHO. It narrows, never triggers. A context carries the
+categories a policy declared plus the identity ctxroute derives from the harness payload: `role:main`,
+`role:subagent`, `type:<agent type>` (reserved, never declarable). Forms are those of `scope`: a flat list
+is one group (any of its names), a list of lists is an AND of groups, never both mixed. A leading `-`
+subtracts: `["role:subagent", "-type:Explore"]` reaches every sub-agent except Explore, never the main
+agent. Fail-closed: an unmet name excludes, and so does a `-name` on an identity the harness did not
+deliver. Docs in the session folder reach every context that starts — the main session and each
+sub-agent — and take `category` too (identity words only: nothing is declared yet at a start). A depth
+is not a fact (no harness names a sub-agent's parent) and is refused.
+
 ## Cadence
 <!-- AUTO:cadence -->
 `mode`: `dumb` · `once` · `smart` · `driftUnit`: `tool` · `turn`

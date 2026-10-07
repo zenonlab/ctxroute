@@ -29,6 +29,8 @@ const pure = require('./state-eviction-pure');
 //    so lowering the deadline tightens the bound automatically, and no second
 //    figure exists to drift.
 const deadline = require('./deadline');
+// ⚠️ The journal writer: a failure this module survives is SAID there (fail-open).
+const log = require('./log');
 
 /**
  * SWEEP `state/` ONCE. Returns what was ACTUALLY removed — never "it ran".
@@ -70,8 +72,10 @@ function sweep(options) {
       now: o.now === undefined ? Date.now() : o.now,
       maxAgeMs: o.maxAgeMs === undefined ? pure.ageBound(deadline.DEFAULT_MS) : o.maxAgeMs,
     });
-  } catch {
-    // A refusal from the decision (a missing bound) must not break the hook.
+  } catch (err) {
+    // A refusal from the decision (a missing bound) must not break the hook —
+    // and an eviction that never runs is said, or `state/` grows unseen.
+    log.hookError('state-eviction', err);
     return result;
   }
 

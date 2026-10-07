@@ -382,6 +382,19 @@ function parseFrameArgs(argv) {
  * ⚠️ NEVER write a hard-coded harness value here: it is the wiring that
  *    speaks, this file merely relays it.
  */
+// The per-harness facts a SHARED shell must use (2026-10-07), named by its wiring
+// (`--harness <id>`) and looked up in a profile table (`harness-profile.IDENTITY`). A shared
+// shell (`session-inject.js` serves Claude Code AND Codex) cannot know its harness otherwise,
+// and guessing it from the payload's shape is the heuristic this engine refuses.
+// Absent or unknown ⇒ `undefined`: no per-harness fact, which every consumer reads fail-closed.
+// ⚠️ `i === -1` is NECESSARY, same reason as `declaredBudget` below: `argv[0]` would be read.
+function declaredHarness(argv, profiles) {
+  const i = argv.indexOf('--harness');
+  if (i === -1) return undefined;
+  const id = argv[i + 1];
+  return Object.prototype.hasOwnProperty.call(profiles, id) ? profiles[id] : undefined;
+}
+
 function declaredBudget(argv) {
   const i = argv.indexOf('--budget');
   // ⚠️ `i === -1` IS NECESSARY and is NOT a convenience guard: without it,
@@ -466,6 +479,7 @@ module.exports = {
   REFUSAL_NOTICE,
   refusalNotice,
   declaredBudget,
+  declaredHarness,
   parseFrameArgs,
   sanitizeSessionId,
   scopeId,

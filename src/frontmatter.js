@@ -23,6 +23,10 @@
 //    Sealed by property-based testing (frontmatter.property.test.js): totality on generated input.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ⚠️ `category`'s MEANING (forms, negatives, derived identity) lives in ONE pure module —
+//    this file only registers the word, so the validator and the engine read one rule.
+const categoryPure = require('./category-pure');
+
 // Delimiter: `---` alone on its line, at the VERY START of the file.
 // ⚠️ Accepts the UTF-8 BOM and CRLF (Windows) — otherwise 100% of docs edited under
 //    Windows would silently have no frontmatter. A real trap, not a theoretical one.
@@ -192,7 +196,11 @@ function parse(text) {
     //    (∀¬ over a single universe) and `validate` must SEE `[["a"]]` to
     //    REFUSE it loudly — as a flat string, the refusal was impossible.
     //    The OTHER keys NEVER go through JSON (note = the author's text).
-    if ((key === 'scope' || key === 'exclude') && /^\[\s*\[/.test(raw)) {
+    // ⚠️ `category` TOO (2026-10-07): it gained the SAME grouped form (AND of
+    //    groups, `category-pure.js`), so the SAME trap waited for it — a
+    //    `[["role:subagent"],["ops"]]` cut into flat literals would be refused
+    //    by nothing and match nothing.
+    if ((key === 'scope' || key === 'exclude' || key === 'category') && /^\[\s*\[/.test(raw)) {
       try {
         data[key] = JSON.parse(raw);
       } catch (e) {
@@ -349,16 +357,12 @@ function toolList(data) {
 //    store, cf `category-store-pure.js`), never from the gesture — this module
 //    only reads the DECLARATION side.
 // ✅ 23/09/2026: its reading (`categoryList`, same shape as `toolList`) is now the
-//    `take` of `category` in the setting registry below, built on `stringList` — the
-//    ONE place gate.js and every `declFor` read it through. `categoryList` had no
-//    caller left once they did, so it is gone rather than kept as a second door.
-
-// ⚠️ The reading shared by every "string OR list of strings" setting: blanks and
-//    non-strings are dropped, never an error here (FORM errors are `validate`'s job).
-function stringList(raw) {
-  if (typeof raw === 'string') return raw.trim() === '' ? [] : [raw];
-  return Array.isArray(raw) ? raw.filter((c) => typeof c === 'string' && c.trim() !== '') : [];
-}
+//    `take` of `category` in the setting registry below — the ONE place gate.js and
+//    every `declFor` read it through. `categoryList` had no caller left once they did,
+//    so it is gone rather than kept as a second door.
+// 🔄 2026-10-07: that `take` is now `category-pure.takeDeclaration` (grouped form,
+//    negatives, identity). `stringList`, built for the flat form only, lost its last
+//    caller with it and went the same way.
 
 // ═══════════════════════════════════════════════════════════════════════
 // THE SETTING REGISTRY (23/09/2026) — a behaviour key is declared ONCE, HERE
@@ -394,45 +398,53 @@ function stringList(raw) {
 //                    ⚠️ A FUNCTION, not a key + an exclusion list: the list form needed an
 //                    `|| []` fallback that no input could tell apart (equivalent mutant).
 //   framework      → stage ④ per source; `''` = every other source.
+//   atStart        → `true` when the setting MEANS something in a SESSION doc (delivered once
+//                    to each context, when it starts), otherwise the REASON it cannot. 🛑 A
+//                    REASON, never a silent `false`: `validateSession` says it to the author,
+//                    and the symmetry gate reads it as the asymmetry's written justification.
 // ⚠️ A FUNCTION, never a module-level literal: its lambdas run at call time, inside a test.
 function settingRegistry() {
   const isThreshold = (v) => Number.isInteger(v) && v >= 1;
+  const NO_CADENCE_AT_START = 'a session doc has no cadence: it is delivered once to each context, when it starts';
   return {
     mode: {
       valid: (v) => MODES.includes(v),
       formError: (v) => `\`mode\` invalid: ${v} (expected: ${MODES.join('|')})`,
       global: (source) => (source === 'skill' ? null : 'mode'),
       framework: { skill: 'once', '': 'smart' },
+      atStart: NO_CADENCE_AT_START,
     },
     threshold: {
       valid: isThreshold,
       formError: (v) => `\`threshold\` must be an integer >= 1 (received: ${JSON.stringify(v)})`,
       global: () => 'defaultThreshold',
       framework: { '': 4 },
+      atStart: NO_CADENCE_AT_START,
     },
     driftUnit: {
       valid: (v) => DRIFT_UNITS.includes(v),
       formError: (v) => `\`driftUnit\` invalid: ${v} (expected: ${DRIFT_UNITS.join('|')})`,
       global: () => 'defaultDriftUnit',
       framework: { '': 'tool' },
+      atStart: NO_CADENCE_AT_START,
     },
     // ⚠️ `false` is a VALUE, never noise: it CANCELS an inherited `defaults.{source}.enforce`.
     enforce: {
       valid: (v) => typeof v === 'boolean',
       formError: () => '`enforce` must be true or false',
       framework: { '': false },
+      atStart: 'there is nothing to refuse: no tool call exists when a context starts',
     },
-    // ⚠️ The form is strict (every element a non-empty string) but a stage TAKES the
-    //    normalised list, and an empty one is INVALID: `category: []` cannot be written
-    //    (the schema says minItems 1), so an empty result always means "go down".
+    // ⚠️ The MEANING lives in `category-pure.js` (2026-10-07): flat = OR, grouped = AND of
+    //    groups, `-x` subtracts, `role:`/`type:` are DERIVED identity facts. A stage TAKES the
+    //    normalised GROUPS, and an invalid value offers nothing, so the cascade goes down —
+    //    never a stage accepted on mere presence (the 22/09 defect).
     category: {
-      valid: isMatchDecl,
-      take: (v) => {
-        const l = stringList(v);
-        return l.length > 0 ? l : undefined;
-      },
-      formError: () => '`category` empty or badly typed (non-empty string or list) — it would restrict the doc to NO session, i.e. mute it forever',
+      valid: (v) => categoryPure.declarationError(v) === null,
+      take: categoryPure.takeDeclaration,
+      formError: (v) => `\`category\` ${categoryPure.declarationError(v)} — it would restrict the doc to a fact that never exists, i.e. mute it forever`,
       framework: { '': [] },
+      atStart: true,
     },
     // ⚠️ `response` (2026-09-23) — NARROWS a doc to the moment AFTER the tool answered, and to
     //    the answers its `scope`/`exclude` accept (read by `response-pure.js`, decided by
@@ -453,6 +465,7 @@ function settingRegistry() {
       formError: (v) => responseFormError(v),
       framework: { '': null },
       inlineJson: true,
+      atStart: 'no tool has answered when a context starts',
     },
   };
 }
@@ -804,6 +817,28 @@ function validateMcp(data) {
   for (const e of noteErrors(data)) errs.push(e);
   return errs;
 }
+
+// ⚠️ A SESSION doc (`docs/session/`, 2026-10-07) is the 5th corpus. Its PATH is its trigger
+//    (delivered once to each context, when it starts), so no matching operator is admitted;
+//    of the settings, only those whose `atStart` is `true` mean something there — every other
+//    one is refused WITH its registry reason, never accepted and inert.
+function validateSession(data) {
+  const registry = settingRegistry();
+  const meaningful = Object.keys(registry).filter((k) => registry[k].atStart === true);
+  const admitted = new Set(['note'].concat(meaningful));
+  const errs = [];
+  for (const k of Object.keys(data)) {
+    if (admitted.has(k)) continue;
+    errs.push(k in registry
+      ? `\`${k}\` means nothing in a session doc: ${registry[k].atStart}`
+      : `unknown key for a session doc: \`${k}\` (admitted: note, ${meaningful.join(', ')} — the folder is the trigger)`);
+  }
+  for (const e of settingErrors(data)) errs.push(e);
+  for (const e of noteErrors(data)) errs.push(e);
+  const start = 'category' in data ? categoryPure.startError(data.category) : null;
+  if (start) errs.push(`\`category\` ${start}`);
+  return errs;
+}
 // Stryker restore StringLiteral
 
 // ⚠️ SINGLE SOURCE of the CADENCE judgement (mode/threshold/driftUnit) — shared
@@ -872,4 +907,4 @@ function noteErrors(data) {
 //    protecting anything more. Do NOT reintroduce one.
 // Stryker restore StringLiteral
 
-module.exports = { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, knownKeys, operatorForms, settingRegistry, takeSetting, poseSettings, MODES, DRIFT_UNITS, TRIGGERS, INJECT, RULE_KEYS, WILDCARD, KEY_REMOVE, KEY_AXES };
+module.exports = { parse, validate, validateMcp, validateSession, isMatchDecl, isRulesDecl, toolList, knownKeys, operatorForms, settingRegistry, takeSetting, poseSettings, MODES, DRIFT_UNITS, TRIGGERS, INJECT, RULE_KEYS, WILDCARD, KEY_REMOVE, KEY_AXES };

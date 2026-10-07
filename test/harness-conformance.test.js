@@ -2,11 +2,57 @@
 // ⚠️ CONTRACT values hard-coded — never derived from the code under test.
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { conformance, candidateKeys, looksLikePath } from '../src/harness-conformance.js';
+import {
+  conformance, candidateKeys, looksLikePath, contextCandidateKeys, wrapUpSupport,
+} from '../src/harness-conformance.js';
+
+// ── option `wrapUp` (2026-10-04): the diagnostic that sees a context sensor arrive ──
+test('contextCandidateKeys: numeric fields named like a context measurement, any depth, sorted', () => {
+  assert.deepStrictEqual(contextCandidateKeys({
+    usage: { context_tokens: 1200, model_context_window: 258400, other: 3 },
+    input_tokens: 5,
+    tokens_label: 'many',
+    window: Infinity,
+    deep: { a: { b: { contextWindow: 7 } } },
+  }), ['deep.a.b.contextWindow', 'input_tokens', 'usage.context_tokens', 'usage.model_context_window']);
+});
+test('contextCandidateKeys: nothing numeric of that shape ⇒ none; arrays and junk are skipped', () => {
+  assert.deepStrictEqual(contextCandidateKeys({ session_id: 's', tool_input: { command: 'ls' } }), []);
+  assert.deepStrictEqual(contextCandidateKeys({ tokens: [1, 2] }), []);
+  assert.deepStrictEqual(contextCandidateKeys(null), []);
+  assert.deepStrictEqual(contextCandidateKeys(42), []);
+  assert.deepStrictEqual(contextCandidateKeys({ Token: 1, CONTEXT: 2, Window: 3 }), ['CONTEXT', 'Token', 'Window']);
+});
+test('contextCandidateKeys: bounded depth — exactly at the frontier (19 levels reached, 20 not)', () => {
+  const wrapped = (levels) => {
+    let o = { tokens: 1 };
+    for (let i = 0; i < levels; i += 1) o = { n: o };
+    return o;
+  };
+  assert.strictEqual(contextCandidateKeys(wrapped(19)).length, 1);
+  assert.deepStrictEqual(contextCandidateKeys(wrapped(20)), []);
+});
+test('wrapUpSupport: read from the profile DATA, absent sensor = not supported', () => {
+  assert.deepStrictEqual(wrapUpSupport({
+    a: { sensor: { kind: 'mod', event: 'session.measure' } },
+    b: { sensor: 'absent' },
+    c: { sensor: 'something-else' },
+    d: { sensor: null },
+  }), [
+    { harness: 'a', supported: true, sensor: 'mod (session.measure)' },
+    { harness: 'b', supported: false, sensor: 'none' },
+    { harness: 'c', supported: false, sensor: 'none' },
+    { harness: 'd', supported: false, sensor: 'none' },
+  ]);
+});
+test('wrapUpSupport on the REAL profile: Claude Code supported, Codex not', async () => {
+  const { WRAP_UP } = await import('../src/harness-profile.js');
+  assert.deepStrictEqual(wrapUpSupport(WRAP_UP).map((s) => [s.harness, s.supported]), [['claudeCode', true], ['codex', false]]);
+});
 
 const COMPLETE = {
   tool_name: 'Read', tool_input: { file_path: '/a/b.js' },
-  session_id: 's1', cwd: '/w', transcript_path: '/t.jsonl', agent_id: 'a1',
+  session_id: 's1', cwd: '/w', transcript_path: '/t.jsonl', agent_id: 'a1', agent_type: 'Explore',
 };
 
 test('㊾ COMPLETE payload → supported, zero degradation', () => {
@@ -16,7 +62,7 @@ test('㊾ COMPLETE payload → supported, zero degradation', () => {
 });
 
 test('㊾ each optional absent → degrade, and the degradation is NAMED', () => {
-  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
+  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id', 'agent_type']) {
     const p = { ...COMPLETE };
     delete p[key];
     const r = conformance(p);
@@ -88,7 +134,7 @@ test('㊾ the report CARRIES the names and the roles — an anonymous report is 
   for (const x of r.required) assert.ok(x.role.length > 20, x.capability + ': a required item without a written role explains nothing');
 });
 test('㊾ an optional capability as an EMPTY STRING = absent (not "present but empty")', () => {
-  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id']) {
+  for (const key of ['session_id', 'cwd', 'transcript_path', 'agent_id', 'agent_type']) {
     const r = conformance({ ...COMPLETE, [key]: '' });
     assert.strictEqual(r.verdict, 'degraded', key);
     assert.strictEqual(r.degradations[0].capability, key);

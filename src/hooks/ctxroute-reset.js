@@ -61,6 +61,9 @@ const deadline = require('../deadline');
 //    a lock only serialises writers that take the SAME name.
 const { lockDirForKey } = require('../store-resolve');
 const lockModule = require('../lock');
+// ⚠️ THE JOURNAL WRITER: a failure this hook survives is SAID there, and the
+//    hook still leaves as it would have (fail-open, nothing to the agent).
+const log = require('../log');
 
 // ⚠️ DEADLINE ARMED BEFORE ANY I/O — NEVER move it lower down nor remove it.
 //    Cf `deadline.js`: Claude Code (Windows) does not always close the stdin of the
@@ -130,8 +133,8 @@ readStdinJson(
         if (!byLock.has(lock)) byLock.set(lock, []);
         byLock.get(lock).push({ prefix, cle });
       }
-    } catch {
-      /* fail-open */
+    } catch (err) {
+      log.hookError('ctxroute-reset', err); /* fail-open */
     }
 
     // ── THE SWEEP, UNDER THE SAME LOCK AS EVERY OTHER WRITER ────────────────
@@ -166,8 +169,8 @@ readStdinJson(
           }
         }, { fallback: null });
       }
-    } catch {
-      /* fail-open */
+    } catch (err) {
+      log.hookError('ctxroute-reset', err); /* fail-open */
     }
 
     // ── THE AUTHORITY IS TOLD, TOO ──────────────────────────────────────────
@@ -184,12 +187,15 @@ readStdinJson(
     // ⚠️ NO DAEMON ⇒ the kernel says so at once (`ENOENT`/`ECONNREFUSED`) and we
     //    exit; there is no probe, no retry and no delay used as a verdict.
     let lane = null;
-    try { lane = client.clientLane(process.argv); } catch { /* fail-open */ }
+    try { lane = client.clientLane(process.argv); } catch (err) { log.hookError('ctxroute-reset', err); /* fail-open */ }
     if (lane && keys.length > 0) {
       request(protocolRoutes().purge, { keys: keys }, { socketPath: lane.socketPath }, () => process.exit(0));
       return;
     }
     process.exit(0);
   },
-  () => process.exit(0) // invalid JSON → fail-open, no reset, never a block
+  (err) => { // invalid JSON → fail-open, no reset, never a block — but said
+    log.hookError('ctxroute-reset', err);
+    process.exit(0);
+  }
 );

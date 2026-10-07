@@ -45,6 +45,8 @@ test('stateStores: every per-scope store, its lock class and its lifetime', () =
     { prefix: 'plan-', lock: 'doc', durable: false },
     { prefix: 'remainder-', lock: 'doc', durable: true },
     { prefix: 'category-', lock: 'doc', durable: true },
+    { prefix: 'wrap-up-', lock: 'turn', durable: true },
+    { prefix: 'touched-', lock: 'turn', durable: true },
   ]);
 });
 

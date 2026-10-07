@@ -15,10 +15,20 @@
       "motive": "undecidable",
       "why": "The anti-zombie deadline. The harness does NOT always send EOF on stdin (Claude Code Windows bug anthropics/claude-code#68626), so the hook waits for an `end` event that may never come, and no local authority can say whether it will. The timer BOUNDS that infinity, it optimises nothing. Threshold 30 s, measured under load — see `deadline.md`."
     },
+    "src/judge-runner.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "The bound of ONE adopter judge run (option `wrapUp`, 2026-10-04). A judge is ANY command (a script, a suite of judges, a call to a model): whether one that has not answered yet is slow or will never answer is the halting problem, and no local authority can tell. Every other end of a run is a kernel FACT (`exit`, `close`, `error`), never a delay. When it fires, the whole process tree is killed and the verdict is given at once (an orphan may hold the pipes for ever, so waiting for `close` would hang the hook). Ceiling 540 s, below the 600 s the wiring declares on the Stop hook."
+    },
     "src/lock.js": {
       "count": 2,
       "motive": "undecidable",
       "why": "TWO occurrences, and they are different animals. ① The sleeping back-off (Atomics.wait) between two attempts at the cross-process lock: the holder is another PROCESS, and whether it is running, frozen or already gone cannot be settled from here. Chosen SLEEPING rather than a tight loop, because burning a core would slow down the very holder we wait for; what BOUNDS it is the lock's own fail-open timeout. ② The clock comparison `UNIDENTIFIED_HOLDER_MS` — visible to this budget only since 2026-08-23, when the clock atoms were added to the rule. It judges ONE case: a lock directory whose holder pid was never recorded, because the process died between the atomic `mkdirSync` and the syscall that writes the record. There is literally nobody to ask — the kernel cannot answer about a pid nothing wrote down — so it is `undecidable` in the strict sense. 🛑 It is NOT the old STALE_MS: an IDENTIFIED holder is decided by the KERNEL (`process.kill(pid, 0)`, ESRCH = a proof of death), never by this number. Widening it back to identified locks re-opens the silent lost update that TLC exhibits as `StateStaleForcing`."
+    },
+    "test/judge-runner.test.js": {
+      "count": 1,
+      "motive": "undecidable",
+      "why": "The tree-kill cell asks the KERNEL again whether a killed grandchild is gone (`kill(pid, 0)`, plus its `/proc` state on Linux, where a killed process lingers as a zombie until reaped). Whether another process has been reaped YET is not decidable from the test process; the wait between two asks is bounded (100 × 50 ms) and its exhaustion fails the cell, never passes it. MEASURED 2026-10-04 on the ubuntu CI runner: a few microseconds of ticks (the first version) read a reaped-later zombie as alive."
     },
     "test/deadline.test.js": {
       "count": 1,

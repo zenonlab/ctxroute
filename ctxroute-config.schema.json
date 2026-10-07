@@ -42,15 +42,31 @@
           "description": "REFUSE the action instead of informing (05/08/2026). ⚠️ Only meaningful for a category whose docs are ALL in `mode: once` — the engine honors `enforce` only on an EFFECTIVE `once` mode (anti-loop guarantee in gate.js), otherwise it informs. Setting `enforce` on a whole category is DISCOURAGED: every first action of a session would be refused, and a system people endure ends up unplugged. Reserved for irreversible actions, doc by doc. An entry can opt out with `enforce: false`."
         },
         "category": {
-          "type": [
-            "string",
-            "array"
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "minItems": 1
+            }
           ],
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "description": "Restrict every doc of THIS category to sessions carrying a matching declared category (a behavior key, NOT a trigger — same family as `enforce`). Absent = no restriction, unchanged since before this key existed (parity). NO global stage, same reasoning as `enforce`: a global `category` would restrict the first gesture of every session on every doc of the fleet."
+          "description": "WHO receives the doc — the language's one word for the acting context (a behavior key, NOT a trigger — same family as `enforce`). It reads the categories a policy DECLARED plus the identity ctxroute DERIVES per gesture: `role:main`, `role:subagent`, `type:<agent type>` (reserved namespaces, never declarable). Flat list = OR; grouped list [[...],[...]] = AND of groups (never both forms mixed); a leading `-` SUBTRACTS (`[\"role:subagent\", \"-type:Explore\"]` = sub-agents except Explore). Fail-closed: an unmet positive excludes, and so does a negative on an identity the harness did not deliver. `depth:` is refused (no harness names a sub-agent's parent). Absent = no restriction, unchanged since before this key existed (parity). NO global stage, same reasoning as `enforce`: a global `category` would restrict the first gesture of every session on every doc of the fleet."
         },
         "response": {
           "type": "object",
@@ -311,6 +327,134 @@
       "minimum": 0,
       "description": "NUMBER OF FRAMES declared for the moment AFTER a tool answered (23/09/2026) — the bandwidth of the docs that wait for an answer (`response`). Declared APART from `frames` and meant to stay SMALL, because the harness POSTs its WHOLE payload to every declaration, answer included: 32 frames would ship a 100 KB answer 32 times per tool call. What does not fit is never lost — it goes to the emission queue and leaves with the next action. Like `frames` it DRIVES NOTHING AT RUNTIME: it is the source of truth `tools/wiring-generate.js` writes from and `doctor.js --settings` confronts with the wiring. ABSENT OR 0 = THE MOMENT IS OFF (the default since 2026-09-23): the generator writes no declaration for it and the doctor requires none. Any other value that is not an integer >= 1 is a named refusal, so a typo never reads as off."
     },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "JOURNALS (2026-10-04) — where ctxroute records what went wrong, and how much disk it may use. Two files under the state directory: `ctxroute-daemon.log` (the daemon's life: start, exits, stalls) and `ctxroute-hooks.log` (a hook that failed and stayed fail-open). Each rotates by size: at `maxBytes` the current file becomes `.1`, the older ones shift, and only `keptFiles` files (the current one included) survive, so the whole cost is bounded for life. ERRORS ARE ALWAYS WRITTEN, whatever the level: a failure at night with debug off still leaves its line. `debug` adds the verbose trace (one line per daemon request, each hook's decision) and is OFF by default. A change is read at the next record, without a restart. ABSENT = level `error`, 262144 bytes, 2 files — the daemon journal as it always was. A value outside the bounds is a NAMED REFUSAL: the journal says why (`logging-refused`) and runs on the defaults, never on a guess.",
+      "properties": {
+        "level": {
+          "enum": [
+            "error",
+            "debug"
+          ],
+          "description": "`error` (default): errors and the daemon's life events. `debug`: plus the verbose trace — switch it on to diagnose, off when done (it writes on every daemon request)."
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 16384,
+          "maximum": 8388608,
+          "description": "Size at which a journal file turns over, in bytes. Default 262144 (256 KB). Same bounds as `src/log-pure.js` BOUNDS, tied by a cell."
+        },
+        "keptFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Files kept per journal, the current one included. Default 2. 1 = the journal starts over at each rotation. Lowering it removes the extra generations at the next rotation."
+        },
+        "note": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "AUTHOR COMMENT — never read by the engine."
+        }
+      },
+      "examples": [
+        {
+          "level": "debug",
+          "maxBytes": 1048576,
+          "keptFiles": 5
+        }
+      ]
+    },
+    "wrapUp": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "EXPERIMENTAL OPTION (2026-10-04) — when the context window approaches its wall, the agent is FORCED to write its session knowledge down (injectable docs, memory, regression tests) before it may end its turn. A sensor reports how full the context is (Claude Code: the mod `mods/wrap-up-sensor`, event `session.measure`); at each end of turn above `atPercent`, the `Stop` hook refuses to let the agent stop until the JUDGES declared for the project pass, at most `maxNudges` times. It NEVER blocks a compaction (a blocked compaction hands the session to a human). OFF unless `enabled: true`; switched off, the generated wiring is byte-identical. Codex is not supported: no hook input carries the context fill.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "The switch. Absent or false = the option does not exist: nothing is wired, nothing is written."
+        },
+        "atPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99,
+          "description": "Fill (percent of the context window) from which the end of turn is judged. Keep it BELOW the harness compaction point, so the agent writes while it still remembers. Default 70."
+        },
+        "maxNudges": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "How many times the end of turn may be refused in one context window. The bound IS the anti-loop: past it the session is released, loudly. Default 3."
+        },
+        "judgeTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 540,
+          "description": "Time bound of ONE judge run, in seconds (judges run in parallel). A judge that overruns is stopped with its whole process tree and never holds the session. Ceiling 540, below the 600 s the wiring declares on the hook. Default 120."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The text handed to the agent with a refusal, in ANY language. `{percent}` is replaced by the fill. Absent = the default English message. Exclusive with `messageFile`."
+        },
+        "messageFile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Same as `message`, read from a file (resolved next to this config file). Unreadable = the default message, and the human is told."
+        },
+        "judges": {
+          "type": "object",
+          "description": "The adopter's judges, by name. A judge is ANY command (a script, a suite of judges, a call to a model): it receives a versioned JSON on stdin (`version`, `sessionId`, `cwd`, `context`, `atPercent`, `nudges`), exits 0 when the work is done, anything else when it is not — its stdout (raw text, or `{ \"ok\": false, \"findings\": [{ \"file\", \"message\", \"severity\" }] }`) is handed to the agent. Its PERIMETER is declared with the SAME words as a skill, matched on the session cwd; every judge whose perimeter covers the session runs. No judge for a project = one nudge with the message, then the context is settled.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "The judge as an ARGUMENT VECTOR, run WITHOUT a shell in the session cwd: the program, then its arguments (e.g. [\"node\", \"scripts/check-docs.js\"]). No shell on purpose: the system shell differs per OS (cmd on Windows, /bin/sh elsewhere), so a command line would behave differently on the three systems."
+              },
+              "match": {
+                "$ref": "#/properties/skills/additionalProperties/properties/match"
+              },
+              "scope": {
+                "$ref": "#/properties/skills/additionalProperties/properties/scope"
+              },
+              "exclude": {
+                "$ref": "#/properties/skills/additionalProperties/properties/exclude"
+              },
+              "rules": {
+                "$ref": "#/properties/skills/additionalProperties/properties/rules"
+              },
+              "keys": {
+                "$ref": "#/properties/skills/additionalProperties/properties/keys"
+              },
+              "note": {
+                "$ref": "#/properties/skills/additionalProperties/properties/note"
+              }
+            }
+          }
+        }
+      },
+      "not": {
+        "required": [
+          "message",
+          "messageFile"
+        ]
+      }
+    },
     "filterMode": {
       "enum": [
         "none",
@@ -351,7 +495,7 @@
     "defaults": {
       "type": "object",
       "additionalProperties": false,
-      "description": "PER-SOURCE DEFAULTS — 3rd stage of the cascade (04/08/2026). Generalizes the old `skillDefaults`, which offered that stage only to skills: between the global ('the whole corpus') and the entry ('this very doc'), 'all docs of THIS category' was missing. Full cascade, 4 stages: entry (frontmatter/registry) > defaults.{source} > global (mode/defaultThreshold/defaultDriftUnit) > FRAMEWORK default. TOTAL fallback at every stage: absent key or invalid value ⇒ we go down, never an error. EVERYTHING is optional — `defaults` absent = previous behavior, identical. ⚠️ DELIBERATE ASYMMETRY, do not 'fix' it: the `skill` source does NOT consult the global (its framework default is `once`, the docs' is `smart`) — a skill is project knowledge, a doc is an action reminder. Making them uniform would change the behavior of all skills the moment a global config is set. ⚠️ NO `session` key HERE, and it is not an omission: docs/session/ docs are delivered by session-inject.js (SessionStart/PostCompact), which consults NEITHER gate.decide NOR any cadence — they inject once per context, by construction. A `session` key would be ACCEPTED and INERT, i.e. the false green this repo killed on 31/07 (`mcp:` in a docs/ doc). The keys admitted here are exactly the `id`s of the source-adapters.js registry — sealed by a gate.",
+      "description": "PER-SOURCE DEFAULTS — 3rd stage of the cascade (04/08/2026). Generalizes the old `skillDefaults`, which offered that stage only to skills: between the global ('the whole corpus') and the entry ('this very doc'), 'all docs of THIS category' was missing. Full cascade, 4 stages: entry (frontmatter/registry) > defaults.{source} > global (mode/defaultThreshold/defaultDriftUnit) > FRAMEWORK default. TOTAL fallback at every stage: absent key or invalid value ⇒ we go down, never an error. EVERYTHING is optional — `defaults` absent = previous behavior, identical. ⚠️ DELIBERATE ASYMMETRY, do not 'fix' it: the `skill` source does NOT consult the global (its framework default is `once`, the docs' is `smart`) — a skill is project knowledge, a doc is an action reminder. Making them uniform would change the behavior of all skills the moment a global config is set. ⚠️ `session` (2026-10-07) carries ONLY `category`: docs/session/ docs are delivered by session-inject.js once to each context that starts (main session AND sub-agents), consulting no cadence — so `mode`/`threshold`/`driftUnit`/`enforce`/`response` would be ACCEPTED and INERT there (the false green this repo killed on 31/07) and are refused by its own definition. It said 'NO session key' until `category` reached that corpus: a word missing from one corpus is a hole in the language. The keys admitted here are the `id`s of the source-adapters.js registry plus `session` — sealed by a gate.",
       "properties": {
         "file": {
           "$ref": "#/definitions/cadence",
@@ -368,6 +512,16 @@
         "tool": {
           "$ref": "#/definitions/cadence",
           "description": "Default for docs triggered by a native TOOL NAME (frontmatter tool:)."
+        },
+        "session": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "$ref": "#/definitions/cadence/properties/category"
+            }
+          },
+          "description": "Default for docs/session/ docs, delivered once to each context when it starts — the main agent's session AND every sub-agent (2026-10-07). ONLY `category` means something there (e.g. `[\"role:main\"]` keeps the whole folder away from sub-agents unless a doc says otherwise): a session doc has no cadence, nothing to refuse and no tool answer, so every other key is refused here, never accepted and inert."
         }
       }
     },
@@ -585,7 +739,7 @@
           },
           "category": {
             "$ref": "#/definitions/cadence/properties/category",
-            "description": "Restrict this SKILL to sessions carrying a matching declared category — SAME word, SAME meaning as the docs' frontmatter `category` (anti-synonym law). Absent = every session sees it (unchanged, generalist skill)."
+            "description": "WHO receives this SKILL — SAME word, SAME meaning as the docs' frontmatter `category` (anti-synonym law): declared categories plus the derived identity (`role:main`, `role:subagent`, `type:<agent type>`), flat = OR, grouped = AND, `-` subtracts. Absent = every context sees it (unchanged, generalist skill)."
           },
           "response": {
             "$ref": "#/definitions/cadence/properties/response",

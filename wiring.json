@@ -7,6 +7,7 @@
     "_why_harness": "WHAT VARIES BETWEEN HARNESSES, DECLARED AS DATA. `wiring-plan.js` decides (frame coordinates, the state lane, the bound, ownership) and it is SHARED; this block says how THIS harness writes a wiring down — its serialization format, the events it has, and where a declaration lives in its document. That split is what makes a THIRD harness cost ONE MANIFEST and ZERO engine lines: a generator that learned one special case per product would be a TOOL, and the founding rule of this project is that the engine must not move when a need appears. 🛑 There is no default: assuming one product's shape for another writes a document that harness reads as nothing at all, with no error and no log.",
     "events": {
       "SessionStart": "SessionStart",
+      "SubagentStart": "SubagentStart",
       "PreToolUse": "PreToolUse",
       "PostToolUse": "PostToolUse",
       "UserPromptSubmit": "UserPromptSubmit",
@@ -41,7 +42,16 @@
       "module": "src/hooks/session-inject.js",
       "event": "SessionStart",
       "matcher": null,
+      "args": ["--harness", "claudeCode"],
       "timeout": 10
+    },
+    {
+      "module": "src/hooks/session-inject.js",
+      "event": "SubagentStart",
+      "matcher": null,
+      "args": ["--harness", "claudeCode"],
+      "timeout": 10,
+      "_why": "A sub-agent is a context that STARTS too (2026-10-07): it receives docs/session/ like the main session does, filtered by each doc's `category` (`role:main`, `role:subagent`, `type:<agent type>`). Same shell, same module: the event it answers is the one it received. `--harness` names the identity profile (`harness-profile.IDENTITY`) a SHARED shell cannot guess."
     },
     {
       "module": "src/hooks/daemon-ensure.js",
@@ -104,6 +114,22 @@
       "event": "PreCompact",
       "matcher": null,
       "timeout": 5
+    },
+    {
+      "module": "src/hooks/wrap-up-touch.js",
+      "event": "PostToolUse",
+      "matcher": "Write|Edit|NotebookEdit",
+      "timeout": 5,
+      "optIn": "wrapUp",
+      "_why": "Option `wrapUp`: records which files the SESSION wrote (the file-writing tools and the parameters they carry a path in, `harness-profile.WRAP_UP.claudeCode.touch`), so each judge is handed this session's files inside its perimeter instead of a whole repository's state — another agent's work never blocks this one. Wired ONLY when `wrapUp.enabled` is true, like the Stop consumer: off, no agent pays this process. Mute and fail-open."
+    },
+    {
+      "module": "src/hooks/wrap-up-stop.js",
+      "event": "Stop",
+      "matcher": null,
+      "timeout": 600,
+      "optIn": "wrapUp",
+      "_why": "EXPERIMENTAL option `wrapUp`: at an end of turn, refuses to let the agent stop while the adopter's judges say its session knowledge is not written down. Wired ONLY when `wrapUp.enabled` is true in ctxroute-config.json (`optIn`), so the wiring is byte-identical otherwise. 600 s is the outer bound of the hook; the judges' own ceiling (`wrap-up-pure.MAX_JUDGE_TIMEOUT_SECONDS`, 540 s) stays below it, and the shell's anti-zombie deadline (570 s) between the two — a cell confronts the three numbers."
     }
   ]
 }

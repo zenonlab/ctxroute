@@ -303,6 +303,24 @@ test('parseFrameArgs: an OUT-OF-BOUNDS index → a safe fallback, never somebody
 //    disables spilling") — never a home-made convention in parallel.
 // ═══════════════════════════════════════════════════════════════════════
 
+// declaredHarness (2026-10-07) — a SHARED shell learns its harness from its wiring, never
+// from the payload's shape. argv COPIED from the wiring (`--harness claudeCode`).
+test('declaredHarness: the named profile, looked up in the table it is given', () => {
+  const table = { claudeCode: { id: 'cc' }, codex: { id: 'cx' } };
+  assert.deepStrictEqual(lib.declaredHarness(['node', 'session-inject.js', '--harness', 'claudeCode'], table), { id: 'cc' });
+  assert.deepStrictEqual(lib.declaredHarness(['node', 'session-inject.js', '--harness', 'codex'], table), { id: 'cx' });
+});
+
+test('declaredHarness: absent, unknown, or a value that is a table KEY only by inheritance = undefined', () => {
+  const table = { claudeCode: { id: 'cc' } };
+  assert.strictEqual(lib.declaredHarness(['node', 'x.js'], table), undefined);
+  assert.strictEqual(lib.declaredHarness(['node', 'x.js', '--harness', 'gemini'], table), undefined);
+  assert.strictEqual(lib.declaredHarness(['node', 'x.js', '--harness'], table), undefined);
+  assert.strictEqual(lib.declaredHarness(['node', 'x.js', '--harness', 'toString'], table), undefined);
+  // `argv[0]` is never read as a harness when the flag is absent (the `i === -1` guard).
+  assert.strictEqual(lib.declaredHarness(['claudeCode', 'x.js'], table), undefined);
+});
+
 test('declaredBudget: 0 = NO limit (Codex\'s convention, not ours)', () => {
   assert.strictEqual(lib.declaredBudget(['node', 'x.js', '--budget', '0']), Infinity);
 });

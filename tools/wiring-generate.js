@@ -233,10 +233,15 @@ function main() {
   // The moment AFTER the tool answered has its own bandwidth (2026-09-23). Read raw and judged by
   // `plan()`, which refuses it by name ONLY if a consumer is framed on it.
   let afterFrames;
+  // 🔑 THE OPTIONAL CAPABILITIES' SWITCHES (2026-10-04), read where every other machine fact is
+  //    read. A consumer declaring `optIn: "<name>"` is wired only when its switch is ON; the name
+  //    must be one of these keys or `plan()` refuses it by name. Absent config = all off.
+  const optIns = { wrapUp: false };
   try {
     const cfg = JSON.parse(fs.readFileSync(paths.configPath(), 'utf8'));
     if (Number.isInteger(cfg.frames) && cfg.frames >= 1) frames = cfg.frames;
     afterFrames = cfg.afterFrames;
+    optIns.wrapUp = require('../src/wrap-up-pure').settingsOf(cfg.wrapUp).enabled;
   } catch { /* refused just below, with its reason */ }
   if (frames === null) refuse('`frames` is not declared in ctxroute-config.json — the bandwidth of one action has no default here: a guessed frame count silently changes what a gesture can deliver');
 
@@ -281,6 +286,7 @@ function main() {
     root,
     frames,
     afterFrames,
+    optIns,
     host,
     port,
     endpoints,

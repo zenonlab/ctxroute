@@ -30,3 +30,4 @@ silently blind to a server exposing `dateipfad`. A MECHANICAL derivation (the `c
 is legitimate: it assumes nothing, it reads.
 ⇒ When a fact looks unreachable, the question is NOT "does the harness send it?" but
 **"can I DERIVE it mechanically from what it sends, and have I DECLARED it?"**
+✅ **THE IDENTITY FIELDS ARE REACHED — BY `category` ONLY (2026-10-07).** `agent_id` and `agent_type` stay BLIND to `match`/`scope`/`exclude` (a rule about WHO written as a rule about WHAT, colliding with any parameter that quotes it — the cell keeps that reason) and are REACHED, positively and negatively, through `category`'s derived `role:`/`type:` (four cells, through the very `contextFacts` the shells call). Same thesis as `commandCwd`: the fact was always delivered, the language could not see it.

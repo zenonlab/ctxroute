@@ -190,9 +190,13 @@ const { bind } = require('../kernel-bind');
 //    growing with TRAFFIC, and SSD wear is a real constraint on this machine.
 //    The vocabulary is a closed list in `lifecycle-log-pure.js`; an event
 //    outside it writes nothing at all.
-// ⚠️ Bounded for life at 256 KB × 2 files, declared in `disk-writers.json`, and
-//    FAIL-OPEN everywhere: nothing below may cost this daemon its life.
+// ⚠️ Bounded for life by the `logging` setting (default 256 KB × 2 files), the
+//    worst case declared in `disk-writers.json`, and FAIL-OPEN everywhere:
+//    nothing below may cost this daemon its life.
 const lifecycle = require('../lifecycle-log');
+// ⚠️ THE ONE JOURNAL WRITER, for the per-request trace only (`debug` level,
+//    off by default). Life events keep going through `lifecycle` above.
+const log = require('../log');
 // ⚠️ THE PURE SIDE IS REQUIRED SEPARATELY, ON PURPOSE. `lifecycle-log` exports
 //    only the SHELL (`record`/`logPath`), because the shell is what touches the
 //    disk; the DECISION of whether a duration is worth a line is pure, mutated,
@@ -932,7 +936,8 @@ function handle(body, url, deps) {
   let data;
   try {
     data = JSON.parse(body);
-  } catch {
+  } catch (err) {
+    log.daemonError('payload', err);
     // ⚠️ Unparseable payload = the harness said something we do not understand.
     //    FAIL-OPEN: say nothing, never refuse the agent's action.
     return NO_OUTPUT;
@@ -951,7 +956,8 @@ function handle(body, url, deps) {
       if (route === ROUTES.purge) return purgeRoute(data, store);
       if (route === ROUTES.turn) return turnRoute(data, store);
       return emitRoute(data, store);
-    } catch {
+    } catch (err) {
+      log.daemonError('route', err);
       return NO_OUTPUT;
     }
   }
@@ -1069,6 +1075,8 @@ function handle(body, url, deps) {
       nbFrames: frames.nbFrames,
       invocationId,
       after,
+      // WHO IS ACTING: this lane serves Claude Code, so its identity profile — same as the spawn shell.
+      identity: harnessProfile.IDENTITY.claudeCode,
       // 🔑 ONE COLLECTION PER ACTION. The thunk is what the core calls INSTEAD
       //    of `collect-core.collectAll`; it answers from the table when this
       //    action already built its accumulator, and otherwise collects for
@@ -1143,7 +1151,8 @@ function handle(body, url, deps) {
       //    the "one truth, two places" class this repository keeps paying for.
       budget: harnessProfile.HOOK_OUTPUT_BUDGET.claudeCode,
     });
-  } catch {
+  } catch (err) {
+    log.daemonError('handle', err);
     // ⚠️ FAIL-OPEN, and it matters MORE here than on the spawn lane: there, a
     //    crash killed one short-lived process and the next call started clean.
     //    Here it would take down the service for every agent at once.
@@ -1399,6 +1408,22 @@ function createServer(deps = {}) {
       // ⚠️ `route` is the URL PATH ONLY — the query carries frame coordinates
       //    that would make every line unique and the journal unreadable.
       const elapsedMs = Date.now() - startedAt;
+      // 🔑 THE PER-REQUEST TRACE, `logging.level: "debug"` ONLY (2026-10-04, K).
+      //    Level `error` (the default) answers `false` here and writes NOTHING,
+      //    so the anti-SSD-wear contract above stays whole; an adopter switches
+      //    it on in the config to diagnose, off when done, without a restart.
+      //    🛑 It goes through `log.write('daemon', 'request')`, never through
+      //    `lifecycle.record`: `request` is NOT a life event, and the always-on
+      //    vocabulary must stay free of per-request names. Cost measured in
+      //    `log.md` (one `stat` of the config per request).
+      if (log.enabled('daemon', 'request')) {
+        log.write('daemon', 'request', {
+          route: String(req.url || '').split('?')[0] || '<none>',
+          elapsedMs,
+          handleMs: handleDoneAt - freshDoneAt,
+          pid: process.pid,
+        });
+      }
       if (lifecyclePure.isStall({ elapsedMs })) {
         // ⚠️ THE THREE PHASES, so a stall NAMES ITS OWN CAUSE instead of posing a
         //    question. `bodyMs` = reading the request off the socket (a slow or
@@ -1804,7 +1829,7 @@ function watchOwnCode(watch, cache, onChange) {
       //    Passing `onChange` bare — as this line did until 2026-08-23 — loses
       //    all three facts at once.
       watchers.push(watch(dir, (eventType, filename) => onChange({ dir, eventType, filename })));
-    } catch { /* one blind directory, not a dead daemon */ }
+    } catch (err) { log.daemonError('watch-arm', err); /* one blind directory, not a dead daemon */ }
   }
   return watchers;
 }
@@ -2251,7 +2276,7 @@ function main() {
     } catch { /* a lost line costs a diagnosis; a survived exit costs stale logic */ }
     // 🛑 THE STATE BEFORE THE EXIT — this is the daemon's most frequent death,
     //    so it is the one where losing the arrival order would be routine.
-    try { drainOwner(); } catch { /* a stop must never be blocked by its own housekeeping */ }
+    try { drainOwner(); } catch (err) { log.daemonError('drain-owner', err); /* a stop must never be blocked by its own housekeeping */ }
     process.exit(EXIT_STALE_CODE);
   };
   /** The request path's half: report, then die. */
@@ -2344,14 +2369,17 @@ function main() {
         liveTables,
         invocationSnapshot.decode(JSON.parse(fsNode.readFileSync(invocationsPath, 'utf8'))),
       );
-    } catch {
+    } catch (err) {
       // fail-open: no file, unreadable, or malformed — which is today's behaviour.
+      // An ABSENT file is the normal first start; anything else is said.
+      if (!err || /** @type {any} */ (err).code !== 'ENOENT') log.daemonError('snapshot-load', err);
     }
     process.on('exit', () => {
       try {
         fsNode.writeFileSync(invocationsPath, JSON.stringify(invocationSnapshot.encode(liveTables)));
-      } catch {
+      } catch (err) {
         // fail-open: a process already dying must never throw on its way out.
+        log.daemonError('snapshot-save', err);
       }
     });
   }
@@ -2877,7 +2905,7 @@ function main() {
     //    (`state-owner-entry.persist`); flushing a CLIENT here would mean a
     //    blocking round trip from inside a signal handler, and the owner is
     //    being asked to stop at the same instant.
-    try { if (memory) memory.flush(); } catch { /* housekeeping must never delay a stop */ }
+    try { if (memory) memory.flush(); } catch (err) { log.daemonError('memory-flush', err); /* housekeeping must never delay a stop */ }
     // ⚠️ ASK, THEN WAIT FOR THE ANSWER — never kill. The flag is what lets the
     //    owner write its snapshot, and `process.exit` below would kill it
     //    mid-save: the arrival order of every invocation in flight would be
@@ -2886,7 +2914,7 @@ function main() {
     // 🛑 THE WAIT IS BOUNDED AND RE-CHECKS, like every other wait here, and
     //    its exhaustion costs exactly what the old behaviour cost: nothing is
     //    retried, nothing is guessed, the process simply leaves.
-    try { drainOwner(); } catch { /* a stop must never be blocked by its own housekeeping */ }
+    try { drainOwner(); } catch (err) { log.daemonError('drain-owner', err); /* a stop must never be blocked by its own housekeeping */ }
     try { recordExit(); } catch { /* a lost line costs a diagnosis, never the stop */ }
     process.exit(0);
   };

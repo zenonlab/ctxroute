@@ -64,6 +64,8 @@ const paths = require('./paths');
 //    check written HERE would ship measured by nothing. This file owns the
 //    disk; `memory-store-pure.js` owns what decides.
 const pur = require('./memory-store-pure');
+// ⚠️ The journal writer: a failure this module survives is SAID there (fail-open).
+const log = require('./log');
 
 // The ceiling and every eviction rule live in `memory-store-pure.js`.
 const MAX_SCOPES = pur.MAX_SCOPES;
@@ -261,8 +263,10 @@ function createMemoryStore(options) {
       fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
       fs.writeFileSync(tmp, JSON.stringify(pur.entries(state)));
       fs.renameSync(tmp, snapshotPath);
-    } catch {
-      // fail-open: a save that cannot be written must never break an injection.
+    } catch (err) {
+      // fail-open: a save that cannot be written must never break an injection —
+      // but a lost snapshot is said.
+      log.daemonError('memory-snapshot-save', err);
       try { fs.unlinkSync(tmp); } catch { /* nothing to clean up */ }
     }
   }
@@ -284,7 +288,9 @@ function createMemoryStore(options) {
     if (!snapshotPath) return 0;
     try {
       return pur.adopt(JSON.parse(fs.readFileSync(snapshotPath, 'utf8')), state, MAX_SCOPES, MAX_EPHEMERAL);
-    } catch {
+    } catch (err) {
+      // An ABSENT snapshot is the normal first start; a corrupt one is said.
+      if (!err || /** @type {any} */ (err).code !== 'ENOENT') log.daemonError('memory-snapshot-load', err);
       return 0;
     }
   }

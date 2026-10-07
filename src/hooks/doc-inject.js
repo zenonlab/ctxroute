@@ -44,7 +44,7 @@
 const { run, denyOutput, noticeOutput, afterOutput } = require('../pretool-core');
 const { parseFrameArgs, afterAnswer, momentInvocation } = require('../lib-pure');
 // ⚠️ THE HARNESS'S OWN NUMBER, READ AS DATA — never a literal in a shell.
-const { HOOK_OUTPUT_BUDGET, AFTER_ANSWER } = require('../harness-profile');
+const { HOOK_OUTPUT_BUDGET, AFTER_ANSWER, IDENTITY } = require('../harness-profile');
 const { readStdinJson } = require('../stdin-json');
 const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
 // ⚠️ THE CLIENT LANE, OPT-IN BY ARGUMENT (2026-08-21). With `--client` in the
@@ -165,6 +165,8 @@ if (require.main === module) {
         budget: HOOK_OUTPUT_BUDGET.claudeCode,
         invocationId: momentInvocation(typeof data.tool_use_id === 'string' ? data.tool_use_id : '', after),
         after,
+        // WHO IS ACTING, read through THIS harness's profile (`category` derives role/type from it).
+        identity: IDENTITY.claudeCode,
       };
       // 🛑 ONE LINE PER HARNESS, NEVER A SECOND SHELL. The only difference
       //    between the two lanes is WHO OWNS THE STATE, and this repository

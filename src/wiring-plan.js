@@ -57,7 +57,7 @@ const SETTINGS_PLACEHOLDER = '{settings}';
 function knownEvents() {
   return [
     'SessionStart', 'PreToolUse', 'PostToolUse',
-    'UserPromptSubmit', 'PreCompact', 'SessionEnd', 'Stop', 'SubagentStop',
+    'UserPromptSubmit', 'PreCompact', 'SessionEnd', 'Stop', 'SubagentStart', 'SubagentStop',
   ];
 }
 
@@ -383,9 +383,11 @@ function frameEndpoint(endpoints, k) {
  * Builds the ordered declaration list the harness must execute.
  *
  * @param {any} manifest - the parsed `wiring.json`.
- * @param {{root: string, frames: number, afterFrames?: *, host?: string, port?: number, endpoints?: {host?: string, port?: number}[], routePath?: string, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
+ * @param {{root: string, frames: number, afterFrames?: *, optIns?: Object<string, boolean>, host?: string, port?: number, endpoints?: {host?: string, port?: number}[], routePath?: string, laneFlag: string, stateConsumers: string[], settingsPath: string}} machine
  *   - `root`: absolute repo root, POSIX-separated, no trailing slash.
  *   - `frames`: the bandwidth of one action (`frames` in ctxroute-config.json).
+ *   - `optIns`: the switches of the optional capabilities (`wrapUp` …), read from ctxroute-config.json
+ *      by the generator — a consumer declaring `optIn` is wired only when its switch is true.
  *   - `afterFrames`: the bandwidth of the moment AFTER the tool answered (`afterFrames` in
  *      ctxroute-config.json) — read only when a consumer declares `framed: "afterFrames"`.
  *   - `host`/`port`: the daemon's listening address (`http` in ctxroute-config.json,
@@ -538,6 +540,20 @@ function plan(manifest, machine) {
     // 🛑 ONLY absent and 0 mean off. Anything else that is not an integer >= 1 stays a NAMED
     //    refusal: a typo must never read as "off".
     if (spec.framed === afterBandwidth() && (afterFrames === undefined || afterFrames === null || afterFrames === 0)) continue;
+    // 🔑 AN OPTIONAL CAPABILITY IS WIRED ONLY WHEN IT IS SWITCHED ON (2026-10-04, `wrapUp`).
+    //    `optIn` names a configuration option; the switch reaches here as a MACHINE FACT
+    //    (`machine.optIns`, read by the generator from ctxroute-config.json), never re-typed.
+    //    Off ⇒ NO declaration at all, so the wiring is byte-identical to a manifest that never
+    //    knew the consumer: the agents in production pay nothing for a capability they did not ask for.
+    // 🛑 An UNKNOWN option name is a NAMED REFUSAL: a misspelt `optIn` would otherwise read as
+    //    "off" for ever, and the capability would be silently impossible to switch on.
+    if (spec.optIn !== undefined) {
+      const optIns = (machine && machine.optIns) || {};
+      if (typeof spec.optIn !== 'string' || !Object.prototype.hasOwnProperty.call(optIns, spec.optIn)) {
+        fail(`\`${spec.module}\`: unknown \`optIn\` ${JSON.stringify(spec.optIn)} — known options: ${Object.keys(optIns).join(', ') || '(none)'}`);
+      }
+      if (optIns[spec.optIn] !== true) continue;
+    }
     if (spec.framed === afterBandwidth() && (!Number.isInteger(afterFrames) || afterFrames < 1)) {
       fail(`\`${spec.module}\` is framed on \`${afterBandwidth()}\`, which must be 0 (off) or an integer >= 1, got ${JSON.stringify(afterFrames)} — a guessed count silently changes what the moment after the answer can deliver`);
     }

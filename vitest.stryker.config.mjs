@@ -15,6 +15,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // 🛑 Every test file gets a state directory of its own unless it sets one:
+    //    failures provoked on purpose must never reach the operator's journals.
+    setupFiles: ["./test/isolate-state.setup.mjs"],
     include: [
       // ⚠️ The OS units renderer (2026-09-19): deterministic, hermetic, and the
       //    ONLY suite covering `service/render-units-pure.js`. Absent here its
@@ -25,6 +28,10 @@ export default defineConfig({
       //    hermetic, and the ONLY suite covering `src/category-store-pure.js`.
       //    Absent here its mutants sit at NoCoverage while the module looks mutated.
       'test/category-store-pure.test.js',
+      // ⚠️ WHO is acting (2026-10-07): the meaning of a `category` declaration and the identity
+      //    derived from the payload. Its own unit suite, plus the cadence differential that
+      //    confronts it through `gate.js` with an independent model.
+      'test/category-pure.test.js',
       // ⚠️ The answer reader of `response` (2026-09-23): the ONLY unit suite covering
       //    `src/response-pure.js` (the cadence differential covers it through `gate.js`).
       'test/response-pure.test.js',
@@ -38,6 +45,7 @@ export default defineConfig({
       //    decides what a restarted daemon adopts back into its arrival counters.
       'test/invocation-snapshot-pure.test.js',
       'test/harness-conformance.test.js',
+      'test/wrap-up-pure.test.js',
     'test/differential-normalize.test.js',
     'test/corpus-cache.test.js',
       // ⚠️ The badge label (2026-09-13): deterministic, hermetic, and the ONLY
@@ -196,6 +204,10 @@ export default defineConfig({
       //    list, the ceiling and the closed event vocabulary would be mutated and
       //    measured by NOTHING: a bounded writer proven by nobody.
       'test/lifecycle-log-pure.test.js',
+      // The journal setting, level, format and rotation plan (`log-pure.js`) and the
+      // registry of journals (`log-journals-pure.js`), 2026-10-04 (K).
+      'test/log-pure.test.js',
+      'test/log-journals-pure.test.js',
       'test/backlog-ceiling-pure.test.js',
       'test/http2-preface-gate.test.js',
       // âš ï¸ The DETERMINISTIC half of the model-twin gate. `model-twin-gate.test.js` itself spawns

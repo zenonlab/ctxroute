@@ -12,7 +12,7 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { parse, validate, validateMcp, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, knownKeys, TRIGGERS, WILDCARD, settingRegistry, poseSettings, operatorForms, RULE_KEYS } from '../src/frontmatter.js';
+import { parse, validate, validateMcp, validateSession, isMatchDecl, isRulesDecl, toolList, MODES, DRIFT_UNITS, knownKeys, TRIGGERS, WILDCARD, settingRegistry, poseSettings, operatorForms, RULE_KEYS } from '../src/frontmatter.js';
 
 // ── parse: detection of the block ──
 test('parse: frontmatter at the head → data + body separated', () => {
@@ -56,7 +56,14 @@ test('55 parse: `exclude: [["a"]]` returns the NESTED LIST — so that validate 
   assert.deepStrictEqual(r.data.exclude, [['a']]);
   assert.ok(validate(r.data).length > 0, 'grouped form on exclude = RED, never silent');
 });
-test('55 parse: ONLY scope/exclude go through the JSON — `note` stays raw text', () => {
+test('55 parse: the GROUPED form of `category` (2026-10-07) returns NESTED LISTS — the same trap as `scope`', () => {
+  // Cut on its internal commas it would become flat literals `'["role:subagent"]'`: refused by
+  // nothing, matched by nothing — a doc muted in silence.
+  const r = parse('---\nmatch: a.js\ncategory: [["role:subagent"], ["ops", "-type:Explore"]]\n---\nc');
+  assert.deepStrictEqual(r.data.category, [['role:subagent'], ['ops', '-type:Explore']]);
+  assert.deepStrictEqual(validate(r.data), []);
+});
+test('55 parse: ONLY scope/exclude/category go through the JSON — `note` stays raw text', () => {
   assert.strictEqual(typeof parse('---\nmatch: a.js\nnote: {"x":1}\n---\nc').data.note, 'string');
   // `match: [[a]]` keeps its historical reading (a list of one pattern `[a]`) — the
   // JSON path NEVER concerns the triggers, even on a value starting with `[[`.
@@ -365,6 +372,38 @@ test('invalid threshold = RED: 0, float, string', () => {
   assert.ok(validate({ match: 'x.js', threshold: '3' }).length > 0);
 });
 
+// ── validateSession — the 5th corpus (2026-10-07): only what MEANS something at a start ──
+// Does ONE of the validator's messages carry this text? A plain function, so a loop over cases
+// calling it is not a traversal inside a traversal (the complexity gate holds this file).
+const said = (errs, text) => errs.join('\n').includes(text);
+test('validateSession: no frontmatter, a note, an identity category = healthy', () => {
+  assert.deepStrictEqual(validateSession({}), []);
+  assert.deepStrictEqual(validateSession({ note: 'why' }), []);
+  assert.deepStrictEqual(validateSession({ category: ['role:main'] }), []);
+  assert.deepStrictEqual(validateSession({ category: [['role:subagent'], ['-type:Explore']] }), []);
+});
+
+test('validateSession: every other SETTING is refused WITH the reason its registry entry gives', () => {
+  const registry = settingRegistry();
+  for (const [k, value] of [['mode', 'once'], ['threshold', 3], ['driftUnit', 'turn'], ['enforce', true], ['response', { scope: ['x'] }]]) {
+    const errs = validateSession({ [k]: value });
+    assert.ok(said(errs, `\`${k}\` means nothing in a session doc: ${registry[k].atStart}`), `${k}: ${errs}`);
+  }
+});
+
+test('validateSession: a trigger or an unknown key is refused — the folder IS the trigger', () => {
+  for (const k of ['match', 'rules', 'tool', 'scope', 'rank', 'nimporte']) {
+    assert.ok(said(validateSession({ [k]: 'x' }), `unknown key for a session doc: \`${k}\``), k);
+  }
+});
+
+test('validateSession: a DECLARED category name is refused (nothing is declared when a context starts)', () => {
+  assert.ok(said(validateSession({ category: ['ops'] }), 'nothing is declared yet'));
+  assert.ok(said(validateSession({ category: ['role:main', '-ops'] }), '"-ops"'));
+  // A FORM error is still reported once, by the shared setting judgement.
+  assert.ok(said(validateSession({ category: [] }), 'empty or badly typed'));
+});
+
 // ── validateMcp — THE ONLY authority on "a healthy MCP doc?" (keys mode/threshold) ──
 test('validateMcp: an empty frontmatter or valid mode/threshold = 0 error (bound 1 included)', () => {
   assert.deepStrictEqual(validateMcp({}), []);
@@ -671,6 +710,39 @@ test('SYMMETRY GATE ①: a key present in one corpus and absent from another MUS
         + `ASYMETRIES_JUSTIFIEES with a MEASURED reason. Silence is not an option.`);
     }
   }
+});
+
+// ── ①bis THE 5th CORPUS — SESSION docs (2026-10-07) ─────────────────────
+// 🔴 THE CLASS THIS CLOSES: `category` shipped on 22/09 into the 4 corpora above and SKIPPED
+//    the session one, behind a comment calling a filter there "speculative". Nothing could see
+//    it: this gate knew 4 corpora. A session doc is delivered when a context STARTS — no
+//    action, no cadence, no answer — so most settings cannot mean anything there; but each
+//    absence must now be the REGISTRY's written reason (`atStart`), and each presence must be
+//    real in BOTH places (the doc's validator AND `defaults.session`).
+test('SYMMETRY GATE ①bis: the SESSION corpus — every setting present, or absent WITH its registry reason', async () => {
+  const sch = (await import('../ctxroute-config.schema.json', { with: { type: 'json' } })).default;
+  const sessionDefaults = sch.properties.defaults.properties.session.properties;
+  const registry = settingRegistry();
+  // At a start only identity is known, so the category sample is an identity word.
+  const sample = { ...SAMPLE, category: 'role:main' };
+  let present = 0;
+  for (const [k, v] of Object.entries(sample)) {
+    const inDoc = validateSession({ [k]: v }).length === 0;
+    if (k === 'note') {
+      assert.ok(inDoc, 'a session doc takes an author note like every other corpus');
+      continue;
+    }
+    const inDefaults = Object.prototype.hasOwnProperty.call(sessionDefaults, k);
+    const reason = registry[k].atStart;
+    if (reason === true) {
+      present++;
+      assert.ok(inDoc && inDefaults, `\`${k}\` means something at a start (atStart: true) but is missing from ${inDoc ? 'defaults.session' : 'the session doc validator'}`);
+    } else {
+      assert.ok(typeof reason === 'string' && reason.trim().length > 40, `UNJUSTIFIED GAP — \`${k}\` is absent from the session corpus without a written \`atStart\` reason`);
+      assert.ok(!inDoc && !inDefaults, `\`${k}\` says it means nothing at a start, yet the session corpus ACCEPTS it — accepted and inert`);
+    }
+  }
+  assert.ok(present >= 1, 'no setting reaches the session corpus: the gate would prove nothing');
 });
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -21,6 +21,7 @@
 const { shouldInjectFor, targetExcluded } = require('./lib-pure');
 const { settingRegistry, takeSetting } = require('./frontmatter');
 const { responseRefuses } = require('./response-pure');
+const categoryPure = require('./category-pure');
 
 // ⚠️ `confirm`/`ask` REMOVED on 05/08/2026 (together with `WRITE_TOOLS`, which only
 //    existed for it). NEVER reintroduce it: ① `ask` escalates to the HUMAN, the
@@ -278,19 +279,15 @@ function categoryForDoc(config, decl, source) {
 //    scoped doc to an unscoped session — the exact inverse of `enforce`'s own
 //    fail-open, and deliberately so: `enforce` protects against OUR hook
 //    dying, this protects against a doc author's INTENT being ignored).
+// ⚠️ THE CONTEXT'S FACTS (2026-10-07) are `{categories, measured}`, built in ONE place —
+//    `category-pure.contextFacts` (what a policy declared PLUS the identity ctxroute derived).
+//    Anything else (absent, the 22/09 bare list) carries nothing and measures nothing, which
+//    is fail-closed for every restriction and leaves an uncategorized doc untouched.
+// 🛑 THE MEANING IS `category-pure.admits`, never restated here: flat = OR, grouped = AND,
+//    `-x` SUBTRACTS, a negative on an unmeasured fact excludes. A doc with no `category`
+//    resolves to NO condition, and no condition always holds — no guard needed for it.
 function categoryExcluded(config, decl, source, sessionCategories) {
-  const required = categoryForDoc(config, decl, source);
-  if (required.length === 0) return false;
-  // ⚠️ ONE expression, fail-closed BY CONSTRUCTION (23/09/2026): a non-list session is
-  //    excluded (the `&&` short-circuits), an EMPTY list is excluded (`some` of nothing is
-  //    false). It used to be a separate `if (… || length === 0) return true`, whose empty-
-  //    list half repeated what `some` already answers — an equivalent mutant nobody could
-  //    kill, and a sign two readings of one rule sat side by side. Same verdict on every
-  //    input, measured by the cells of `gate.test.js` ("categoryExcluded").
-  //    A SET, not `includes` inside `some` (a nested traversal). Only a real LIST is read:
-  //    a bare string would otherwise become a set of its CHARACTERS and match by accident.
-  const declared = Array.isArray(sessionCategories) ? new Set(sessionCategories) : new Set();
-  return !required.some((c) => declared.has(c));
+  return !categoryPure.admits(categoryForDoc(config, decl, source), sessionCategories);
 }
 
 // `response` — the filter a doc sets on the tool's ANSWER, or `null` when it does not wait for
@@ -328,11 +325,12 @@ function otherMoment(config, decl, source, after) {
  * @param {string} [toolName] - the TARGET of the gesture (global filter 52). ABSENT =
  *                           no filter by tool name can bite —
  *                           behaviour identical to BEFORE (parity).
- * @param {string[]} [sessionCategories] - categories DECLARED for this session
- *                           (an external fact, never read here — cf `category`
- *                           block above). ABSENT/empty = behaviour identical to
- *                           BEFORE this key existed (parity): only docs that
- *                           themselves declare `category` can be affected.
+ * @param {{categories?: string[], measured?: string[]}} [sessionCategories] - WHO is acting:
+ *                           the context's facts as `category-pure.contextFacts` builds
+ *                           them (declared names + derived identity + measured spaces;
+ *                           an external fact, never read here). ABSENT = nothing carried:
+ *                           only docs that themselves declare `category` can be affected
+ *                           (parity for every other doc).
  * @param {{response: *}} [after] - the tool's ANSWER, handed over by the shell AFTER the
  *                           action ran (2026-09-23). ABSENT = the call BEFORE the action,
  *                           behaviour identical to before `response` existed (parity) except
@@ -372,10 +370,15 @@ function decide(config, decls, matched, state, turnCount, owners, toolName, sess
   //    traversal on the matched docs — O(N²) the day a gesture matches many docs, and the
   //    complexity gate held it at its ceiling. Membership is now a lookup.
   const targetOut = new Set(filteredOut);
-  const categoryOut = present.filter(
+  const categoryLeft = present.filter(
     (doc) => !targetOut.has(doc) && categoryExcluded(config, decls[doc], src(doc), sessionCategories),
   );
-  const leftOut = new Set(filteredOut.concat(categoryOut));
+  // ⚠️ AN IDENTITY RESTRICTION LEAVES SILENTLY (2026-10-07), like a `scope` that did not bite:
+  //    a main-only doc leaving a sub-agent is the expected SHAPE of the fleet, never news — a
+  //    badge on it would shout on every gesture of every agent. Only a restriction on DECLARED
+  //    categories is reported, as before.
+  const categoryOut = categoryLeft.filter((doc) => !categoryPure.namesIdentity(categoryForDoc(config, decls[doc], src(doc))));
+  const leftOut = new Set(filteredOut.concat(categoryLeft));
   // ── THE ANSWER'S FILTER, after the action only — SILENT like a `scope` that did not bite:
   //    the doc simply does not concern this answer, nothing was excluded by a setting.
   //    `responseForDoc` is never `null` here: after the answer, only docs waiting for one

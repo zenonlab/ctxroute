@@ -18,6 +18,9 @@ const fs = require('fs');
 const path = require('path');
 const { sanitizeSessionId } = require('./lib-pure');
 const paths = require('./paths');
+// ⚠️ The journal writer, for the one thing this store used to swallow in
+//    silence: a write that is LOST. Fail-open, never throws.
+const log = require('./log');
 
 // Number of IMMEDIATE retries of the `rename` (no waiting, cf saveState).
 // 20 measured as sufficient under a pathological load (reader in a tight loop):
@@ -151,12 +154,19 @@ function saveState(prefix, sessionId, state) {
     // ⚠️ This is NOT a delay (no `sleep`, no timer): the window lasts
     //    a few microseconds, an IMMEDIATE retry suffices. Measured after
     //    the retry: 0 hollow reads AND 0 lost writes.
+    let last = null;
     for (let i = 0; i < RENAME_RETRIES; i++) {
-      try { fs.renameSync(tmp, dest); return; } catch { /* retry right away */ }
+      try { fs.renameSync(tmp, dest); return; } catch (err) { last = err; /* retry right away */ }
     }
     fs.unlinkSync(tmp); // exhausted: never leave a leftover abandoned in state/
-  } catch {
-    /* fail-open: an unwritable store never breaks the injection */
+    // 🛑 THE WRITE IS LOST HERE, AND IT IS SAID (2026-10-04, M): the caller
+    //    carries on fail-open, the journal keeps the trace.
+    log.hookError('session-store', Object.assign(
+      new Error(`state write lost: rename failed ${RENAME_RETRIES} times (${prefix})`),
+      { code: last && /** @type {any} */ (last).code }));
+  } catch (err) {
+    /* fail-open: an unwritable store never breaks the injection — but it is said */
+    log.hookError('session-store', err);
     try { fs.unlinkSync(tmp); } catch { /* nothing to clean up */ }
   }
 }

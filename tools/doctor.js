@@ -110,6 +110,21 @@ function harnessConformance(file) {
     console.log('  📎 path-SHAPED keys unknown to the profile (candidates for `pathKeys` in harness-profile.js — YOURS to decide, never guessed): ' + r.candidateKeys.join(', '));
   }
   console.log('  ℹ this test proves the PRESENCE of the contract fields. That the injected context is CONSUMED by the model is proven in real use (canary).');
+  // OPTION `wrapUp` (EXPERIMENTAL, 2026-10-04): which harness has a sensor, and whether THIS
+  // payload carries a context measurement a sensor could read — the day a harness adds one,
+  // this line names it. Never a verdict change: the option is optional by contract.
+  const { contextCandidateKeys, wrapUpSupport } = require('../src/harness-conformance.js');
+  const { WRAP_UP } = require('../src/harness-profile.js');
+  console.log('\nOPTION wrapUp (experimental) — needs a context sensor and an end-of-turn refusal:');
+  for (const s of wrapUpSupport(WRAP_UP)) {
+    console.log(s.supported
+      ? `  ✓ ${s.harness}: supported, sensor = ${s.sensor}`
+      : `  ⚠ ${s.harness}: NOT supported — no documented way for a hook to read how full the context is (the option stays absent there)`);
+  }
+  const ctxKeys = contextCandidateKeys(payload);
+  if (ctxKeys.length > 0) {
+    console.log('  📎 numeric fields that look like a context measurement in THIS payload (a sensor candidate — yours to decide): ' + ctxKeys.join(', '));
+  }
   return r.verdict === 'incompatible' ? 1 : 0;
 }
 if (HARNESS_MODE) exitAfterFlush(harnessConformance(process.argv[idxH + 1]));

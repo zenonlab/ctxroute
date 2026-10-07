@@ -55,7 +55,14 @@ const VALUES = {
   // `!==` — an array is never `===` its own equal twin. The generic loop of
   // ① stays scalar-only on purpose; adding category there would silently
   // pass by REFERENCE inequality on every single case (a vacuous green).
-  category: [undefined, 'x', ['x'], ['x', 'y'], '', [], 'bogus'],
+  // 2026-10-07: the grouped form, the subtracting `-`, the identity words, and every form that
+  // must offer NOTHING (unknown role, a depth, a mixed form, an empty group, a lone dash).
+  category: [
+    undefined, 'x', ['x'], ['x', 'y'], '', [], 'bogus', ['', 'x'],
+    ['-x'], ['x', '-y'], [['x'], ['y']], [['x', 'y'], ['-z']],
+    ['role:main'], ['role:subagent', '-type:Explore'], ['-role:subagent'], ['type:deploy'], [['x'], ['role:subagent']],
+    ['depth:1'], ['role:boss'], ['x', ['y']], [['x'], []], ['-'], ['--x'],
+  ],
   // `response` is an OBJECT, compared BY VALUE in its own test (①ter) for the same reason as
   // `category`. The invalid forms are the load-bearing half: an empty filter, an empty `scope`,
   // an unknown key, a mixed `scope`, a grouped `exclude`, a bare string.
@@ -154,7 +161,17 @@ test('CADENCE ⟷ ENGINE ①: the 4-stage cascade, EXHAUSTIVE on every setting',
 //    unlike the generic loop above.
 // The SESSION side of `category`: nothing declared, an empty list, one shared name, one
 // foreign name, several (partly shared), and a bare STRING (not a list: never read as one).
-const SESSIONS = [undefined, [], ['x'], ['y'], ['x', 'y'], ['z'], 'x', ['', 'y']];
+// 2026-10-07: and the CONTEXT shape the engine now receives — declared names plus the identity
+// ctxroute derives, with the spaces it could MEASURE. Main agent, a typed sub-agent, an
+// untyped one, a harness that sends no id (nothing measured), each with and without a declaration.
+const ctx = (categories, measured) => ({ categories, measured });
+const SESSIONS = [
+  undefined, [], ['x'], ['y'], ['x', 'y'], ['z'], 'x', ['', 'y'],
+  ctx(['role:main'], ['role', 'type']), ctx(['x', 'role:main'], ['role', 'type']),
+  ctx(['role:subagent', 'type:Explore'], ['role', 'type']), ctx(['role:subagent', 'type:deploy'], ['role', 'type']),
+  ctx(['x', 'role:subagent', 'type:deploy'], ['role', 'type']), ctx(['role:subagent'], ['role']),
+  ctx(['x'], []), ctx([], []), {},
+];
 
 test('CADENCE ⟷ ENGINE ①bis: `category` cascade, EXHAUSTIVE', () => {
   const divergences = [];
@@ -506,6 +523,43 @@ test('NEGATIVE-CHECK: the differential DETECTS a false cadence semantics', () =>
   }
 });
 
+// ── ⑥ `category` AT THE DECISION: delivered, REPORTED, or left in SILENCE (2026-10-07) ──
+// ①bis confronts the verdict of ONE doc; this confronts what `decide` does with it — the doc
+// leaves the gesture, and the badge reports it ONLY when the restriction is on DECLARED
+// names. An identity restriction (a main-only doc meeting a sub-agent) is the expected shape
+// of a fleet of agents and must never shout. Every category value × every context shape.
+test('CADENCE ⟷ ENGINE ⑥: `category` at the decision — delivered, reported or silent, EXHAUSTIVE', () => {
+  const divergences = [];
+  let cas = 0;
+  let silent = 0;
+  const pick = (r) => ({ inject: r.inject, categoryOut: r.categoryOut });
+  for (const [value, session] of product([VALUES.category, SESSIONS])) {
+    const decls = { a: { mode: 'dumb', category: value } };
+    const args = [{}, decls, ['a'], {}, 0, { a: 'file' }, 'Bash', session];
+    const engine = pick(gate.decide(...args));
+    const model = pick(spec.decide(...args));
+    cas++;
+    if (engine.inject.length === 0 && engine.categoryOut.length === 0) silent++;
+    if (JSON.stringify(engine) !== JSON.stringify(model)) {
+      divergences.push(`value=${JSON.stringify(value)} session=${JSON.stringify(session)} engine=${JSON.stringify(engine)} spec=${JSON.stringify(model)}`);
+    }
+  }
+  assert.ok(cas >= 300, `suspicious domain: ${cas} cases`);
+  // ANTI-VACUITY: the silent identity exclusion must actually OCCUR in the domain.
+  assert.ok(silent > 0, 'no silent identity exclusion in the domain — the cell would prove nothing about it');
+  console.log(`  → category at the decision: ${cas} cases (${silent} silent)`);
+  assert.deepStrictEqual(divergences.slice(0, 5), [], `${divergences.length} divergence(s). DECIDE which side is right.`);
+
+  // SEEN RED: a model that REPORTS identity exclusions must be told apart from the engine.
+  const shouting = (...a) => {
+    const r = spec.decide(...a);
+    return { ...r, categoryOut: r.categoryOut.length ? r.categoryOut : (r.inject.length ? [] : ['a']) };
+  };
+  const main = { categories: ['role:main'], measured: ['role', 'type'] };
+  const args = [{}, { a: { mode: 'dumb', category: ['role:subagent'] } }, ['a'], {}, 0, { a: 'file' }, 'Bash', main];
+  assert.notDeepStrictEqual(pick(shouting(...args)), pick(gate.decide(...args)), 'SABOTAGE UNDETECTED — an identity exclusion reported as news');
+});
+
 // ── THE SCENARIO THIS FEATURE EXISTS FOR (operator, 2026-09-22) ─────────
 // A skill declares its OWN project category and matches normally on a PATH
 // (`match`/`keys`, the trigger). A session belonging to a DIFFERENT project
@@ -518,18 +572,18 @@ test('CATEGORY: a trigger-positive doc is still EXCLUDED when the session catego
   const decls = { a: { mode: 'dumb', category: ['projet-a'] } };
   const owners = { a: 'file' };
 
-  const wrongSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', ['projet-b']);
+  const wrongSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', { categories: ['projet-b'], measured: [] });
   assert.deepStrictEqual(wrongSession.inject, [], 'wrong category: must NOT inject despite the trigger firing');
   assert.deepStrictEqual(wrongSession.categoryOut, ['a'], 'the exclusion must be OBSERVABLE, never silent');
 
-  const rightSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', ['projet-a']);
+  const rightSession = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', { categories: ['projet-a'], measured: [] });
   assert.deepStrictEqual(rightSession.inject, ['a'], 'matching category: must inject');
   assert.deepStrictEqual(rightSession.categoryOut, []);
 
-  const noSessionCategory = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', []);
+  const noSessionCategory = gate.decide({}, decls, ['a'], {}, 0, owners, 'Bash', { categories: [], measured: [] });
   assert.deepStrictEqual(noSessionCategory.inject, [], 'no category declared for the session: a categorized doc stays hidden');
 
-  const uncategorizedDoc = gate.decide({}, { a: { mode: 'dumb' } }, ['a'], {}, 0, owners, 'Bash', ['projet-b']);
+  const uncategorizedDoc = gate.decide({}, { a: { mode: 'dumb' } }, ['a'], {}, 0, owners, 'Bash', { categories: ['projet-b'], measured: [] });
   assert.deepStrictEqual(uncategorizedDoc.inject, ['a'], 'PARITY: a doc without `category` is universal, whatever the session carries');
 });
 

@@ -238,4 +238,72 @@ const AFTER_ANSWER = {
   codex: { eventField: 'hook_event_name', event: 'PostToolUse', responseField: 'tool_response' },
 };
 
-module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, HOOK_OUTPUT_BUDGET, AFTER_ANSWER, ABSENT, UNMEASURED };
+// ═══════════════════════════════════════════════════════════════════════
+// HOW FULL THE CONTEXT IS, AND HOW AN END OF TURN IS REFUSED — the `wrapUp` option (2026-10-04)
+// ═══════════════════════════════════════════════════════════════════════
+// 🔑 Two capabilities, OPTIONAL, each a fact about a third party: a SENSOR that tells how full
+//    the context window is BEFORE the harness compacts it, and a FORCING that refuses the end of
+//    a turn with a reason the model reads. The core (`wrap-up-pure.js`) reads neither: it reads a
+//    normalised observation, and the shell speaks the forcing dialect declared here.
+// 📐 DOC-FIRST, read 2026-10-04: Claude Code `code.claude.com/docs/en/hooks` — Stop: top-level
+//    `decision: "block"` + `reason` ("Set to \"block\" to prevent Claude from stopping"), input
+//    `stop_hook_active`; mods (Claude Code 2.1.289 types) — `session.measure` "fires … after each
+//    main-thread turn" carrying `context.percent`, "compare them with your own threshold here".
+//    Codex `learn.chatgpt.com/docs/hooks` — Stop `decision: "block"` exists, but NO hook input
+//    carries a token count (common fields: session_id, transcript_path, cwd, hook_event_name,
+//    model, turn_id, permission_mode), so there is no sensor.
+// 🛑 NEVER A COMPACTION VETO: the same Claude Code doc says a blocked compaction "stops
+//    processing and asks you what to do" — a human in the loop. The sensor fires BELOW the wall.
+// ⚠️ Codex's transcript DOES carry the figure (`token_count` events), and Codex itself writes
+//    "the transcript format isn't a stable interface for hooks": it is deliberately NOT a sensor
+//    here (operator decision 2026-10-04). The day a hook input carries the count, Codex gets a
+//    sensor entry — data, zero engine line.
+const WRAP_UP = {
+  claudeCode: {
+    sensor: { kind: 'mod', plugin: 'mods/wrap-up-sensor', event: 'session.measure' },
+    forcing: { decisionField: 'decision', blockValue: 'block', reasonField: 'reason', noticeField: 'systemMessage' },
+    // WHICH FILES THE SESSION WROTE (2026-10-04): the parameters Claude Code's file-writing
+    // tools carry their path in (Write/Edit `file_path`, NotebookEdit `notebook_path`, from the
+    // tool types of 2.1.289). The FIRST is also the one an edit is matched on when a judge's
+    // perimeter is read on a written file. The tool NAMES live in the wiring's matcher.
+    // ⚠️ A file a SHELL command writes is not recorded: what a command writes is not a fact
+    //    the harness reports (stated in `wrap-up-touch.md`, never guessed from its text).
+    touch: { pathParams: ['file_path', 'notebook_path'] },
+  },
+  codex: {
+    sensor: ABSENT,
+    forcing: { decisionField: 'decision', blockValue: 'block', reasonField: 'reason', noticeField: 'systemMessage' },
+    touch: ABSENT,
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// WHO IS ACTING — where each harness writes an agent's identity (2026-10-07)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// `category` derives `role:main` / `role:subagent` / `type:<x>` from these fields
+// (`category-pure.contextFacts`). The engine never names a field: it reads the
+// names HERE, so a harness that spells them differently is one entry, zero line
+// of engine.
+// 🛑 `sendsAgentId` IS A MEASURED PROMISE, NEVER A DEFAULT. It says "every gesture
+//    of a sub-agent carries `idField`", which is what makes an ABSENT id mean "the
+//    main agent". Without it an absence proves nothing and no role is derived —
+//    a `role:main`-only doc then reaches NOBODY rather than leaking to a sub-agent.
+// 📐 SOURCES, DATED:
+//    Claude Code — `code.claude.com/docs/en/hooks` (SubagentStart, `agent_id`
+//      "present only for a call coming from a sub-agent"), and MEASURED 2026-10-07
+//      by a real `claude -p` capture: a sub-agent's PreToolUse carries `agent_id` +
+//      `agent_type`, the main agent's carries neither.
+//    Codex — its hooks doc lists `agent_id`/`agent_type` on SubagentStart/SubagentStop
+//      ONLY (PreToolUse is silent about them), so the promise rests on a MEASUREMENT:
+//      2026-10-07, codex-cli 0.146.0, isolated `CODEX_HOME` + a recording hook
+//      (`codex exec --dangerously-bypass-hook-trust`, one spawned sub-agent): the main
+//      agent's PreToolUse (Bash, spawn_agent, wait_agent) carried neither field; the
+//      sub-agent's Bash PreToolUse carried `agent_id` + `agent_type: "default"`, the
+//      same id as its SubagentStart. Neither harness sends a PARENT field (no `depth:`).
+const IDENTITY = {
+  claudeCode: { idField: 'agent_id', typeField: 'agent_type', sendsAgentId: true },
+  codex: { idField: 'agent_id', typeField: 'agent_type', sendsAgentId: true },
+};
+
+module.exports = { DEFAULT_PROFILE, HOOK_TIMEOUT_DEFAULTS, HOOK_OUTPUT_BUDGET, AFTER_ANSWER, WRAP_UP, IDENTITY, ABSENT, UNMEASURED };

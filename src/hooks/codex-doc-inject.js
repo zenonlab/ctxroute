@@ -27,7 +27,7 @@
 'use strict';
 
 const { run, denyOutput, noticeOutput, afterOutput } = require('../pretool-core');
-const { AFTER_ANSWER } = require('../harness-profile');
+const { AFTER_ANSWER, IDENTITY } = require('../harness-profile');
 const { readStdinJson } = require('../stdin-json');
 const lib = require('../lib-pure');
 const { printThenExit, exitUnlessPrinting } = require('../stdout-exit');
@@ -91,7 +91,7 @@ if (require.main === module) {
       // after-dialect shared with Claude Code. Codex runs ONE declaration, so no invocation id.
       const after = lib.afterAnswer(data, AFTER_ANSWER.codex);
       const say = after ? (d, f, m) => emit(d, f, m, afterOutput) : emit;
-      run(data, say, { budget: lib.declaredBudget(process.argv), after });
+      run(data, say, { budget: lib.declaredBudget(process.argv), after, identity: IDENTITY.codex });
       // ⚠️ Nothing printed ⇒ leaves NOW (fail-open, unchanged); a print in
       //    flight ⇒ its own drain exits. A bare `process.exit` here would cut it.
       exitUnlessPrinting();

@@ -20,22 +20,12 @@ import { createRequire } from 'node:module';
 
 import {
   rendezvousRefusal, socketCut,
-  formatEvent, shouldRotate, oneLine, isStall, isLoopBlock, loopFieldMs, LOOP_BLOCK_MS,
-  EVENTS, MAX_BYTES, KEPT_FILES, TOTAL_MAX_BYTES, STALL_MS,
+  formatEvent, isStall, isLoopBlock, loopFieldMs, LOOP_BLOCK_MS,
+  EVENTS, STALL_MS,
 } from '../src/lifecycle-log-pure.js';
 
-// ═══════════════════════════════════════════════════════════════════════
-// THE CEILING — declared numbers, asserted literally.
-// ═══════════════════════════════════════════════════════════════════════
-
-test('the ceiling is 256 KB per file, 2 files, 512 KB for life', () => {
-  assert.equal(MAX_BYTES, 262144);
-  assert.equal(KEPT_FILES, 2);
-  // 🛑 The figure `disk-writers.json` declares as this component's budget. If it
-  //    ever moves, that manifest moves in the SAME gesture or the declaration
-  //    becomes a permit for something else.
-  assert.equal(TOTAL_MAX_BYTES, 524288);
-});
+// ⚠️ THE CEILING, THE ROTATION AND `oneLine` MOVED TO `log-pure.test.js` on
+//    2026-10-04 with the code they assert — same cells, same literal values.
 
 // ═══════════════════════════════════════════════════════════════════════
 // THE CLOSED VOCABULARY — this is what keeps the writer bounded.
@@ -232,42 +222,6 @@ test('🛑 ONE RECORD IS ONE LINE — a newline in a value cannot forge a second
 test('the instant is collapsed too (the same forgery through the other door)', () => {
   const line = formatEvent({ at: 'a\r\nb', event: 'start' });
   assert.equal(line, 'a b event=start');
-});
-
-test('oneLine collapses every run of CR/LF into a single space and leaves the rest alone', () => {
-  assert.equal(oneLine('a\nb'), 'a b');
-  assert.equal(oneLine('a\r\n\r\nb'), 'a b');
-  assert.equal(oneLine('a b'), 'a b');
-  assert.equal(oneLine(90), '90');
-  assert.equal(oneLine(false), 'false');
-});
-
-// ═══════════════════════════════════════════════════════════════════════
-// ROTATION — the ceiling, decided here, applied by the shell.
-// ═══════════════════════════════════════════════════════════════════════
-
-test('the ceiling is a limit REACHED, not exceeded', () => {
-  assert.equal(shouldRotate({ sizeBytes: 262143, maxBytes: 262144 }), false);
-  assert.equal(shouldRotate({ sizeBytes: 262144, maxBytes: 262144 }), true);
-  assert.equal(shouldRotate({ sizeBytes: 999999, maxBytes: 262144 }), true);
-  assert.equal(shouldRotate({ sizeBytes: 0, maxBytes: 262144 }), false);
-});
-
-test('FAIL-OPEN: an absurd ceiling or an unreadable size means DO NOT rotate, hence still write', () => {
-  // The inverse of a gate, deliberately. The worst case is a slightly oversized
-  // file; refusing to write would lose the trace of a death.
-  assert.equal(shouldRotate({ sizeBytes: 10, maxBytes: 0 }), false);
-  assert.equal(shouldRotate({ sizeBytes: 10, maxBytes: -1 }), false);
-  assert.equal(shouldRotate({ sizeBytes: 10, maxBytes: 'x' }), false);
-  assert.equal(shouldRotate({ sizeBytes: 'x', maxBytes: 10 }), false);
-  assert.equal(shouldRotate({ sizeBytes: Infinity, maxBytes: 10 }), false);
-  assert.equal(shouldRotate({}), false);
-  assert.equal(shouldRotate(), false);
-});
-
-test('numeric strings are accepted on both sides (a size read back from text is still a size)', () => {
-  assert.equal(shouldRotate({ sizeBytes: '300000', maxBytes: '262144' }), true);
-  assert.equal(shouldRotate({ sizeBytes: '10', maxBytes: '262144' }), false);
 });
 
 // ═══════════════════════════════════════════════════════════════════════

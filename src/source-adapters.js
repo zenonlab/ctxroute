@@ -64,6 +64,8 @@ const { parse, validate } = require('./frontmatter');
 //    default). A bare `fs.readFileSync` here is what left the 90–120 KB skill
 //    bodies re-read on every daemon request until 2026-08-21.
 const { readCorpus, readDoc } = require('./corpus');
+// ⚠️ The journal writer: a failure this module survives is SAID there (fail-open).
+const log = require('./log');
 const { rulesFromParsed } = require('./loader');
 const fileSource = require('./sources/file');
 const toolSource = require('./sources/tool');
@@ -161,7 +163,8 @@ const mcpAdapter = {
         acc.meta[c.doc] = c;
         acc.matched.push(c.doc);
       }
-    } catch {
+    } catch (err) {
+      log.hookError('source-mcp', err);
       /* LOCAL fail-open — an unreadable MCP corpus never silences the file docs */
     }
   },
@@ -208,7 +211,8 @@ const skillAdapter = {
         acc.meta[m.doc] = { name };
         acc.matched.push(m.doc);
       }
-    } catch {
+    } catch (err) {
+      log.hookError('source-skill', err);
       /* LOCAL fail-open — an unreadable skills registry never silences the other sources */
     }
   },
@@ -250,7 +254,8 @@ const toolAdapter = {
         acc.owner[m.doc] = this.id;
         acc.matched.push(m.doc);
       }
-    } catch {
+    } catch (err) {
+      log.hookError('source-tool', err);
       /* LOCAL fail-open — a failure here never silences the other sources */
     }
   },

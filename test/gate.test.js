@@ -687,6 +687,20 @@ test('categoryExcluded: a categorized doc is EXCLUDED when the session declared 
   assert.strictEqual(categoryExcluded({}, { category: ['o'] }, 'file', 'ops'), true);
 });
 test('categoryExcluded: ONE shared category is enough (OR), none shared excludes', () => {
-  assert.strictEqual(categoryExcluded({}, { category: ['ops', 'seo'] }, 'skill', ['seo']), false);
-  assert.strictEqual(categoryExcluded({}, { category: ['ops'] }, 'skill', ['seo']), true);
+  // The context shape `pretool-core` builds since 2026-10-07 (`category-pure.contextFacts`).
+  const seo = { categories: ['seo'], measured: [] };
+  assert.strictEqual(categoryExcluded({}, { category: ['ops', 'seo'] }, 'skill', seo), false);
+  assert.strictEqual(categoryExcluded({}, { category: ['ops'] }, 'skill', seo), true);
+});
+test('categoryExcluded: the 22/09 bare LIST is no context any more — it carries nothing (fail-closed)', () => {
+  assert.strictEqual(categoryExcluded({}, { category: ['seo'] }, 'skill', ['seo']), true);
+  assert.strictEqual(categoryExcluded({}, {}, 'skill', ['seo']), false);
+});
+test('categoryExcluded: WHO is acting — identity derived by the caller', () => {
+  const main = { categories: ['role:main'], measured: ['role', 'type'] };
+  const explore = { categories: ['role:subagent', 'type:Explore'], measured: ['role', 'type'] };
+  assert.strictEqual(categoryExcluded({}, { category: ['role:main'] }, 'file', main), false);
+  assert.strictEqual(categoryExcluded({}, { category: ['role:main'] }, 'file', explore), true);
+  assert.strictEqual(categoryExcluded({}, { category: ['role:subagent', '-type:Explore'] }, 'file', explore), true);
+  assert.strictEqual(categoryExcluded({}, { category: ['role:subagent', '-type:Explore'] }, 'file', main), true);
 });

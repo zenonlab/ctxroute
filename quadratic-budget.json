@@ -18,10 +18,25 @@
       "max": 5,
       "class": "INHERITED_DEBT"
     },
-    "src/cadence-spec.js": {
+    "src/wrap-up-pure.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "`judgesFor` matches every file the session wrote against the judges an adopter declared: files x judges, both bounded - the files by MAX_TOUCHED (1000, the list stops growing past it), the judges by a hand-written config entry (a handful). Each hit is appended in place to a Map entry, never copied, so the loop stays linear in the written files."
+    },
+    "test/wrap-up-claude-code.test.js": {
+      "max": 1,
+      "class": "O(N)",
+      "why": "The stream-json reader splits the CLI's stdout into lines: the `while` walks the lines of one chunk and its condition's `indexOf` scans the STRING buffer, which the loop shrinks by each line it consumes - linear in the bytes of one test conversation (a few hundred events), never a fleet collection."
+    },
+    "examples/judges/undocumented-changes.js": {
       "max": 3,
       "class": "O(N)",
-      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-09-23 when the `response` model arrived, rather than having its ceiling raised. Three nestings, each bounded by author-written constants: the answer model reads every TEXT of a tool answer against every WORD of a doc filter (a handful of words an author typed), and each `scope` group against those texts - linear in the answer, never a pairwise walk of a fleet collection. The third (a filter stage lookup) scans a fixed list of three filter modes. The model only ever runs on the cadence differential domain, a constant table."
+      "why": "Three nestings, each with an inner side bounded by a constant: the porcelain loop tests the two-character XY status of each entry, and the judged-files loop tests each file against the `--ignore` arguments an adopter wrote in the config (a handful). Linear in the files judged - this example runs once per end of turn, over one session's files or one repository's changes."
+    },
+    "src/cadence-spec.js": {
+      "max": 6,
+      "class": "O(N)",
+      "why": "PROMOTED OUT OF INHERITED_DEBT on 2026-09-23 when the `response` model arrived, rather than having its ceiling raised. Three nestings, each bounded by author-written constants: the answer model reads every TEXT of a tool answer against every WORD of a doc filter (a handful of words an author typed), and each `scope` group against those texts - linear in the answer, never a pairwise walk of a fleet collection. The third (a filter stage lookup) scans a fixed list of three filter modes. The model only ever runs on the cadence differential domain, a constant table. 2026-10-07: three more, from the `category` model rewritten for WHO is acting — `conditionsOf` filters each condition of ONE declaration, `valid` checks each word of each condition, `restrictsIdentity` scans the same words: all bounded by what an author wrote in one doc, and the model only ever runs on the differential domain, a constant table."
     },
     "src/canary.js": {
       "max": 1,
@@ -118,10 +133,6 @@
     },
     "src/sources/file.js": {
       "max": 15,
-      "class": "INHERITED_DEBT"
-    },
-    "src/sources/session.js": {
-      "max": 2,
       "class": "INHERITED_DEBT"
     },
     "src/sources/skill.js": {
@@ -316,11 +327,6 @@
     "test/http-daemon-lifecycle.test.js": {
       "max": 1,
       "class": "INHERITED_DEBT"
-    },
-    "test/journal-boundary-gate.test.js": {
-      "max": 1,
-      "class": "O(N)",
-      "why": "The outer collection is a TWO-element literal — the journal and its single rotated copy, and a third can never exist because the rotation renames onto the same name and a rename overwrites — crossed with the handful of writers the disk manifest declares. Both sides are constants of the mechanism under test, not quantities any input can grow."
     },
     "test/language-completeness.test.js": {
       "max": 7,
@@ -631,6 +637,11 @@
       "max": 1,
       "class": "O(N)",
       "why": "The serving scan walks the CLIENT SLOTS and, inside, applies the one operation posted in that slot. The outer bound is the number of participants — at most nine, the worker ceiling plus the main thread, and refused above it — and the inner work is ONE table or store call, never a traversal. A full scan is deliberate: a queue would be shared mutable state between threads, i.e. exactly the thing this design exists to have precisely one of."
+    },
+    "src/category-pure.js": {
+      "max": 5,
+      "class": "O(N)",
+      "why": "Every nesting walks ONE doc's `category` declaration — its groups and, inside, their literals: a handful of words an author typed in a frontmatter or a config entry, never a fleet collection against another. The context side is a Set lookup (`carried`, `measured`), so a doc is decided in time linear in its own declaration, and the engine pays that once per selected doc."
     }
   },
   "_doc_witnesses": "ANTI-INERT, the guarantee that holds everything else. Every `kind:`/`pattern:` atom of `rules/no-undeclared-quadratic.yml` MUST be paired here with a line of code whose detection is REQUIRED (written to the OS tmpdir, scanned, detection asserted). An atom without a witness is REFUSED, so an atom added tomorrow stays RED until someone proves it sees anything at all. The tmpdir and not a folder of the repository: `ast-grep` HONOURS `.gitignore`, and witnesses written into an ignored folder are invisible (measured in this repository on 2026-08-06) — while a decoy written into `src/` or `test/` would make the arbo, doc-coverage and english-only gates go red AT RANDOM, since vitest runs suites in parallel. A gate must never make another gate flaky.",

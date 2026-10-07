@@ -91,8 +91,15 @@ function purgedPrefixes(source) {
  *    semantics. The day a real store were named `cache/`, the gate
  *    would go blind again without anyone knowing.
  */
+// 🔴 THE SECOND CONDITION WAS BLIND TO THE SANCTIONED DOOR (2026-10-04, option `wrapUp`).
+//    "Importing a store is FORBIDDEN outside the owner" (`only-store-resolve-opens-a-store`):
+//    a NEW writer reaches the state through `store-resolve`, never `session-store`, so a gate
+//    that recognised only the latter could see the five INHERITED importers and no correct
+//    writer at all — the first one to obey the rule (`wrap-up-observe.js`) was reported as a
+//    DEAD purge. Both doors now count; the identifier-prefix false positive stays excluded,
+//    since a pure module imports neither.
 function declaredPrefixes(source) {
-  if (!/require\(\s*['"](?:\.\.?\/)+(?:src\/)?session-store['"]\s*\)/.test(source)) return [];
+  if (!/require\(\s*['"](?:\.\.?\/)+(?:src\/)?(?:session-store|store-resolve)['"]\s*\)/.test(source)) return [];
   return [...source.matchAll(/(?:STORE_)?PREFIX\s*=\s*'([^']+)'/g)].map((m) => m[1]);
 }
 
@@ -165,6 +172,14 @@ test('NEGATIVE-CHECK: the gate TURNS RED on a non-purged store (IN-MEMORY sabota
       .filter((p) => !purges.has(p)),
     [],
     'the gate accuses a store that is nevertheless purged: false positive, it will end up unplugged.',
+  );
+
+  // …and it SEES a writer that obeys the ownership rule (through `store-resolve`).
+  assert.deepStrictEqual(
+    declaredPrefixes("const { resolveStore } = require('../store-resolve');\nconst STORE_PREFIX = 'canari-brouillon-';")
+      .filter((p) => !purges.has(p)),
+    ['canari-brouillon-'],
+    'the gate is blind to a writer that goes through the sanctioned door: it can only see inherited debt.',
   );
 
   // …and it IGNORES a prefix that is NOT a store (the REAL false positive of the

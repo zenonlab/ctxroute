@@ -1,3 +1,7 @@
+---
+category: role:main
+note: sub-agents receive the ctxroute skill by perimeter when they work on ctxroute; this reference is for the main agent
+---
 # The ctxroute language — derived from the CODE
 
 🛑 **Authority = `src/sources/file.js` · `src/gate.js` · `src/frontmatter.js`. A doc that contradicts them is wrong** (2 false statements were born that way). Settle any doubt with `node tools/explain.js --doc <name> --tool X --input '{...}'` — never by re-reading prose, never by re-implementing the engine.

@@ -54,10 +54,25 @@ test('MCP doc: `mode: dumb` alone = silence; a key outside mode/threshold = BLOC
   expect(JSON.parse(r.stdout).reason).toContain('match');
 });
 
-test('SESSION doc = never blocked (nothing to validate by construction)', () => {
+// 🔄 INVERTED 2026-10-07, the case KEPT: a session doc was "never blocked, nothing to validate
+//    by construction" until `category` reached that corpus. An unknown key there is now what it
+//    is everywhere else — a declaration accepted and inert — so it BLOCKS like in the 2 others.
+test('SESSION doc: an unknown key = BLOCK (it was never blocked before `category`)', () => {
   const r = run('note.md', '---\nnimporte: quoi\n---\ncontent\n', { kind: 'session' });
   expect(r.status).toBe(0);
-  expect(r.stdout).toBe('');
+  expect(JSON.parse(r.stdout).decision).toBe('block');
+  expect(JSON.parse(r.stdout).reason).toContain('nimporte');
+});
+
+test('SESSION doc: an identity `category` = silence; a cadence or a declared name = BLOCK with its reason', () => {
+  expect(run('main.md', '---\ncategory: role:main\n---\ncontent\n', { kind: 'session' }).stdout).toBe('');
+  expect(run('plain.md', 'content without frontmatter\n', { kind: 'session' }).stdout).toBe('');
+  const cadence = JSON.parse(run('m.md', '---\nmode: once\n---\ncontent\n', { kind: 'session' }).stdout);
+  expect(cadence.decision).toBe('block');
+  expect(cadence.reason).toContain('no cadence');
+  const declared = JSON.parse(run('d.md', '---\ncategory: ops\n---\ncontent\n', { kind: 'session' }).stdout);
+  expect(declared.decision).toBe('block');
+  expect(declared.reason).toContain('nothing is declared yet');
 });
 
 test('file outside the 3 fleets, missing file, broken stdin = silent fail-open', () => {

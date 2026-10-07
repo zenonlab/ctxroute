@@ -1,0 +1,41 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of a `catch` that reports to no journal. NO POLICY.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ THE CLASS: a hook that swallows an error leaves NOTHING — the harness sees
+#    exit 0, `claude --debug` sees exit 0, and the failure is invisible for as
+#    long as nobody suspects it. Found 2026-10-04 (work item K): 9 of 12 hooks
+#    swallowed in silence after the journal writer existed.
+# ⚠️ WHAT IT LOOKS FOR: a `catch` clause whose body calls none of
+#    `log.hookError(…)` · `log.daemonError(…)` · `log.write(…)` — the receiver
+#    IS named here, on purpose: `process.stdout.write` in a catch reports to
+#    nobody, and a method-only match would let it pass. A `catch` that legitimately stays silent (an absent config means
+#    the defaults, a race the caller already handles) is NOT an error: it is
+#    DECLARED, with its reason, in `silent-catch-budget.json` — the policy of
+#    `test/silent-catch-gate.test.js`.
+# ⚠️ AST, NEVER REGEX: comments quoting `catch {}` must never be accused.
+# 🛑 IT JUDGES NOTHING AND EXEMPTS NOTHING — no `files:`, no `ignores:`.
+id: no-silent-catch
+language: JavaScript
+severity: error
+message: >-
+  SILENT CATCH — this `catch` reports to no journal. Call
+  `log.hookError('<hook>', err)` (or `log.write`), or declare the silence with
+  its reason in `silent-catch-budget.json`.
+
+rule:
+  kind: catch_clause
+  all:
+    - not:
+        has:
+          stopBy: end
+          kind: call_expression
+          has:
+            field: function
+            regex: '^log\.(hookError|daemonError|write)$'
+    # ⚠️ A `catch` that THROWS is not silent: it hands the failure on (a named
+    #    refusal, a re-raise). Only the swallowing shape is detected.
+    - not:
+        has:
+          stopBy: end
+          kind: throw_statement

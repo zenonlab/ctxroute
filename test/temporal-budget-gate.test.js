@@ -248,6 +248,9 @@ test('NEGATIVE: the WIRING really reddens on a fabricated occurrence', () => {
 //    socket's `close` event instead of inside it. It waits for an EVENT and
 //    guesses no duration: a tick, kept. It shipped undeclared and this cell
 //    was red from that day until this re-decision.
+//    RE-DECIDED 2026-10-04: a third one in `test/judge-runner.test.js` lived one
+//    day and was REMOVED — its ticks were too short to outlast a Linux zombie, so
+//    that wait is now a declared `undecidable` timer in the budget. Back to 2.
 //
 // ⚠️ THE COUNT IS AN EQUALITY, like the ratchet: a NEW `setImmediate` reddens
 //    here, and the fix is to RE-DECIDE it (still a tick ⇒ raise the number

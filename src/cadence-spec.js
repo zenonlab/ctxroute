@@ -101,10 +101,13 @@ const VALID = {
   // opt out of a `defaults.{source}.enforce: true`. Filtering it as "empty"
   // would make a category impossible to leave — the dead end of any cascade.
   enforce: (v) => typeof v === 'boolean',
-  // A value is "valid" for `category` iff it NORMALIZES to a non-empty list —
-  // same criterion the engine's own `categoryList` applies, restated
-  // independently (a string or a list of strings, at least one non-blank).
-  category: (v) => categoryListSpec(v).length > 0,
+  // A value is "valid" for `category` iff it stands for at least one condition AND every word
+  // in it can be satisfied by SOME context — restated from the intention (2026-10-07), never
+  // read off `category-pure.js`.
+  category: (v) => {
+    const conditions = conditionsOf(v);
+    return conditions.length > 0 && conditions.every((c) => c.every(satisfiable));
+  },
   response: (v) => answerFilterIsWellFormed(v),
 };
 
@@ -190,36 +193,96 @@ function answerFilterOf(cfg, entry, owner) {
 //    WORD (26 shared tokens, caught by `model-twin-gate`) — a model that copies cannot
 //    contradict. Restated: a lone value is a list of one, and a category is a string holding
 //    at least one non-blank character.
-function categoryListSpec(v) {
-  const candidates = Array.isArray(v) ? v : [v];
-  const names = (c) => typeof c === 'string' && /\S/.test(c);
-  return candidates.filter(names);
+// 🔄 2026-10-07 — THE INTENTION GREW, SO THE MODEL WAS REWRITTEN FROM IT (operator, then a
+//    senior review): `category` says WHO is acting. A value is a list of CONDITIONS that must
+//    ALL hold. A condition is satisfied when ANY name it wants is carried by the context, and
+//    VETOED when a name it forbids (`-name`) is carried — or cannot be known. The flat form
+//    (`["a","b"]`) is ONE condition, exactly the old OR; the grouped form (`[["a"],["b"]]`)
+//    is several. A context carries what a policy declared plus its identity, which ctxroute
+//    derives: `role:main` / `role:subagent` / `type:<name>`. Blank words are skipped, as they
+//    always were; a mix of words and conditions means nothing.
+function conditionsOf(v) {
+  const word = (c) => typeof c === 'string' && /\S/.test(c);
+  if (!Array.isArray(v)) return word(v) ? [[v]] : [];
+  const nested = v.filter((x) => Array.isArray(x));
+  if (nested.length === 0) {
+    const single = v.filter(word);
+    return single.length > 0 ? [single] : [];
+  }
+  if (nested.length < v.length) return [];
+  const all = nested.map((c) => c.filter(word));
+  return all.some((c) => c.length === 0) ? [] : all;
+}
+
+// The identity "space" a name belongs to — `null` for a name a policy declares.
+function spaceOf(name) {
+  const m = /^(role|type|depth):/.exec(name);
+  return m ? m[1] : null;
+}
+
+const bareWord = (w) => (w.charAt(0) === '-' ? w.substring(1) : w);
+
+// Could SOME context ever carry this word? A depth is never known (no harness names a
+// sub-agent's parent), a role is one of two, a type needs a name.
+function satisfiable(w) {
+  const name = bareWord(w);
+  if (!/\S/.test(name) || name.charAt(0) === '-') return false;
+  switch (spaceOf(name)) {
+    case 'depth': return false;
+    case 'role': return name === 'role:main' || name === 'role:subagent';
+    case 'type': return /\S/.test(name.substring('type:'.length));
+    default: return true;
+  }
 }
 
 /**
- * The categories THIS doc requires of a session — [] means unrestricted.
+ * The conditions THIS doc requires of its context — [] means unrestricted.
  * Same two-stage cascade as `enforce`: entry > defaults.{source} > (no global
  * stage: a global restriction would silence the fleet's very first gesture) >
  * framework default `[]` (no restriction, i.e. TODAY's behaviour, byte for
  * byte, before this key ever existed — parity).
  */
 function categoryOf(config, decl, source) {
-  return categoryListSpec(resolve('category', config, decl, source));
+  return conditionsOf(resolve('category', config, decl, source));
 }
 
 /**
- * Is this doc EXCLUDED because its required categories do not intersect the
- * session's declared ones? Fail-CLOSED on the restriction (the inverse of
- * `enforce`'s own fail-open): a doc that names categories and meets a session
- * that named NONE is excluded, never shown by default.
+ * Is this doc EXCLUDED by who the context is? Fail-CLOSED on the restriction (the
+ * inverse of `enforce`'s own fail-open): a doc that names categories and meets a
+ * context carrying none of them is excluded, never shown by default.
+ * The context is `{categories, measured}`, and nothing else counts as one: an absent value
+ * or a bare list carries no category and knows no identity.
  */
 function categoryExcludedSpec(config, decl, source, session) {
-  // Stated as the intention reads: EXCLUDED iff the doc requires something AND the session
-  // declared none of it. (Restated 23/09/2026 — the earlier body copied the engine's.)
-  const required = categoryOf(config, decl, source);
-  const wanted = new Set(Array.isArray(session) ? session : []);
-  const shared = required.filter((name) => wanted.has(name));
-  return required.length > 0 && shared.length === 0;
+  const conditions = categoryOf(config, decl, source);
+  if (conditions.length === 0) return false;
+  const isContext = session !== null && typeof session === 'object' && !Array.isArray(session);
+  const ctx = isContext ? session : {};
+  const has = new Set(Array.isArray(ctx.categories) ? ctx.categories : []);
+  const known = new Set(Array.isArray(ctx.measured) ? ctx.measured : []);
+  const holds = (condition) => {
+    let wantsSomething = false;
+    let met = false;
+    let vetoed = false;
+    for (const w of condition) {
+      if (w.charAt(0) === '-') {
+        const name = w.substring(1);
+        const space = spaceOf(name);
+        if ((space !== null && !known.has(space)) || has.has(name)) vetoed = true;
+      } else {
+        wantsSomething = true;
+        if (has.has(w)) met = true;
+      }
+    }
+    return !vetoed && (met || !wantsSomething);
+  };
+  return !conditions.every(holds);
+}
+
+// Does this doc restrict by IDENTITY? Such an exclusion is the expected shape of a fleet of
+// agents (a doc for the main agent leaves every sub-agent) — it is never REPORTED.
+function restrictsIdentity(config, decl, source) {
+  return categoryOf(config, decl, source).some((c) => c.some((w) => spaceOf(bareWord(w)) !== null));
 }
 
 /**
@@ -360,11 +423,13 @@ function decide(cfg, declared, selected, before, turns, ownerOf, actor, session,
     const waitsForAnswer = answerFilterOf(cfg, (declared || {})[name], ownerOfDoc(name)) !== null;
     if (waitsForAnswer !== afterTheAnswer) return 'elsewhere';
     if (targetExcluded(cfg, ownerOfDoc(name), actor)) return 'target';
-    if (categoryExcludedSpec(cfg, (declared || {})[name], ownerOfDoc(name), session)) return 'category';
+    if (categoryExcludedSpec(cfg, (declared || {})[name], ownerOfDoc(name), session)) {
+      return restrictsIdentity(cfg, (declared || {})[name], ownerOfDoc(name)) ? 'unreported' : 'category';
+    }
     if (afterTheAnswer && !answerSatisfies(answerFilterOf(cfg, (declared || {})[name], ownerOfDoc(name)), answered.response)) return 'elsewhere';
     return 'kept';
   };
-  const bins = { elsewhere: [], target: [], category: [], kept: [] };
+  const bins = { elsewhere: [], target: [], category: [], unreported: [], kept: [] };
   for (const name of selected) bins[binOf(name)].push(name);
   const kept = bins.kept;
   const inGesture = new Set(kept);
@@ -483,7 +548,7 @@ function decide(cfg, declared, selected, before, turns, ownerOf, actor, session,
 }
 
 module.exports = {
-  decide, resolve, livre, derive, targetExcluded, filterOf, categoryOf, categoryExcludedSpec,
+  decide, resolve, livre, derive, targetExcluded, filterOf, categoryOf, categoryExcludedSpec, restrictsIdentity,
   answerFilterOf, answerSatisfies, answerFilterIsWellFormed,
   MODES, DRIFT_UNITS, FILTER_MODES, FRAMEWORK,
 };

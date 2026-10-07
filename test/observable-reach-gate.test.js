@@ -54,13 +54,17 @@ import { conformance } from '../src/harness-conformance.js';
 import * as fileSrc from '../src/sources/file.js';
 import * as toolSrc from '../src/sources/tool.js';
 import * as skillSrc from '../src/sources/skill.js';
-import { DEFAULT_PROFILE } from '../src/harness-profile.js';
+import { DEFAULT_PROFILE, IDENTITY } from '../src/harness-profile.js';
+import * as gate from '../src/gate.js';
+import { contextFacts } from '../src/category-pure.js';
 import { DERIVED_OBSERVABLES, DERIVED_NAMES } from '../src/derived-observables.js';
 
 const ATOM = 'atome-temoin';
 const decideFile = (rule, geste) => fileSrc.matchingDocs([{ ...rule, doc: 'd.md' }], geste).length > 0;
 const decideTool = (fm, geste) => toolSrc.matchingDocs([{ doc: 'd.md', fm }], geste).length > 0;
 const decideSkill = (entry, payload) => skillSrc.matchingSkills({ skills: { s: entry } }, payload).length > 0;
+// WHO: does a doc declaring `category` reach the context this payload describes?
+const decideWho = (category, payload) => !gate.categoryExcluded({}, { category }, 'file', contextFacts([], payload, IDENTITY.claudeCode));
 
 // ── THE CONTRACT, AS DATA (derived, never copied) ────────────────────────
 // An empty payload makes `conformance` list EVERY capability it knows: the
@@ -231,10 +235,34 @@ const CELLS = () => [
     sans: () => decideFile({ pattern: ATOM }, { toolName: 'X', toolInput: {}, session_id: 'rien' }),
   },
   {
-    id: 'agent_id/unreachable', capacity: 'agent_id', reached: false,
-    justification: 'same as session_id: it discriminates master vs sub-agent for the injection STATE, never for the decision. A doc conditioned on "which agent" would be a rule about WHO, not about WHAT is being done.',
+    id: 'agent_id/unreachable-by-WHAT', capacity: 'agent_id', reached: false,
+    justification: 'the WHAT operators (match/scope/exclude) read the GESTURE, never who performs it: a doc conditioned on "which agent" through them would be a rule about WHO written as a rule about WHAT, and the identity would collide with any parameter that merely quotes it. WHO is `category`\'s job — the cells below.',
     with: () => decideFile({ pattern: ATOM }, { toolName: 'X', toolInput: {}, agent_id: ATOM }),
     sans: () => decideFile({ pattern: ATOM }, { toolName: 'X', toolInput: {}, agent_id: 'rien' }),
+  },
+  // ── WHO is acting — reached through `category`, the language's one word for it (2026-10-07) ──
+  // The payloads are the REAL shape (Claude Code capture): a sub-agent gesture carries
+  // `agent_id` + `agent_type`; the main agent's carries neither. The facts are DERIVED by the
+  // same function `pretool-core` and `session-inject` call, through the Claude Code profile.
+  {
+    id: 'agent_id/positive-by-category', capacity: 'agent_id', reached: true,
+    with: () => decideWho(['role:subagent'], { agent_id: 'a1' }),
+    sans: () => decideWho(['role:subagent'], {}),
+  },
+  {
+    id: 'agent_id/negative-by-category', capacity: 'agent_id', reached: true,
+    with: () => decideWho(['-role:subagent'], { agent_id: 'a1' }),
+    sans: () => decideWho(['-role:subagent'], {}),
+  },
+  {
+    id: 'agent_type/positive-by-category', capacity: 'agent_type', reached: true,
+    with: () => decideWho(['type:' + ATOM], { agent_id: 'a1', agent_type: ATOM }),
+    sans: () => decideWho(['type:' + ATOM], { agent_id: 'a1', agent_type: 'rien' }),
+  },
+  {
+    id: 'agent_type/negative-by-category', capacity: 'agent_type', reached: true,
+    with: () => decideWho(['role:subagent', '-type:' + ATOM], { agent_id: 'a1', agent_type: ATOM }),
+    sans: () => decideWho(['role:subagent', '-type:' + ATOM], { agent_id: 'a1', agent_type: 'rien' }),
   },
   {
     id: 'transcript_path/unreachable', capacity: 'transcript_path', reached: false,

@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ast-grep RULE — DETECTION of an APPEND to a file. NO POLICY.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️ THE CLASS: a journal written outside `src/log.js`. Appending is what a
+#    journal IS, so an append primitive anywhere else is a journal nobody
+#    registered: no closed vocabulary, no level, no rotation, no ceiling in
+#    `disk-writers.json` — the unbounded writer this project forbids.
+# 🔴 BORN 2026-10-04 (work item K): the project's only journal had its rotation
+#    hard-coded beside its `appendFileSync`, and the next journal would have
+#    been written the same way. Making the one writer the ONLY place an append
+#    can live is what makes "add a journal" necessarily mean "add a registry
+#    entry, with a ceiling".
+#
+# ⚠️ WHAT IT LOOKS FOR, keyed on the METHOD, never the receiver (a receiver
+#    name goes blind on `require("fs").x` and on an alias — measured 2026-08-21
+#    in `disk-writers`): `appendFileSync` · `appendFile` · `createWriteStream`
+#    (a stream is how a long-lived journal is usually opened) · `openSync` with
+#    an append flag (`'a'`, `'a+'`, `'as'`, `'as+'`, `'ax'`, `'ax+'`).
+#
+# ⚠️ AST, NEVER REGEX: `log.js` and its docs say "appendFileSync" in comments;
+#    a text scan would accuse the documentation that protects the invariant.
+#
+# 🛑 IT JUDGES NOTHING AND EXEMPTS NOTHING — no `files:`, no `ignores:`. The one
+#    legitimate site (`src/log.js`) is the POLICY of
+#    `test/journal-writer-gate.test.js`, with its ratchet and its witnesses.
+id: no-journal-writer
+language: JavaScript
+severity: error
+message: >-
+  APPEND OUTSIDE THE JOURNAL WRITER — every journal goes through `src/log.js`
+  (registry `log-journals-pure.js`: closed vocabulary, level, rotation, ceiling
+  declared in `disk-writers.json`). Add your journal or your event THERE.
+
+rule:
+  any:
+    - kind: call_expression
+      has:
+        field: function
+        regex: '(^|\.)(appendFileSync|appendFile|createWriteStream)$'
+    - kind: call_expression
+      all:
+        - has:
+            field: function
+            regex: '(^|\.)openSync$'
+        - has:
+            field: arguments
+            has:
+              nthChild: 2
+              kind: string
+              regex: "^['\"]a[sx]?\\+?['\"]$"

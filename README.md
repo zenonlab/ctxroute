@@ -148,7 +148,10 @@ channel at all — a capability hole, not a size one.
       ]}
     ],
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node /path/to/ctxroute/src/hooks/session-inject.js", "timeout": 10 }] }
+      { "hooks": [{ "type": "command", "command": "node /path/to/ctxroute/src/hooks/session-inject.js --harness claudeCode", "timeout": 10 }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "node /path/to/ctxroute/src/hooks/session-inject.js --harness claudeCode", "timeout": 10 }] }
     ],
     "PostToolUse": [
       { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": "node /path/to/ctxroute/src/hooks/doc-write-guard.js", "timeout": 10 }] }
@@ -204,7 +207,10 @@ channel at all — a capability hole, not a size one.
 
 Codex CLI is supported with thin shells (`src/hooks/codex-doc-inject.js`,
 `src/hooks/codex-doc-write-guard.js`) — declare `additionalContextLimit = 0` on the
-emitters (checked by `doctor.js --codex-hooks`).
+emitters (checked by `doctor.js --codex-hooks`). Wire `session-inject.js --harness codex`
+on `SessionStart` AND `SubagentStart`: the shared session shell learns which harness it
+serves from that flag, and without it a doc restricted by `category` to the main agent or
+to sub-agents reaches nobody.
 
 ## Porting to another harness
 
@@ -238,6 +244,92 @@ harness dialect; the dialect lives in `harness-profile.js`, as data).
 - `node tools/doctor.js [--settings …] [--codex-hooks …] [--harness …]` — is the
   wiring alive, does the harness conform.
 - `node tools/lint-corpus.js` — audit of the whole doc corpus.
+
+### Journals — where failures are written, and how much disk they may use
+
+Two files under the state directory (`stateDir`, `state/` by default):
+
+| File | What it records |
+|---|---|
+| `ctxroute-daemon.log` | The daemon's life: start, exits and their cause, stalls, refused connections. |
+| `ctxroute-hooks.log` | A hook or a shared module that failed and stayed fail-open (the agent never sees it; the journal does), including a state write that was lost. |
+
+One line per record: `<ISO instant> event=<name> key=value…`. A failure the daemon survives is
+`event=daemon-error site=<where>`; a hook's is `event=hook-error hook=<name>`; each distinct failure
+is written once per process, so a failure repeating on every request cannot flood the journal. **Errors are always written**, whatever
+the level: a failure at night with debug off still leaves its line, and costs nothing while nothing
+breaks. The `debug` level adds the verbose trace: one line per daemon request and each hook's
+decision. Switch it on in the config to diagnose, off when done; the next record obeys, no restart.
+
+```json
+"logging": { "level": "debug", "maxBytes": 1048576, "keptFiles": 5 }
+```
+
+| Key | Default | Bounds | Meaning |
+|---|---|---|---|
+| `level` | `error` | `error` · `debug` | `debug` adds the trace on top of errors. |
+| `maxBytes` | `262144` | 16384 – 8388608 | Size at which a file rotates: it becomes `.1`, older ones shift. |
+| `keptFiles` | `2` | 1 – 10 | Files kept per journal, the current one included; lowering it frees the extra generations at the next rotation. |
+
+Every journal is bounded for life by construction: at most `keptFiles × maxBytes` each, and at the
+widest setting 2 × 10 × 8 MB = 160 MB in total, whatever the uptime or the traffic. A value outside
+the bounds is refused by name: the journal writes `event=logging-refused reason=…` and keeps running
+on the defaults. Measured cost on the daemon: 49 µs per request with `debug` off, about +0.1 ms per
+request with it on.
+
+## Experimental: `wrapUp` — write the session's knowledge down before the context wall
+
+When an agent's context window fills up, what it learned in the session is summarised away. With
+`wrapUp` on, once the fill crosses your threshold the agent may not END ITS TURN until your
+judges say its knowledge is written down — injectable docs, every skill covering the change, memory, regression
+tests, whatever your judges check. Off by default; switched off, the generated wiring is byte-identical.
+
+- **`atPercent` is a share of the session's OWN window** (default 70), as Claude Code computes it
+  for the model in use — a 200k and a 1M window both fire at 70 % of themselves, so one setting
+  fits every user. Keep it below the point where your harness compacts on its own. The figure
+  arrives after each whole turn, so the refusal comes at the end of the turn AFTER the crossing.
+
+```json
+"wrapUp": {
+  "enabled": true,
+  "atPercent": 70,
+  "maxNudges": 3,
+  "judgeTimeoutSeconds": 120,
+  "message": "optional — your own words, any language, {percent} is replaced",
+  "judges": {
+    "docs": { "command": ["node", "scripts/check-docs.js"], "match": ["my-project"] }
+  }
+}
+```
+
+- **A judge is any program** (a script, a suite of judges, a call to a model), given as an argument
+  vector and run WITHOUT a shell, so it behaves the same on Windows, Linux and macOS. It receives on stdin
+  `{ "version": 2, "sessionId", "cwd", "context": { "tokens", "window", "percent" }, "atPercent", "nudges", "touched" }`,
+  exits `0` when the work is done, anything else when it is not; its stdout (plain text, or
+  `{ "ok": false, "findings": [{ "file", "message", "severity" }] }`) is handed to the agent.
+- **`touched` = the files THIS session wrote inside the judge's perimeter** (`{ "files": [absolute
+  paths], "complete": true }`), its sub-agents included, recorded after each file write while the
+  option is on. Several agents working in one repository are therefore never judged on each
+  other's files. `complete` turns `false` past 1,000 files: never trust a cut list, widen instead.
+  A file written by a shell command is not in it (the harness does not report what a command writes).
+- **A ready example**: [`examples/judges/undocumented-changes.js`](examples/judges/undocumented-changes.js)
+  fails while a file the session wrote has no injectable doc, and names each one. It asks
+  ctxroute's own engine, so "covered" means exactly what the injection would deliver. Without a
+  complete `touched` list it judges the git repository's changes instead. Wire it with
+  `"command": ["node", "<ctxroute>/examples/judges/undocumented-changes.js"]`; optional arguments
+  in the same array: `"--ignore", ".md"` to skip paths, `"--since", "main"` to include committed
+  work in the git mode. Copy it as the starting point of your own judges.
+- **Perimeters use the language's own words** (`match` / `scope` / `exclude` / `rules` / `keys`),
+  matched on the session directory AND on every file the session wrote: every judge whose
+  perimeter covers either runs, in parallel — an agent started in another folder still meets the
+  judge of the project it wrote in. No judge for a project = one nudge with the message, then the
+  context is settled.
+- **Bounded, never a trap**: at most `maxNudges` refusals per context, then the session is released
+  loudly; a judge that cannot start or overruns `judgeTimeoutSeconds` is stopped (its whole process
+  tree) and never holds the session. It never blocks a compaction.
+- **Harnesses**: Claude Code ≥ 2.1.287 (sensor = the mod in `mods/wrap-up-sensor`, loaded with
+  `--plugin-dir`, `CLAUDE_CODE_PLUGIN_DIRS` or a folder marketplace). Codex: not supported — its
+  hooks receive no token count. See [HARNESS-CONTRACT.md](HARNESS-CONTRACT.md).
 
 
 ## Known issues

@@ -44,6 +44,8 @@
 
 'use strict';
 
+const { formatRecord } = require('./log-pure');
+
 // ⚠️ THE CLOSED VOCABULARY OF A DAEMON LIFE. Every entry happens ONCE per
 //    process life (or once per lane), never on something a client can trigger.
 //    🛑 NEVER add a name a REQUEST can reach: that is the one change that turns
@@ -161,59 +163,12 @@ const STALL_MS = 1000;
 //    gets to one line per request, reached by a knob instead of a decision.
 const LOOP_BLOCK_MS = 100;
 
-// ⚠️ CEILING PER FILE — 256 KB, the fleet's figure, and it is not a taste. A
-//    lifecycle line weighs ~60 bytes, so 256 KB holds thousands of daemon lives:
-//    far past anything anyone re-reads. Do NOT raise it "to keep more history".
-const MAX_BYTES = 256 * 1024;
-
-// ⚠️ FILES KEPT — the current journal and exactly ONE predecessor. The bound is
-//    not a policy written somewhere, it is a CONSEQUENCE of the mechanism: the
-//    rotation renames onto `.1`, and a rename OVERWRITES. 🛑 NEVER move to a
-//    `.1 .2 .3` scheme: the bound would stop being structural and become a
-//    number someone has to maintain.
-const KEPT_FILES = 2;
-
-// The whole cost of this component on the disk, for life, at any traffic and any
-// uptime. This is the figure `disk-writers.json` declares as its budget.
-const TOTAL_MAX_BYTES = MAX_BYTES * KEPT_FILES;
-
-/**
- * Collapses anything into ONE line.
- *
- * 🛑 LOAD-BEARING, NOT COSMETIC: a journal is line-delimited, so a value
- *    carrying a newline would FORGE an extra entry — and the values logged here
- *    include an OS error message, i.e. text this process does not author. One
- *    record must remain one line whatever it is handed.
- *
- * @param {unknown} value
- * @returns {string}
- */
-function oneLine(value) {
-  return String(value).replace(/[\r\n]+/g, ' ');
-}
-
-/**
- * Must the journal turn over BEFORE this write?
- *
- * ⚠️ FAIL-OPEN, DELIBERATELY THE INVERSE OF A GATE: an unreadable size or an
- *    absurd ceiling means we do NOT rotate, hence we still WRITE. The worst case
- *    is a slightly oversized file; refusing to write would lose the trace of a
- *    death, which is the entire reason this exists. NEVER invert this default.
- * ⚠️ `>=` and not `>`: the ceiling is a limit REACHED, not exceeded. A
- *    `maxBytes` of 0 is refused by `maxBytes > 0` (it would rotate on every
- *    single write); a negative or NaN ceiling is refused by the same test.
- *
- * @param {{sizeBytes?: unknown, maxBytes?: unknown}} [input]
- * @returns {boolean}
- */
-function shouldRotate(input) {
-  const o = input || {};
-  const sizeBytes = Number(o.sizeBytes);
-  const maxBytes = Number(o.maxBytes);
-  if (!(maxBytes > 0)) return false;
-  if (!Number.isFinite(sizeBytes)) return false;
-  return sizeBytes >= maxBytes;
-}
+// 🔑 THE CEILING, THE ROTATION AND THE LINE FORMAT LEFT THIS FILE ON 2026-10-04.
+//    They were `MAX_BYTES` (256 KB) × `KEPT_FILES` (2), constants in the code;
+//    they are now the `logging` setting of `ctxroute-config.json`, decided in
+//    `log-pure.js` (same defaults, so an absent setting is the old journal to
+//    the byte), and the disk is touched only by `log.js`. This file keeps what
+//    is the DAEMON's: its closed vocabulary and the predicates that keep it rare.
 
 /**
  * Did serving ONE request take long enough to be worth a line?
@@ -350,28 +305,10 @@ function loopFieldMs(nanos, sampleCount) {
  */
 function formatEvent(input) {
   const o = input || {};
-  // ⚠️ A CAST, NEVER A RUNTIME GUARD. `includes` already answers `false` for a
-  //    number, an object or `undefined`, so a `typeof` here would change nothing
-  //    at run time — it would only add an EQUIVALENT mutant that no test could
-  //    ever kill. The cast satisfies `check:types` and costs zero instructions.
-  const event = /** @type {string} */ (o.event);
-  if (!EVENTS.includes(event)) return null;
-  // ⚠️ The `typeof` is NOT redundant with the length test: a NUMBER has no
-  //    `length`, so `undefined === 0` is false and a bare length check would let
-  //    `at: 42` through as a timestamp.
-  if (typeof o.at !== 'string' || o.at.length === 0) return null;
-  const fields = o.fields;
-  let detail = '';
-  // ⚠️ The `typeof` is load-bearing here too: a STRING is truthy and
-  //    `Object.keys('ab')` answers `['0','1']`, i.e. a record made of noise.
-  if (fields && typeof fields === 'object') {
-    for (const key of Object.keys(fields)) {
-      const value = fields[key];
-      if (value === null || value === undefined) continue;
-      detail += ' ' + key + '=' + oneLine(value);
-    }
-  }
-  return oneLine(o.at) + ' event=' + event + detail;
+  // 🔑 THE RENDERING IS `log-pure.formatRecord`, ONE FORMAT FOR EVERY JOURNAL;
+  //    what stays HERE is the daemon's closed vocabulary, which is what keeps an
+  //    unknown name from costing a byte.
+  return formatRecord({ at: o.at, event: o.event, fields: o.fields, vocabulary: EVENTS });
 }
 
 /**
@@ -419,6 +356,6 @@ function socketCut(input) {
 
 module.exports = {
   rendezvousRefusal, socketCut,
-  formatEvent, shouldRotate, oneLine, isStall, isLoopBlock, loopFieldMs,
-  EVENTS, MAX_BYTES, KEPT_FILES, TOTAL_MAX_BYTES, STALL_MS, LOOP_BLOCK_MS,
+  formatEvent, isStall, isLoopBlock, loopFieldMs,
+  EVENTS, STALL_MS, LOOP_BLOCK_MS,
 };

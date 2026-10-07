@@ -1,0 +1,16 @@
+---
+match: wrap-up-pure.js
+mode: smart
+threshold: 30
+---
+# wrap-up-pure.js — the DECISION of the `wrapUp` option (EXPERIMENTAL, 2026-10-04)
+
+🔑 **What it decides**: is this end of turn DUE (fill ≥ `atPercent`, context not settled), which JUDGES cover the session (`judgesFor`, the SKILL matcher on the `cwd` AND on every file the session wrote), and — once they ran — REFUSE (`block`), RELEASE (bound reached) or SETTLE. Pure, mutated; the shells do every I/O.
+🔑 **EACH JUDGE GETS THE FILES OF ITS PERIMETER** (contract v2, `touched: { files, complete }`): a written file is matched as an edit of it (path parameter handed by the shell, never named here), so a session started elsewhere still meets the judge of the project it wrote in. `touchedOf` reads ONLY an explicit `complete: true` as complete; `withTouched` stops at `MAX_TOUCHED` and says `complete: false` once, returns `null` when nothing changes (no disk write). IF you pass no path parameter, every judge gets `touched: null` — unknown, never an empty list.
+🛑 **IT NEVER BLOCKS A COMPACTION.** Claude Code doc (read 2026-10-04): a blocked compaction "stops processing and asks you what to do" — a human in the loop. IF you add a compaction path here, you MUST NOT veto it; `wrap-up-wiring.test.js` runs every PreCompact consumer for real and reddens on a block.
+🛑 **THE CORE READS ONE NORMALISED OBSERVATION (`{ tokens, window, percent }`) AND NO HARNESS NAME.** IF you need a harness fact here, the design failed: put it in `harness-profile.WRAP_UP` or in the shell. `wrap-up-portability.test.js` drives this core with a fictional sensor and dialect and asserts its only import is `./sources/skill`.
+🛑 **THE OPTION NEVER DIES IN SILENCE** (`sensorSilent`): the sensor belongs to the harness (a vendor may rename or drop its event), and without an observation `isDue` stays false for ever. Option on + `SILENT_SENSOR_TURNS` (3) turns in this context + no observation ever ⇒ the human is told ONCE per context (`sensorSilenceSaid`, purged at compaction). IF you change how observations arrive, you MUST keep this witness: it is the only thing that sees an ABSENT sensor.
+⚠️ **THE BOUND IS THE ANTI-LOOP** (`maxNudges`): the harness doc itself warns a Stop block "can create an infinite loop". A BROKEN judge (could not start, overran) NEVER holds the session — named, then settled. No judge for the project = ONE nudge, then settled (nothing can prove "done").
+⚠️ **IF you change a bound** (`atPercent` 1-99, `maxNudges` 1-20, `judgeTimeoutSeconds` 1-540), you MUST change `ctxroute-config.schema.json` in the same gesture — a cell confronts them; and `MAX_JUDGE_TIMEOUT_SECONDS` must stay below the 600 s of the Stop consumer in `wiring.json`.
+⚠️ **A judge `command` is an ARGUMENT VECTOR** (`[program, ...args]`), never a command line: a line needs a shell, and the shell differs per OS. **A malformed setting switches the option OFF and is NAMED** (`problems`), never a guessed default. **The judge contract is versioned** (`JUDGE_CONTRACT_VERSION`): changing the JSON a judge receives means a new version, never a silent shape change — adopters' judges read it.
+⚠️ `withObservation` and `decide` PROPAGATE the record (`{ ...s }`): a field added tomorrow must survive (rule `no-rebuilt-state-entry`).

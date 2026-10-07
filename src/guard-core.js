@@ -25,8 +25,10 @@
 'use strict';
 
 const fs = require('fs');
-const { parse, validate, validateMcp } = require('./frontmatter');
+const { parse, validate, validateMcp, validateSession } = require('./frontmatter');
 const paths = require('./paths');
+// ⚠️ The journal writer: a failure this module survives is SAID there (fail-open).
+const log = require('./log');
 
 const norm = (s) => String(s).replace(/\\/g, '/').toLowerCase();
 
@@ -64,12 +66,16 @@ function run(filePaths) {
   try {
     for (const filePath of filePaths) {
       const kind = docKind(filePath);
-      if (kind === null || kind === 'session') continue;
+      if (kind === null) continue;
 
       let errs;
       try {
         const { data: fm } = parse(fs.readFileSync(filePath, 'utf8'));
-        errs = kind === 'mcp' ? validateMcp(fm) : validate(fm);
+        // ⚠️ ONE VALIDATOR PER CORPUS, chosen by the folder (the folder IS the trigger). A
+        //    session doc was skipped here until 2026-10-07: it had no key worth checking. It
+        //    now carries `category`, and an unchecked restriction is a doc muted in silence.
+        const judge = { mcp: validateMcp, session: validateSession, file: validate }[kind];
+        errs = judge(fm);
       } catch {
         continue; // unreadable/deleted file = fail-open on THIS path
       }
@@ -79,8 +85,8 @@ function run(filePaths) {
       //    single verdict per hook, the following paths are not examined.
       return blockOutput(errs, filePath);
     }
-  } catch {
-    /* fail-open */
+  } catch (err) {
+    log.hookError('guard-core', err); /* fail-open */
   }
   // ⚠️ `null` = nothing to report. Do NOT put back `console.log` nor
   //    `process.exit(0)` here: writing the output and deciding to die are

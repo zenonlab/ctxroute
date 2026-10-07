@@ -21,7 +21,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { record, logPath, FILE_NAME } from '../src/lifecycle-log.js';
-import { MAX_BYTES, TOTAL_MAX_BYTES } from '../src/lifecycle-log-pure.js';
+import { DEFAULTS } from '../src/log-pure.js';
+
+// ⚠️ THE REAL CEILING IS NOW THE DEFAULT OF THE `logging` SETTING (2026-10-04),
+//    256 KB × 2 files — the figures the old constants carried.
+const MAX_BYTES = DEFAULTS.maxBytes;
+const TOTAL_MAX_BYTES = DEFAULTS.maxBytes * DEFAULTS.keptFiles;
 import paths from '../src/paths.js';
 
 const SANDBOXES = [];
@@ -99,7 +104,11 @@ test('🛑 OVERFLOWING THE REAL CEILING LEAVES EXACTLY 2 FILES AND AT MOST 512 K
   let bytesOffered = 0;
   while (bytesOffered < TOTAL_MAX_BYTES * 2) {
     attempts += 1;
-    assert.equal(record('start', { pid: attempts, blob: payload }, { file, now: () => 'T' + attempts }), true);
+    // ⚠️ The default ceiling is PASSED, so the operator's own `logging` setting
+    //    cannot move the figure under test; `production passes NO options` below
+    //    is the cell that proves the default applies with no option at all.
+    assert.equal(record('start', { pid: attempts, blob: payload },
+      { file, maxBytes: MAX_BYTES, now: () => 'T' + attempts }), true);
     bytesOffered += payload.length;
   }
   // More than a megabyte was offered: without the rotation this directory would
@@ -133,8 +142,8 @@ test('the rotation OVERWRITES its predecessor — that single rename IS the boun
   record('start', { gen: 2 }, { ...tiny, now: () => 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
   record('start', { gen: 3 }, { ...tiny, now: () => 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' });
   assert.deepEqual(fs.readdirSync(dir).sort(), ['daemon.log', 'daemon.log.1']);
-  // Generation 1 is GONE, not archived: a `.1 .2 .3` scheme would keep it and
-  // the ceiling would stop being a consequence of the mechanism.
+  // Generation 1 is GONE, not archived: with the default 2 kept files the
+  // rename onto `.1` overwrites it (`keptFiles` above 2 is `log.test.js`).
   assert.equal(fs.readFileSync(path.join(dir, 'daemon.log.1'), 'utf8').includes('gen=1'), false);
   assert.equal(fs.readFileSync(path.join(dir, 'daemon.log.1'), 'utf8').includes('gen=2'), true);
   assert.equal(fs.readFileSync(path.join(dir, 'daemon.log'), 'utf8').includes('gen=3'), true);

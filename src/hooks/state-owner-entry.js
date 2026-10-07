@@ -43,6 +43,8 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+// ⚠️ The journal writer: a failure the owner survives is said in the daemon journal.
+const log = require('../log');
 const { createOwner } = require('./state-owner-thread');
 const channel = require('../thread-channel-pure');
 const ownerOps = require('../owner-ops');
@@ -81,8 +83,10 @@ function own() {
       tables,
       invocationSnapshot.decode(JSON.parse(fs.readFileSync(invocationsPath, 'utf8'))),
     );
-  } catch {
+  } catch (err) {
     // fail-open: no file, unreadable or malformed — which is today's behaviour.
+    // An ABSENT file is the normal first start; anything else is said.
+    if (!err || /** @type {any} */ (err).code !== 'ENOENT') log.daemonError('owner-snapshot-load', err);
   }
   const ops = ownerOps.createOps({
     sequencer: tables.sequencer,
@@ -105,11 +109,12 @@ function own() {
  * @returns {void}
  */
 function persist(owned) {
-  try { /** @type {{flush: Function}} */ (owned.store).flush(); } catch { /* housekeeping never delays a stop */ }
+  try { /** @type {{flush: Function}} */ (owned.store).flush(); } catch (err) { log.daemonError('owner-flush', err); /* housekeeping never delays a stop */ }
   try {
     fs.writeFileSync(owned.invocationsPath, JSON.stringify(invocationSnapshot.encode(owned.tables)));
-  } catch {
+  } catch (err) {
     // fail-open: the worst loss is exactly the behaviour from before the snapshot existed.
+    log.daemonError('owner-snapshot-save', err);
   }
 }
 
