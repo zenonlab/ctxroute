@@ -147,6 +147,31 @@ test('an aborted request must not kill the daemon — it keeps serving the next 
   srv.close();
 });
 
+// ── THE SLOPE CRITERION — written ONCE, used by ③ and by its seen-red twin ④ ──
+// 🛑 ONE function, never two copies: weakening it to silence a red in ③ weakens
+//    ④ in the same move, and ④ then goes red because it stops seeing the leak.
+// 📐 SHAPE MEASURED 2026-10-08 (12 healthy + 12 leaking series, four copies in
+//    parallel to load the machine like a CI runner): a healthy daemon retains
+//    ~300 KB per batch at first and oscillates around ZERO from batch 7 on
+//    (worst mean of batches 7-10: 35 KB); batch 6 is still warm-up (41-161 KB).
+//    A leak holds ~680 KB then never drops below ~450 KB (tail mean ~520 KB).
+// 🔴 WHY TEN BATCHES AND A FOUR-BATCH TAIL — a red CI on 2026-10-07 (Linux):
+//    6 batches, tail = batches 5-6, read 317 → 200 → 272 → 157 → 92 → 170 KB and
+//    failed by 2 KB. The tail was sitting INSIDE the warm-up, so one noisy batch
+//    decided alone. Now the tail starts after the plateau and averages four
+//    readings: healthy margin ~4× (35 KB vs a ~150 KB limit), leak still rejected
+//    (~520 KB vs a ~340 KB limit). The threshold itself (tail < head / 2) is
+//    UNCHANGED — the reading moved, not the bar.
+const SLOPE_BATCHES = 10;
+const SLOPE_HEAD = 2;
+const SLOPE_TAIL = 4;
+function slopeVerdict(marks) {
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const head = mean(marks.slice(0, SLOPE_HEAD));
+  const tail = mean(marks.slice(-SLOPE_TAIL));
+  return { head, tail, converges: tail < head / 2, shown: marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ') };
+}
+
 // ── ③ NO LEAK — MEASURED IN A CHILD PROCESS WITH REAL GARBAGE COLLECTION ──
 // 🛑 Measuring the heap inside the test runner proves nothing: vitest itself
 //    allocates around us. The measurement therefore runs in a DEDICATED process
@@ -184,13 +209,12 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
       const marks = [];
       global.gc(); global.gc();
       let previous = process.memoryUsage().heapUsed;
-      // SIX EQUAL batches. Equal, because only equal batches make the retained
-      // amounts comparable. SIX, because FOUR is not enough to reach the
-      // plateau — measured 2026-08-20: the marginal is still 150 bytes/request
-      // at batch 4 and only settles around zero from batch 5 onward. A gate
-      // that reads the curve before it flattens judges the warm-up, not the
-      // property, and reddens at random. It did exactly that on CI.
-      for (let batch = 0; batch < 6; batch += 1) {
+      // EQUAL batches, because only equal batches make the retained amounts
+      // comparable. HOW MANY is decided by the curve's shape, measured twice:
+      // four were too few on 2026-08-20, six were too few on 2026-10-07 (the
+      // tail still read warm-up). A gate that reads the curve before it
+      // flattens judges the warm-up, not the property — see SLOPE_BATCHES.
+      for (let batch = 0; batch < ${SLOPE_BATCHES}; batch += 1) {
         for (let i = 0; i < 1000; i++) await once();
         global.gc(); global.gc();
         const now = process.memoryUsage().heapUsed;
@@ -211,7 +235,7 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
 
   // ⚠️ ANTI-VACUITY: four readings must really exist, or the assertions below
   //    would be comparing nothing.
-  assert.strictEqual(out.marks.length, 6, 'the driver must have produced six readings');
+  assert.strictEqual(out.marks.length, SLOPE_BATCHES, `the driver must have produced ${SLOPE_BATCHES} readings`);
 
   // 🛑 WHY A SLOPE AND NOT A CEILING — this is the whole point of the test.
   //    An absolute bound ("under 8 MB") answers "is it big TODAY, on THIS
@@ -232,14 +256,12 @@ test('MEMORY: retention DECELERATES — the slope says leak or warm-up, an absol
   //    A gate that reddens on scheduling noise is a gate people stop reading.
   //    The property is CONVERGENCE, so the tail is compared to the head, and
   //    each side is an average — one noisy batch can no longer decide alone.
-  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const head = mean(out.marks.slice(0, 2));
-  const tail = mean(out.marks.slice(-2));
-  const shown = out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ');
+  //    (It happened again on 2026-10-07 with a two-batch tail: see slopeVerdict.)
+  const { head, converges, shown } = slopeVerdict(out.marks);
   // ⚠️ ANTI-VACUITY: warm-up must really have cost something, otherwise the
   //    ratio below is measuring two zeroes and passes by emptiness.
   assert.ok(head > 20 * 1024, `warm-up retained almost nothing (${shown}) — the driver is probably not doing real work`);
-  assert.ok(tail < head / 2,
+  assert.ok(converges,
     `retention is NOT converging (batches: ${shown}) — equal batches retaining equal amounts `
     + 'is the signature of a leak, and this daemon runs for months');
 }, 240000);
@@ -274,7 +296,7 @@ test('SEEN RED: the same criterion rejects a server that retains one object per 
       const marks = [];
       global.gc(); global.gc();
       let previous = process.memoryUsage().heapUsed;
-      for (let b = 0; b < 6; b++) {
+      for (let b = 0; b < ${SLOPE_BATCHES}; b++) {
         for (let i = 0; i < 1000; i++) await once();
         global.gc(); global.gc();
         const now = process.memoryUsage().heapUsed;
@@ -290,15 +312,12 @@ test('SEEN RED: the same criterion rejects a server that retains one object per 
       (err, stdout) => (err ? reject(new Error(err.message + stdout)) : resolve(JSON.parse(stdout.trim().split('\n').pop()))));
   });
 
-  assert.strictEqual(out.marks.length, 6, 'the leaky driver must have produced six readings too');
-  // ⚠️ EXACTLY the assertion of the test above, inverted. Sharing the criterion
-  //    literally is what makes this a proof: if someone weakens it up there to
-  //    silence a red, THIS test goes red in the same move.
-  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const head = mean(out.marks.slice(0, 2));
-  const tail = mean(out.marks.slice(-2));
-  assert.ok(!(tail < head / 2),
-    `the criterion FAILED TO SEE a deliberate leak (batches: ${out.marks.map((m) => Math.round(m / 1024) + 'Ko').join(' → ')}) — `
+  assert.strictEqual(out.marks.length, SLOPE_BATCHES, `the leaky driver must have produced ${SLOPE_BATCHES} readings too`);
+  // ⚠️ EXACTLY the verdict of the test above, inverted — the SAME function, so
+  //    weakening it up there to silence a red turns THIS test red in the same move.
+  const { converges, shown } = slopeVerdict(out.marks);
+  assert.ok(!converges,
+    `the criterion FAILED TO SEE a deliberate leak (batches: ${shown}) — `
     + 'it is therefore proving nothing about the real daemon');
 }, 240000);
 
